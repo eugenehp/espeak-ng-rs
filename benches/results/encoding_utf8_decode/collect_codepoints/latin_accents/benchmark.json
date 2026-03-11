@@ -1,0 +1,1 @@
+{"group_id":"encoding/utf8_decode","function_id":"collect_codepoints","value_str":"latin_accents","throughput":{"Bytes":44},"full_id":"encoding/utf8_decode/collect_codepoints/latin_accents","directory_name":"encoding_utf8_decode/collect_codepoints/latin_accents","title":"encoding/utf8_decode/collect_codepoints/latin_accents"}

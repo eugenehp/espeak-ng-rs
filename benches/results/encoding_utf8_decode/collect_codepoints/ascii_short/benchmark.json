@@ -1,0 +1,1 @@
+{"group_id":"encoding/utf8_decode","function_id":"collect_codepoints","value_str":"ascii_short","throughput":{"Bytes":11},"full_id":"encoding/utf8_decode/collect_codepoints/ascii_short","directory_name":"encoding_utf8_decode/collect_codepoints/ascii_short","title":"encoding/utf8_decode/collect_codepoints/ascii_short"}

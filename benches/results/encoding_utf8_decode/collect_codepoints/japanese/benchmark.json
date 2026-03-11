@@ -1,0 +1,1 @@
+{"group_id":"encoding/utf8_decode","function_id":"collect_codepoints","value_str":"japanese","throughput":{"Bytes":57},"full_id":"encoding/utf8_decode/collect_codepoints/japanese","directory_name":"encoding_utf8_decode/collect_codepoints/japanese","title":"encoding/utf8_decode/collect_codepoints/japanese"}

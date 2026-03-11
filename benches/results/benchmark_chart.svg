@@ -1,0 +1,164 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 480" font-family="'Segoe UI', system-ui, -apple-system, sans-serif">
+  <defs>
+    <linearGradient id="rustGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#e8743b"/>
+      <stop offset="100%" stop-color="#f0a060"/>
+    </linearGradient>
+    <linearGradient id="cGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#3b82c4"/>
+      <stop offset="100%" stop-color="#60a0d8"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="860" height="480" rx="12" fill="#0f1117"/>
+
+  <!-- Title -->
+  <text x="430" y="36" text-anchor="middle" font-size="17" font-weight="700" fill="#f0f0f0">espeak-ng-rs  —  Benchmark Results</text>
+  <text x="430" y="56" text-anchor="middle" font-size="12" fill="#888">Criterion measurements on ARM64, 22 050 Hz, release build</text>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       LEFT PANEL: first-phoneme latency (log scale)
+       ═══════════════════════════════════════════════════════════════ -->
+  <text x="210" y="84" text-anchor="middle" font-size="13" font-weight="600" fill="#ccc">First-phoneme latency  (log scale)</text>
+
+  <!-- Y-axis label -->
+  <text x="24" y="295" text-anchor="middle" font-size="10" fill="#666" transform="rotate(-90,24,295)">latency (log₁₀ ns)</text>
+
+  <!-- log-scale grid: 1ns=0, 10ns, 100ns, 1µs, 10µs, 100µs, 1ms, 10ms
+       Plot area: x=48..400, y=100..420 → height=320
+       min=1ns (0), max=10ms=1e7ns → log10 range 0..7 → 320/7 = 45.7px per decade -->
+
+  <!-- Grid lines at each decade -->
+  <!-- decade 0 = 1ns  → y=420 (bottom) -->
+  <!-- decade 1 = 10ns → y=374 -->
+  <!-- decade 2 = 100ns→ y=329 -->
+  <!-- decade 3 = 1µs  → y=283 -->
+  <!-- decade 4 = 10µs → y=238 -->
+  <!-- decade 5 = 100µs→ y=192 -->
+  <!-- decade 6 = 1ms  → y=146 -->
+  <!-- decade 7 = 10ms → y=101 -->
+
+  <line x1="48" y1="420" x2="400" y2="420" stroke="#222" stroke-width="1"/>
+  <line x1="48" y1="374" x2="400" y2="374" stroke="#222" stroke-width="1"/>
+  <line x1="48" y1="329" x2="400" y2="329" stroke="#222" stroke-width="1"/>
+  <line x1="48" y1="283" x2="400" y2="283" stroke="#222" stroke-width="1"/>
+  <line x1="48" y1="238" x2="400" y2="238" stroke="#222" stroke-width="1"/>
+  <line x1="48" y1="192" x2="400" y2="192" stroke="#222" stroke-width="1"/>
+  <line x1="48" y1="146" x2="400" y2="146" stroke="#222" stroke-width="1"/>
+  <line x1="48" y1="101" x2="400" y2="101" stroke="#222" stroke-width="1"/>
+
+  <!-- Y axis labels -->
+  <text x="44" y="424" text-anchor="end" font-size="9" fill="#555">1 ns</text>
+  <text x="44" y="378" text-anchor="end" font-size="9" fill="#555">10 ns</text>
+  <text x="44" y="333" text-anchor="end" font-size="9" fill="#555">100 ns</text>
+  <text x="44" y="287" text-anchor="end" font-size="9" fill="#555">1 µs</text>
+  <text x="44" y="242" text-anchor="end" font-size="9" fill="#555">10 µs</text>
+  <text x="44" y="196" text-anchor="end" font-size="9" fill="#555">100 µs</text>
+  <text x="44" y="150" text-anchor="end" font-size="9" fill="#555">1 ms</text>
+  <text x="44" y="105" text-anchor="end" font-size="9" fill="#555">10 ms</text>
+
+  <!-- X axis baseline -->
+  <line x1="48" y1="420" x2="48" y2="101" stroke="#444" stroke-width="1"/>
+
+  <!-- ── Bars ────────────────────────────────────────────────────────
+       Each input has a Rust bar (left) and C bar (right).
+       4 inputs: en_hello, en_hello_world, de_guten, fr_bonjour
+       Group width = (400-48)/4 = 88px, group starts at 48 + i*88
+       Rust bar: x = group_start + 6,  width=34
+       C bar:    x = group_start + 46, width=34
+
+       log10(606 ns) = 2.783  → y = 420 - 2.783*45.7 = 420 - 127.3 = 292.7 → top=293, height=127
+       log10(595 ns) = 2.775  → top=293, height=127
+       log10(610 ns) = 2.785  → top=293, height=127
+       log10(604 ns) = 2.781  → top=293, height=127
+
+       log10(5500000 ns=5.5ms) = 6.740 → y = 420 - 6.740*45.7 = 420 - 308.0 = 112 → top=112, height=308
+       log10(5800000 ns=5.8ms) = 6.763 → y = 420 - 6.763*45.7 = 420 - 309.1 = 111 → top=111, height=309
+       log10(5800000 ns=5.8ms) = 6.763 → same
+  -->
+
+  <!-- Group 1: en "hello" -->
+  <!-- Rust: 606 ns -->
+  <rect x="54"  y="293" width="34" height="127" rx="3" fill="url(#rustGrad)" opacity="0.9"/>
+  <!-- C CLI: 5.5 ms = 5500µs = 5500000 ns -->
+  <rect x="94"  y="112" width="34" height="308" rx="3" fill="url(#cGrad)"   opacity="0.9"/>
+  <text x="112" y="434" text-anchor="middle" font-size="9" fill="#888">hello</text>
+
+  <!-- Group 2: en "hello world" -->
+  <!-- Rust: 607 ns -->
+  <rect x="142" y="293" width="34" height="127" rx="3" fill="url(#rustGrad)" opacity="0.9"/>
+  <!-- C CLI: 5.8 ms -->
+  <rect x="182" y="111" width="34" height="309" rx="3" fill="url(#cGrad)"   opacity="0.9"/>
+  <text x="200" y="434" text-anchor="middle" font-size="9" fill="#888">hello world</text>
+
+  <!-- Group 3: de "guten" -->
+  <!-- Rust: 610 ns -->
+  <rect x="230" y="293" width="34" height="127" rx="3" fill="url(#rustGrad)" opacity="0.9"/>
+  <!-- C CLI: 5.8 ms -->
+  <rect x="270" y="111" width="34" height="309" rx="3" fill="url(#cGrad)"   opacity="0.9"/>
+  <text x="288" y="434" text-anchor="middle" font-size="9" fill="#888">de: guten</text>
+
+  <!-- Group 4: fr "bonjour" -->
+  <!-- Rust: 604 ns -->
+  <rect x="318" y="293" width="34" height="127" rx="3" fill="url(#rustGrad)" opacity="0.9"/>
+  <!-- C CLI: 5.8 ms -->
+  <rect x="358" y="111" width="34" height="309" rx="3" fill="url(#cGrad)"   opacity="0.9"/>
+  <text x="376" y="434" text-anchor="middle" font-size="9" fill="#888">fr: bonjour</text>
+
+  <!-- Value labels on bars -->
+  <text x="71"  y="289" text-anchor="middle" font-size="9" font-weight="600" fill="#f0a060">606 ns</text>
+  <text x="111" y="108" text-anchor="middle" font-size="9" font-weight="600" fill="#60a0d8">5.5 ms</text>
+  <text x="159" y="289" text-anchor="middle" font-size="9" font-weight="600" fill="#f0a060">607 ns</text>
+  <text x="199" y="107" text-anchor="middle" font-size="9" font-weight="600" fill="#60a0d8">5.8 ms</text>
+  <text x="247" y="289" text-anchor="middle" font-size="9" font-weight="600" fill="#f0a060">610 ns</text>
+  <text x="287" y="107" text-anchor="middle" font-size="9" font-weight="600" fill="#60a0d8">5.8 ms</text>
+  <text x="335" y="289" text-anchor="middle" font-size="9" font-weight="600" fill="#f0a060">604 ns</text>
+  <text x="375" y="107" text-anchor="middle" font-size="9" font-weight="600" fill="#60a0d8">5.8 ms</text>
+
+  <!-- Speedup badge -->
+  <rect x="90" y="182" width="222" height="30" rx="6" fill="#1a2a1a" stroke="#3a6a3a" stroke-width="1"/>
+  <text x="201" y="201" text-anchor="middle" font-size="13" font-weight="700" fill="#4caf50">≈ 9 000× faster than C subprocess</text>
+
+  <!-- Legend left -->
+  <rect x="58" y="445" width="12" height="10" rx="2" fill="url(#rustGrad)"/>
+  <text x="74" y="454" font-size="10" fill="#ccc">Rust (in-process)</text>
+  <rect x="160" y="445" width="12" height="10" rx="2" fill="url(#cGrad)"/>
+  <text x="176" y="454" font-size="10" fill="#ccc">C subprocess (espeak-ng CLI)</text>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       DIVIDER
+       ═══════════════════════════════════════════════════════════════ -->
+  <line x1="418" y1="76" x2="418" y2="470" stroke="#2a2a2a" stroke-width="1.5"/>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       RIGHT PANEL: three metric tiles
+       ═══════════════════════════════════════════════════════════════ -->
+  <text x="640" y="84" text-anchor="middle" font-size="13" font-weight="600" fill="#ccc">Key metrics</text>
+
+  <!-- Tile 1: First-phoneme latency -->
+  <rect x="432" y="100" width="400" height="95" rx="8" fill="#151b25" stroke="#1e3050" stroke-width="1"/>
+  <text x="452" y="125" font-size="11" fill="#888">First-phoneme latency (Rust, in-process)</text>
+  <text x="452" y="162" font-size="38" font-weight="700" fill="#e8743b">~606</text>
+  <text x="578" y="162" font-size="22" font-weight="400" fill="#e8743b"> ns</text>
+  <text x="452" y="184" font-size="11" fill="#555">avg across en/de/fr inputs  ·  ±4 ns CI</text>
+
+  <!-- Tile 2: Synthesizer throughput -->
+  <rect x="432" y="208" width="400" height="95" rx="8" fill="#151b25" stroke="#1e3050" stroke-width="1"/>
+  <text x="452" y="233" font-size="11" fill="#888">Synthesizer throughput  (22 050 Hz, harmonic)</text>
+  <text x="452" y="272" font-size="38" font-weight="700" fill="#4caf50">380×</text>
+  <text x="556" y="272" font-size="18" font-weight="400" fill="#4caf50"> real-time</text>
+  <text x="452" y="292" font-size="11" fill="#555">58.1 µs to generate 1 s of audio  ·  2.6 ns / sample</text>
+
+  <!-- Tile 3: Encoding lookup -->
+  <rect x="432" y="316" width="400" height="95" rx="8" fill="#151b25" stroke="#1e3050" stroke-width="1"/>
+  <text x="452" y="341" font-size="11" fill="#888">Encoding name lookup  (Encoding::from_name)</text>
+  <text x="452" y="379" font-size="38" font-weight="700" fill="#a78bfa">3.0</text>
+  <text x="510" y="379" font-size="22" font-weight="400" fill="#a78bfa"> ns</text>
+  <text x="452" y="399" font-size="11" fill="#555">hash map over 40 charset names  ·  ±0.05 ns CI</text>
+
+  <!-- Tile 4: Resonator DSP -->
+  <rect x="432" y="424" width="400" height="44" rx="8" fill="#151b25" stroke="#1e3050" stroke-width="1"/>
+  <text x="452" y="443" font-size="11" fill="#888">Resonator DSP tick (single sample)</text>
+  <text x="452" y="460" font-size="13" font-weight="700" fill="#f0a060">3.2 ns / sample   ·   64-sample block: 166 ns (2.6 ns/sample)</text>
+</svg>

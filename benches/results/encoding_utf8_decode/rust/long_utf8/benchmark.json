@@ -1,0 +1,1 @@
+{"group_id":"encoding/utf8_decode","function_id":"rust","value_str":"long_utf8","throughput":{"Bytes":3600},"full_id":"encoding/utf8_decode/rust/long_utf8","directory_name":"encoding_utf8_decode/rust/long_utf8","title":"encoding/utf8_decode/rust/long_utf8"}

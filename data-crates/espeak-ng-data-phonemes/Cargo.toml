@@ -1,0 +1,22 @@
+[package]
+name        = "espeak-ng-data-phonemes"
+version     = "0.1.0"
+edition     = "2021"
+description = "Core eSpeak NG phoneme tables, language definitions, and voice definitions — embedded data for espeak-ng-rs"
+license     = "GPL-3.0-or-later"
+keywords    = ["espeak", "tts", "speech", "phoneme", "data"]
+categories  = ["multimedia::audio", "accessibility"]
+
+# All data files must be included in the published crate.
+include = [
+    "build.rs",
+    "src/**",
+    "data/phondata",
+    "data/phonindex",
+    "data/phontab",
+    "data/intonations",
+    "data/phondata-manifest",
+    "data/lang/**",
+    "data/voices/**",
+    "data/mbrola_ph/**",
+]

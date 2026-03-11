@@ -1,0 +1,101 @@
+# ---------------------------------------------------------------------------
+# Workspace
+# ---------------------------------------------------------------------------
+[workspace]
+members = [
+    ".",
+    "data-crates/espeak-ng-data-phonemes",
+    "data-crates/espeak-ng-data-dict-ru",
+    "data-crates/espeak-ng-data-dicts",
+]
+resolver = "2"
+
+# During development the data crates are local workspace members.
+# When publishing, remove this section and update the dependency versions
+# in [dependencies] to reference the crates.io-published versions.
+# Publish order:
+#   1. cargo publish -p espeak-ng-data-phonemes
+#   2. cargo publish -p espeak-ng-data-dict-ru
+#   3. cargo publish -p espeak-ng-data-dicts
+#   4. cargo publish -p espeak-ng-rs
+[patch.crates-io]
+espeak-ng-data-phonemes = { path = "data-crates/espeak-ng-data-phonemes" }
+espeak-ng-data-dict-ru  = { path = "data-crates/espeak-ng-data-dict-ru" }
+espeak-ng-data-dicts    = { path = "data-crates/espeak-ng-data-dicts" }
+
+# ---------------------------------------------------------------------------
+# Package
+# ---------------------------------------------------------------------------
+[package]
+name        = "espeak-ng-rs"
+version     = "0.1.0"
+edition     = "2021"
+description = "Pure Rust port of eSpeak NG text-to-speech"
+license     = "GPL-3.0-or-later"
+
+# ---------------------------------------------------------------------------
+# Library
+# ---------------------------------------------------------------------------
+[lib]
+name = "espeak_ng"
+path = "src/lib.rs"
+
+# ---------------------------------------------------------------------------
+# Feature flags
+# ---------------------------------------------------------------------------
+[features]
+default = []
+
+# Enables the oracle module: links libespeak-ng and exposes a thin FFI wrapper
+# used by integration tests and benchmarks to compare Rust output against C.
+# This requires libespeak-ng to be installed (pkg-config: espeak-ng).
+c-oracle = ["dep:libc"]
+
+# Downloads espeak-ng 1.52.0 source from GitHub, builds it with CMake, and
+# makes the resulting binary and data directory available to the benchmarks
+# via the ESPEAK_NG_BIN / ESPEAK_NG_DATA compile-time env vars.
+#
+# Requirements: cmake, a C compiler, curl or wget, tar.
+# The build is cached in Cargo's OUT_DIR; `cargo clean` forces a rebuild.
+#
+# Usage:
+#   cargo bench --features bundled-espeak
+bundled-espeak = []
+
+# Embeds all eSpeak NG data (phonemes + 114 language dicts) into the binary
+# via the espeak-ng-data-* sub-crates.  When active, install_bundled_data()
+# is available to extract the data to any directory so the engine can use it
+# without a system-installed eSpeak NG package.
+#
+# Usage:
+#   cargo build --features bundled-data
+bundled-data = [
+    "dep:espeak-ng-data-phonemes",
+    "dep:espeak-ng-data-dict-ru",
+    "dep:espeak-ng-data-dicts",
+]
+
+# ---------------------------------------------------------------------------
+# Dependencies
+# ---------------------------------------------------------------------------
+[dependencies]
+bitflags  = "2.11.0"
+thiserror = "1.0.69"
+libc      = { version = "0.2", optional = true }
+
+espeak-ng-data-phonemes = { version = "0.1.0", path = "data-crates/espeak-ng-data-phonemes", optional = true }
+espeak-ng-data-dict-ru  = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-ru",  optional = true }
+espeak-ng-data-dicts    = { version = "0.1.0", path = "data-crates/espeak-ng-data-dicts",    optional = true }
+
+# ---------------------------------------------------------------------------
+# Dev / benchmark dependencies
+# ---------------------------------------------------------------------------
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+# ---------------------------------------------------------------------------
+# Benchmarks
+# ---------------------------------------------------------------------------
+[[bench]]
+name    = "vs_c"
+harness = false   # Criterion drives its own harness

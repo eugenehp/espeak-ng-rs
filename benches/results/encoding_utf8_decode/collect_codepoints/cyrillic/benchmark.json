@@ -1,0 +1,1 @@
+{"group_id":"encoding/utf8_decode","function_id":"collect_codepoints","value_str":"cyrillic","throughput":{"Bytes":92},"full_id":"encoding/utf8_decode/collect_codepoints/cyrillic","directory_name":"encoding_utf8_decode/collect_codepoints/cyrillic","title":"encoding/utf8_decode/collect_codepoints/cyrillic"}
