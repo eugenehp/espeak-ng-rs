@@ -10,20 +10,6 @@ members = [
 ]
 resolver = "2"
 
-# During development the data crates are local workspace members.
-# When publishing, remove this section and update the dependency versions
-# in [dependencies] to reference the crates.io-published versions.
-# Publish order:
-#   1. cargo publish -p espeak-ng-data-phonemes
-#   2. cargo publish -p espeak-ng-data-dict-ru
-#   3. cargo publish -p espeak-ng-data-dict-<lang>   # optional per-language crates
-#   4. cargo publish -p espeak-ng-data-dicts
-#   5. cargo publish -p espeak-ng-rs
-[patch.crates-io]
-espeak-ng-data-phonemes = { path = "data-crates/espeak-ng-data-phonemes" }
-espeak-ng-data-dict-ru  = { path = "data-crates/espeak-ng-data-dict-ru" }
-espeak-ng-data-dicts    = { path = "data-crates/espeak-ng-data-dicts" }
-
 # ---------------------------------------------------------------------------
 # Package
 # ---------------------------------------------------------------------------
