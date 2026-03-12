@@ -56,10 +56,10 @@ def ordered_publish_list(crate_names: list[str], include_main: bool) -> list[str
     add_if_present("espeak-ng-data-dicts")
 
     if include_main:
-        add_if_present("espeak-ng-rs")
+        add_if_present("espeak-ng")
 
     for name in sorted(names):
-        if not include_main and name == "espeak-ng-rs":
+        if not include_main and name == "espeak-ng":
             continue
         if name not in ordered:
             ordered.append(name)
@@ -80,7 +80,9 @@ def run_streaming(cmd: list[str]) -> int:
 def run_preflight_checks() -> int:
     checks: list[list[str]] = [
         ["cargo", "test"],
-        ["cargo", "test", "--features", "c-oracle,bundled-espeak"],
+        # libespeak-ng uses global state; run oracle tests single-threaded to
+        # avoid racing even though the Mutex serialises Rust-side calls.
+        ["cargo", "test", "--features", "c-oracle,bundled-espeak", "--", "--test-threads=1"],
         [
             "cargo",
             "test",
@@ -90,6 +92,7 @@ def run_preflight_checks() -> int:
             "oracle_comparison",
             "--",
             "--nocapture",
+            "--test-threads=1",
         ],
     ]
 
@@ -115,12 +118,12 @@ def main() -> int:
     parser.add_argument(
         "--no-main",
         action="store_true",
-        help="Do not publish the main crate (espeak-ng-rs).",
+        help="Do not publish the main crate (espeak-ng).",
     )
     parser.add_argument(
         "--allow-patch-main",
         action="store_true",
-        help="Allow publishing espeak-ng-rs even if [patch.crates-io] exists in root Cargo.toml.",
+        help="Allow publishing espeak-ng even if [patch.crates-io] exists in root Cargo.toml.",
     )
     parser.add_argument(
         "--allow-dirty",
@@ -141,7 +144,8 @@ def main() -> int:
     args = parser.parse_args()
     include_main = not args.no_main
 
-    if args.execute and not args.skip_preflight:
+    # --dry-run does not actually publish; skip the heavy preflight suite.
+    if args.execute and not args.dry_run and not args.skip_preflight:
         preflight_code = run_preflight_checks()
         if preflight_code != 0:
             return preflight_code
@@ -149,18 +153,27 @@ def main() -> int:
     crate_names = workspace_crate_names()
     ordered = ordered_publish_list(crate_names, include_main=include_main)
 
-    if include_main and "espeak-ng-rs" in ordered and has_patch_crates_io() and not args.allow_patch_main:
-        if args.execute:
+    if include_main and "espeak-ng" in ordered and has_patch_crates_io() and not args.allow_patch_main:
+        # --dry-run never pushes to crates.io, so the local [patch] section
+        # is harmless; allow it through automatically.
+        if args.execute and not args.dry_run:
             print(
                 "error: [patch.crates-io] is present in Cargo.toml; "
-                "remove it before publishing espeak-ng-rs, or pass --allow-patch-main",
+                "remove it before publishing espeak-ng, or pass --allow-patch-main",
                 file=sys.stderr,
             )
             return 2
-        else:
+        elif not args.execute:
             print(
-                "note: [patch.crates-io] is present; execute mode would block publishing espeak-ng-rs "
+                "note: [patch.crates-io] is present; execute mode would block publishing espeak-ng "
                 "unless --allow-patch-main is set",
+                file=sys.stderr,
+            )
+        else:
+            # --execute --dry-run: nothing real is published, so warn only.
+            print(
+                "note: [patch.crates-io] is present; this would block a real publish "
+                "(ignored because --dry-run is active)",
                 file=sys.stderr,
             )
 
@@ -169,11 +182,25 @@ def main() -> int:
         print(f"  {idx:>3}. {crate}")
 
     for crate in ordered:
-        cmd = ["cargo", "publish", "-p", crate]
-        if args.allow_dirty:
-            cmd.append("--allow-dirty")
         if args.execute and args.dry_run:
-            cmd.append("--dry-run")
+            # Use `cargo package` for dry-run: it is fully offline and does the
+            # same packaging + verification without contacting crates.io.
+            # `cargo publish --dry-run` hits the registry API even in dry-run
+            # mode and will hang or fail without credentials.
+            #
+            # Exception: `espeak-ng` with [patch.crates-io] present cannot be
+            # packaged until its data-crate dependencies are live on crates.io.
+            # Use `cargo check` instead, which respects the local patches.
+            if crate == "espeak-ng" and has_patch_crates_io() and not args.allow_patch_main:
+                cmd = ["cargo", "check", "-p", crate]
+            else:
+                cmd = ["cargo", "package", "-p", crate]
+                if args.allow_dirty:
+                    cmd.append("--allow-dirty")
+        else:
+            cmd = ["cargo", "publish", "-p", crate]
+            if args.allow_dirty:
+                cmd.append("--allow-dirty")
 
         print("\n$", " ".join(cmd))
         if not args.execute:
@@ -190,7 +217,10 @@ def main() -> int:
             return completed.returncode
 
     if args.execute:
-        print("\nDone.")
+        if args.dry_run:
+            print("\nDry-run complete (cargo package only; nothing uploaded to crates.io).")
+        else:
+            print("\nDone.")
     else:
         print("\nDry-run mode (command preview only). Use --execute to publish.")
 

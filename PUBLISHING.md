@@ -3,7 +3,7 @@
 This workspace contains the main library, the aggregate data crates, and
 optional per-language dictionary crates named `espeak-ng-data-dict-<lang>`.
 Because the main library has optional dependencies on the aggregate data
-crates, those aggregate crates must be published before `espeak-ng-rs`.
+crates, those aggregate crates must be published before `espeak-ng`.
 
 ## Publish order
 
@@ -24,7 +24,7 @@ cargo publish -p espeak-ng-data-dicts
 
 # 5. Main library (after data crates are live on crates.io, remove the
 #    [patch.crates-io] section from the root Cargo.toml)
-cargo publish -p espeak-ng-rs
+cargo publish -p espeak-ng
 ```
 
 ## Automated publish script
@@ -35,20 +35,28 @@ In `--execute` mode, the script runs required preflight checks first and
 aborts publishing if any check fails:
 
 - `cargo test`
-- `cargo test --features "c-oracle,bundled-espeak"`
-- `cargo test --features "c-oracle,bundled-espeak" --test oracle_comparison -- --nocapture`
+- `cargo test --features "c-oracle,bundled-espeak" -- --test-threads=1`
+- `cargo test --features "c-oracle,bundled-espeak" --test oracle_comparison -- --nocapture --test-threads=1`
+
+`--test-threads=1` is required for the c-oracle checks because libespeak-ng
+uses global process state; parallel test threads can corrupt it even though
+the Rust `Mutex` serialises access at the Rust level.
 
 ```bash
 # Preview the publish order and commands only
 python3 scripts/publish_all_crates.py
 
-# Execute publishing for all crates (fails on espeak-ng-rs if [patch.crates-io] is still present)
+# Execute publishing for all crates (fails on espeak-ng if [patch.crates-io] is still present)
 python3 scripts/publish_all_crates.py --execute
 
 # Execute only data crates (skip main crate)
 python3 scripts/publish_all_crates.py --execute --no-main
 
 # Execute with cargo --dry-run for every crate
+# Uses `cargo package` (fully offline) instead of `cargo publish --dry-run`
+# to avoid crates.io network calls that hang without credentials.
+# Skips preflight checks since nothing is actually published.
+# Note: [patch.crates-io] is allowed during dry-run.
 python3 scripts/publish_all_crates.py --execute --dry-run
 
 # Local dry-run when working tree is not committed
@@ -63,7 +71,7 @@ python3 scripts/publish_all_crates.py --execute --skip-preflight
 1. Remove the `[patch.crates-io]` section from the root `Cargo.toml`.
 2. Confirm the `version` numbers in `[dependencies]` for the data crates
    match the versions just published.
-3. Run `cargo package -p espeak-ng-rs` to verify the package is valid.
+3. Run `cargo package -p espeak-ng` to verify the package is valid.
 
 ## Aggregate crate sizes (compressed `.crate` files)
 
@@ -82,17 +90,17 @@ After publication, users add to their `Cargo.toml`:
 ```toml
 [dependencies]
 # Core library (text → IPA + synthesis)
-espeak-ng-rs = "0.1"
+espeak-ng = "0.1"
 
 # Optional: embed all data in the binary — no system eSpeak NG needed
-espeak-ng-rs = { version = "0.1", features = ["bundled-data"] }
+espeak-ng = { version = "0.1", features = ["bundled-data"] }
 ```
 
 Or, for the split approach (pick only the languages you need):
 
 ```toml
 [dependencies]
-espeak-ng-rs           = "0.1"
+espeak-ng               = "0.1"
 espeak-ng-data-phonemes = "0.1"   # required for any language
 espeak-ng-data-dict-en  = "0.1"
 espeak-ng-data-dict-uk  = "0.1"
@@ -103,7 +111,7 @@ Or enable the generated selective features on the main crate:
 
 ```toml
 [dependencies]
-espeak-ng-rs = { version = "0.1", features = ["bundled-data-en", "bundled-data-uk"] }
+espeak-ng = { version = "0.1", features = ["bundled-data-en", "bundled-data-uk"] }
 ```
 
 Then in code:

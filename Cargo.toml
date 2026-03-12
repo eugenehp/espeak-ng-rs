@@ -28,11 +28,14 @@ espeak-ng-data-dicts    = { path = "data-crates/espeak-ng-data-dicts" }
 # Package
 # ---------------------------------------------------------------------------
 [package]
-name        = "espeak-ng-rs"
+name        = "espeak-ng"
 version     = "0.1.0"
 edition     = "2021"
 description = "Pure Rust port of eSpeak NG text-to-speech"
 license     = "GPL-3.0-or-later"
+authors     = ["Eugene Hauptmann"]
+repository  = "https://github.com/eugenehp/espeak-ng-rs"
+homepage    = "https://github.com/eugenehp/espeak-ng-rs"
 
 # ---------------------------------------------------------------------------
 # Library

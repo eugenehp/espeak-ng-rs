@@ -1,5 +1,9 @@
 # espeak-ng-rs
 
+[![crates.io](https://img.shields.io/crates/v/espeak-ng.svg)](https://crates.io/crates/espeak-ng)
+[![docs.rs](https://docs.rs/espeak-ng/badge.svg)](https://docs.rs/espeak-ng)
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](https://www.gnu.org/licenses/gpl-3.0.html)
+
 A pure-Rust port of [eSpeak NG](https://github.com/espeak-ng/espeak-ng) text-to-speech,
 built with a test-first, bottom-up approach.
 
@@ -370,3 +374,21 @@ espeak-ng-rs/
 ## Licence
 
 GPL-3.0-or-later — same as eSpeak NG.
+
+---
+
+## Authors
+
+- [Eugene Hauptmann](https://github.com/eugenehp)
+
+---
+
+## Copyright
+
+Copyright © 2026 Eugene Hauptmann
+
+This project is a from-scratch Pure Rust reimplementation and does not copy
+C source from eSpeak NG, but it is licensed under the same terms:
+[GPL-3.0-or-later](https://www.gnu.org/licenses/gpl-3.0.html).
+
+Source: <https://github.com/eugenehp/espeak-ng-rs>

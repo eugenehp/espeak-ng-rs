@@ -4,6 +4,10 @@ version     = "0.1.0"
 edition     = "2021"
 description = "eSpeak NG dictionary data for ti_dict"
 license     = "GPL-3.0-or-later"
+authors     = ["Eugene Hauptmann"]
+repository  = "https://github.com/eugenehp/espeak-ng-rs"
+homepage    = "https://github.com/eugenehp/espeak-ng-rs"
+
 keywords    = ["espeak", "tts", "ti", "dictionary", "data"]
 categories  = ["multimedia::audio", "accessibility"]
 

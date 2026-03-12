@@ -147,9 +147,14 @@ fn ensure_initialized(inner: &mut OracleInner) {
     if inner.initialized {
         return;
     }
+    // Use the bundled/configured data path when available; null defers to the
+    // C library's compiled-in default.  Passing null when the linked library
+    // was built from a different version than the system data leads to
+    // "Invalid instruction" warnings and potential SIGSEGV.
+    let path_cstr = maybe_data_path().map(|p| CString::new(p).unwrap());
     unsafe {
-        // espeak_ng path: uses the installed espeak-ng-data
-        espeak_ng_InitializePath(std::ptr::null());
+        let path_ptr = path_cstr.as_ref().map_or(std::ptr::null(), |s| s.as_ptr());
+        espeak_ng_InitializePath(path_ptr);
         let status = espeak_ng_Initialize(std::ptr::null_mut());
         assert_eq!(status, 0, "espeak_ng_Initialize failed with status {status}");
 
@@ -211,13 +216,19 @@ pub fn text_to_ipa(lang: &str, text: &str) -> String {
     // The legacy `espeak_Initialize` API is needed because
     // `espeak_TextToPhonemes` is only in the legacy API surface.
     // We re-initialize with AUDIO_OUTPUT_SYNCHRONOUS for text-only use.
+    // Keep the CString alive across the entire unsafe block below.
+    let legacy_path_cstr = maybe_data_path().map(|p| CString::new(p).unwrap());
     unsafe {
         // Re-init with synchronous mode (no sound, phoneme-only output).
-        // The sample rate is guaranteed to be 22050 by the espeak-ng design.
+        // Pass the same data path used by espeak_ng_InitializePath so the
+        // legacy API finds data from the same version as the linked library.
+        let legacy_path_ptr = legacy_path_cstr
+            .as_ref()
+            .map_or(std::ptr::null(), |s| s.as_ptr());
         let sr = espeak_Initialize(
             AUDIO_OUTPUT_SYNCHRONOUS,
             0,
-            std::ptr::null(),
+            legacy_path_ptr,
             0,
         );
         assert!(sr > 0, "espeak_Initialize (legacy) failed: sr={sr}");
