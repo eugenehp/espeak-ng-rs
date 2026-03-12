@@ -318,6 +318,7 @@ def main() -> int:
     inter_crate_delay = 10  # seconds
 
     for crate_idx, crate in enumerate(ordered):
+        was_published = False  # Track if we actually published this crate
         if args.execute and args.dry_run:
             # Use `cargo package` for dry-run: it is fully offline and does the
             # same packaging + verification without contacting crates.io.
@@ -358,16 +359,17 @@ def main() -> int:
             if result == 0:
                 # Successfully published
                 published_count += 1
+                was_published = True
             elif result == 1:
-                # Already published; skip gracefully
+                # Already published; skip gracefully (no wait for skipped crates)
                 pass
             else:
                 # Fatal error (result == 2 or other)
                 print(f"fatal error publishing {crate}", file=sys.stderr)
                 return result
 
-        # Wait fixed delay between crates
-        if args.execute and crate_idx < len(ordered) - 1:  # Don't wait after the last crate
+        # Wait fixed delay between crates, but only if we actually published
+        if args.execute and was_published and crate_idx < len(ordered) - 1:
             print(f"Waiting {inter_crate_delay}s before next crate...")
             time.sleep(inter_crate_delay)
 
