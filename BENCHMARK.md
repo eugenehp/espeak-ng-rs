@@ -1,9 +1,9 @@
 # Benchmark Results
 
-Generated: 2026-03-11 01:40 UTC  
-Platform: `Linux 6.12.69-linuxkit aarch64`  
-Rust: `rustc 1.91.1 (ed61e7d7e 2025-11-07) (Alpine Linux Rust 1.91.1-r0)`  
-eSpeak NG: `eSpeak NG text-to-speech: 1.52.0  Data at: /usr/share/espeak-ng-data`
+Generated: 2026-03-12 05:51 UTC  
+Platform: `Darwin 25.3.0 arm64`  
+Rust: `rustc 1.93.1 (01f6ddf75 2026-02-11)`  
+eSpeak NG: `not installed`
 
 > **Reading this file**  
 > Times are wall-clock per operation (lower is better).  
@@ -19,14 +19,14 @@ eSpeak NG: `eSpeak NG text-to-speech: 1.52.0  Data at: /usr/share/espeak-ng-data
 
 | Function | Input           | Mean      | ±Std      |
 | -------- | --------------- | --------- | --------- |
-| rust     |                 | 3.457 ns  | ±0.484 ns |
-| rust     | ISO-10646-UCS-2 | 27.180 ns | ±4.133 ns |
-| rust     | ISO-8859-1      | 22.813 ns | ±0.384 ns |
-| rust     | ISO-8859-15     | 27.506 ns | ±3.722 ns |
-| rust     | KOI8-R          | 22.302 ns | ±4.736 ns |
-| rust     | US-ASCII        | 17.191 ns | ±3.143 ns |
-| rust     | UTF-8           | 18.076 ns | ±0.263 ns |
-| rust     | bogus           | 19.394 ns | ±2.922 ns |
+| rust     |                 | 3.124 ns  | ±0.135 ns |
+| rust     | ISO-10646-UCS-2 | 23.608 ns | ±1.677 ns |
+| rust     | ISO-8859-1      | 17.812 ns | ±3.125 ns |
+| rust     | ISO-8859-15     | 27.805 ns | ±2.998 ns |
+| rust     | KOI8-R          | 26.851 ns | ±5.626 ns |
+| rust     | US-ASCII        | 16.723 ns | ±0.429 ns |
+| rust     | UTF-8           | 20.143 ns | ±1.564 ns |
+| rust     | bogus           | 20.062 ns | ±0.793 ns |
 
 ![encoding/name_lookup violin plot](benches/results/encoding_name_lookup/report/violin.svg)
 
@@ -34,22 +34,22 @@ eSpeak NG: `eSpeak NG text-to-speech: 1.52.0  Data at: /usr/share/espeak-ng-data
 
 | Function           | Input         | Mean       | ±Std        | Throughput  |
 | ------------------ | ------------- | ---------- | ----------- | ----------- |
-| collect_codepoints | ascii_long    | 444.487 ns | ±8.842 ns   | 191.23 MB/s |
-| collect_codepoints | ascii_short   | 145.538 ns | ±2.066 ns   | 75.58 MB/s  |
-| collect_codepoints | cyrillic      | 334.121 ns | ±4.186 ns   | 275.35 MB/s |
-| collect_codepoints | emoji         | 149.451 ns | ±1.995 ns   | 194.04 MB/s |
-| collect_codepoints | japanese      | 182.132 ns | ±2.480 ns   | 312.96 MB/s |
-| collect_codepoints | latin_accents | 276.771 ns | ±5.526 ns   | 158.98 MB/s |
-| collect_codepoints | long_utf8     | 10.124 µs  | ±305.550 ns | 355.59 MB/s |
-| collect_codepoints | mixed         | 178.231 ns | ±2.866 ns   | 224.43 MB/s |
-| decode_to_string   | ascii_long    | 393.295 ns | ±27.359 ns  | 216.12 MB/s |
-| decode_to_string   | ascii_short   | 61.057 ns  | ±1.064 ns   | 180.16 MB/s |
-| decode_to_string   | cyrillic      | 298.896 ns | ±3.985 ns   | 307.80 MB/s |
-| decode_to_string   | emoji         | 129.690 ns | ±1.966 ns   | 223.61 MB/s |
-| decode_to_string   | japanese      | 230.797 ns | ±2.720 ns   | 246.97 MB/s |
-| decode_to_string   | latin_accents | 251.349 ns | ±7.431 ns   | 175.06 MB/s |
-| decode_to_string   | long_utf8     | 9.996 µs   | ±300.659 ns | 360.15 MB/s |
-| decode_to_string   | mixed         | 192.041 ns | ±3.848 ns   | 208.29 MB/s |
+| collect_codepoints | ascii_long    | 441.449 ns | ±20.386 ns  | 192.55 MB/s |
+| collect_codepoints | ascii_short   | 103.326 ns | ±5.545 ns   | 106.46 MB/s |
+| collect_codepoints | cyrillic      | 311.202 ns | ±7.034 ns   | 295.63 MB/s |
+| collect_codepoints | emoji         | 155.045 ns | ±3.533 ns   | 187.04 MB/s |
+| collect_codepoints | japanese      | 165.971 ns | ±3.651 ns   | 343.43 MB/s |
+| collect_codepoints | latin_accents | 250.752 ns | ±5.882 ns   | 175.47 MB/s |
+| collect_codepoints | long_utf8     | 11.835 µs  | ±321.727 ns | 304.18 MB/s |
+| collect_codepoints | mixed         | 193.647 ns | ±10.380 ns  | 206.56 MB/s |
+| decode_to_string   | ascii_long    | 319.153 ns | ±10.252 ns  | 266.33 MB/s |
+| decode_to_string   | ascii_short   | 76.858 ns  | ±5.761 ns   | 143.12 MB/s |
+| decode_to_string   | cyrillic      | 334.990 ns | ±9.596 ns   | 274.63 MB/s |
+| decode_to_string   | emoji         | 133.492 ns | ±6.468 ns   | 217.24 MB/s |
+| decode_to_string   | japanese      | 218.140 ns | ±4.539 ns   | 261.30 MB/s |
+| decode_to_string   | latin_accents | 209.386 ns | ±4.976 ns   | 210.14 MB/s |
+| decode_to_string   | long_utf8     | 10.460 µs  | ±1.420 µs   | 344.18 MB/s |
+| decode_to_string   | mixed         | 159.209 ns | ±6.547 ns   | 251.24 MB/s |
 | rust               | ascii_long    | 308.117 ns | ±4.440 ns   | 275.87 MB/s |
 | rust               | ascii_short   | 69.380 ns  | ±3.395 ns   | 158.55 MB/s |
 | rust               | cyrillic      | 333.824 ns | ±9.683 ns   | 275.59 MB/s |
@@ -72,28 +72,28 @@ eSpeak NG: `eSpeak NG text-to-speech: 1.52.0  Data at: /usr/share/espeak-ng-data
 
 ## latency/first_phoneme
 
-| Function | Input          | Mean      | ±Std        |
-| -------- | -------------- | --------- | ----------- |
-| c_cli    | de/guten       | 6.183 ms  | ±440.782 µs |
-| c_cli    | en/hello       | 5.687 ms  | ±272.014 µs |
-| c_cli    | en/hello_world | 6.115 ms  | ±420.056 µs |
-| c_cli    | en/hi          | 6.414 ms  | ±1.362 ms   |
-| c_cli    | fr/bonjour     | 5.656 ms  | ±338.558 µs |
-| rust     | de/guten       | 14.945 ns | ±0.170 ns   |
-| rust     | en/hello       | 15.100 ns | ±0.144 ns   |
-| rust     | en/hello_world | 14.986 ns | ±0.340 ns   |
-| rust     | en/hi          | 14.909 ns | ±0.272 ns   |
-| rust     | fr/bonjour     | 14.848 ns | ±0.274 ns   |
+| Function | Input          | Mean       | ±Std        |
+| -------- | -------------- | ---------- | ----------- |
+| c_cli    | de/guten       | 5.194 ms   | ±92.448 µs  |
+| c_cli    | en/hello       | 5.893 ms   | ±526.242 µs |
+| c_cli    | en/hello_world | 5.996 ms   | ±459.116 µs |
+| c_cli    | en/hi          | 5.647 ms   | ±504.952 µs |
+| c_cli    | fr/bonjour     | 5.123 ms   | ±112.031 µs |
+| rust     | de/guten       | 621.034 ns | ±4.849 ns   |
+| rust     | en/hello       | 652.699 ns | ±14.505 ns  |
+| rust     | en/hello_world | 658.922 ns | ±6.929 ns   |
+| rust     | en/hi          | 642.768 ns | ±14.030 ns  |
+| rust     | fr/bonjour     | 620.175 ns | ±4.040 ns   |
 
 ![latency/first_phoneme violin plot](benches/results/latency_first_phoneme/report/violin.svg)
 
 ## synthesize/resonator
 
-| Function                | Mean       | ±Std       | Throughput       |
-| ----------------------- | ---------- | ---------- | ---------------- |
-| tick_64_samples         | 174.663 ns | ±20.744 ns | -                |
-| tick_one_second_22050hz | 61.763 µs  | ±4.568 µs  | 357011694 elem/s |
-| tick_single             | 3.654 ns   | ±0.160 ns  | -                |
+| Function                | Mean       | ±Std        | Throughput       |
+| ----------------------- | ---------- | ----------- | ---------------- |
+| tick_64_samples         | 173.228 ns | ±3.052 ns   | -                |
+| tick_one_second_22050hz | 60.343 µs  | ±791.191 ns | 365410037 elem/s |
+| tick_single             | 3.470 ns   | ±0.305 ns   | -                |
 
 ![synthesize/resonator violin plot](benches/results/synthesize_resonator/report/violin.svg)
 
@@ -101,28 +101,28 @@ eSpeak NG: `eSpeak NG text-to-speech: 1.52.0  Data at: /usr/share/espeak-ng-data
 
 | Function | Input        | Mean     | ±Std        | Throughput |
 | -------- | ------------ | -------- | ----------- | ---------- |
-| c        | de/word      | 6.715 ms | ±966.471 µs | 1.34 KB/s  |
-| c        | en/paragraph | 9.304 ms | ±1.159 ms   | 9.89 KB/s  |
-| c        | en/sentence  | 8.171 ms | ±1.629 ms   | 5.39 KB/s  |
-| c        | en/word      | 6.917 ms | ±1.463 ms   | 0.72 KB/s  |
-| c        | es/word      | 6.457 ms | ±1.576 ms   | 0.62 KB/s  |
-| c        | fr/word      | 6.456 ms | ±966.300 µs | 1.08 KB/s  |
-| c        | ru/word      | 9.324 ms | ±1.247 ms   | 1.29 KB/s  |
-| c        | zh/word      | 6.919 ms | ±1.164 ms   | 0.87 KB/s  |
+| c        | de/word      | 5.371 ms | ±289.406 µs | 1.68 KB/s  |
+| c        | en/paragraph | 8.230 ms | ±874.987 µs | 11.18 KB/s |
+| c        | en/sentence  | 6.606 ms | ±441.505 µs | 6.66 KB/s  |
+| c        | en/word      | 5.520 ms | ±199.838 µs | 0.91 KB/s  |
+| c        | es/word      | 5.491 ms | ±292.922 µs | 0.73 KB/s  |
+| c        | fr/word      | 5.418 ms | ±221.564 µs | 1.29 KB/s  |
+| c        | ru/word      | 8.203 ms | ±868.216 µs | 1.46 KB/s  |
+| c        | zh/word      | 6.174 ms | ±340.313 µs | 0.97 KB/s  |
 
 ![text_to_ipa/c_cli violin plot](benches/results/text_to_ipa_c_cli/report/violin.svg)
 ![text_to_ipa/c_cli throughput](benches/results/text_to_ipa_c_cli/report/lines.svg)
 
 ## text_to_ipa/rust
 
-| Function | Input        | Mean      | ±Std      | Throughput  |
-| -------- | ------------ | --------- | --------- | ----------- |
-| rust     | de/word      | 15.039 ns | ±0.730 ns | 598.46 MB/s |
-| rust     | en/paragraph | 16.136 ns | ±0.788 ns | 5.70 GB/s   |
-| rust     | en/sentence  | 15.414 ns | ±0.508 ns | 2.85 GB/s   |
-| rust     | en/word      | 14.992 ns | ±0.535 ns | 333.52 MB/s |
-| rust     | es/word      | 15.028 ns | ±0.228 ns | 266.17 MB/s |
-| rust     | fr/word      | 14.731 ns | ±0.371 ns | 475.18 MB/s |
+| Function | Input        | Mean       | ±Std       | Throughput  |
+| -------- | ------------ | ---------- | ---------- | ----------- |
+| rust     | de/word      | 311.079 µs | ±8.395 µs  | 28.93 KB/s  |
+| rust     | en/paragraph | 305.522 µs | ±28.565 µs | 301.12 KB/s |
+| rust     | en/sentence  | 308.817 µs | ±66.466 µs | 142.48 KB/s |
+| rust     | en/word      | 322.693 µs | ±95.233 µs | 15.49 KB/s  |
+| rust     | es/word      | 312.240 µs | ±5.221 µs  | 12.81 KB/s  |
+| rust     | fr/word      | 312.501 µs | ±18.558 µs | 22.40 KB/s  |
 
 ![text_to_ipa/rust violin plot](benches/results/text_to_ipa_rust/report/violin.svg)
 ![text_to_ipa/rust throughput](benches/results/text_to_ipa_rust/report/lines.svg)
