@@ -7,6 +7,7 @@ import json
 import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 
@@ -109,6 +110,37 @@ def is_already_published_error(output: str) -> bool:
     )
 
 
+def extract_retry_after_timestamp(output: str) -> int | None:
+    """
+    Extract the retry-after timestamp from crates.io 429 error message.
+    Format: "Please try again after Thu, 12 Mar 2026 06:59:09 GMT"
+    Returns: seconds to wait until that time, or None if not found.
+    """
+    import re
+    
+    # Look for the "Please try again after <timestamp>" pattern
+    match = re.search(
+        r"Please try again after\s+([A-Za-z]{3},?\s+\d{1,2}\s+[A-Za-z]{3}\s+\d{4}\s+\d{2}:\d{2}:\d{2}\s+GMT)",
+        output,
+    )
+    if not match:
+        return None
+    
+    timestamp_str = match.group(1)
+    try:
+        # Parse the timestamp: "Thu, 12 Mar 2026 06:59:09 GMT"
+        # or "Thu 12 Mar 2026 06:59:09 GMT" (in case comma is missing)
+        timestamp_str_clean = timestamp_str.replace(",", "")
+        retry_time = datetime.strptime(timestamp_str_clean, "%a %d %b %Y %H:%M:%S %Z")
+        # Get current time
+        now = datetime.utcnow()
+        wait_seconds = int((retry_time - now).total_seconds())
+        # Add a small buffer (5 seconds) to ensure the limit has actually reset
+        return max(wait_seconds + 5, 0)
+    except Exception:
+        return None
+
+
 def publish_with_retry(cmd: list[str], crate: str, backoff_delays: list[int]) -> int:
     """
     Publish a crate with exponential backoff retry on rate limit (429) errors.
@@ -116,10 +148,11 @@ def publish_with_retry(cmd: list[str], crate: str, backoff_delays: list[int]) ->
     """
     full_output = ""
     
-    for attempt, delay in enumerate(backoff_delays, start=1):
+    for attempt in enumerate(backoff_delays, start=1):
+        attempt_num = attempt[0]
         print(f"\n$ {' '.join(cmd)}")
-        if attempt > 1:
-            print(f"(Retry attempt {attempt} after {backoff_delays[attempt-2]}s delay)")
+        if attempt_num > 1:
+            print(f"(Retry attempt {attempt_num})")
         
         completed = run(cmd, check=False)
         full_output = completed.stdout + completed.stderr
@@ -140,13 +173,29 @@ def publish_with_retry(cmd: list[str], crate: str, backoff_delays: list[int]) ->
         
         # Check for rate limit error
         if is_rate_limit_error(full_output):
-            if attempt < len(backoff_delays):
-                wait_time = delay
+            # Try to extract the retry-after timestamp from the error message
+            wait_seconds = extract_retry_after_timestamp(full_output)
+            
+            if wait_seconds is None:
+                # Fallback to exponential backoff if we can't parse the timestamp
+                if attempt_num < len(backoff_delays):
+                    wait_seconds = backoff_delays[attempt_num - 1]
+                else:
+                    # Final attempt exhausted
+                    print(
+                        f"error: Rate limited (429) but no retry-after timestamp found. "
+                        f"Max retries exhausted.",
+                        file=sys.stderr,
+                    )
+                    return 2
+            
+            if attempt_num < len(backoff_delays):
                 print(
-                    f"\nerror: Rate limited (429). Waiting {wait_time}s before retry...",
+                    f"\nerror: Rate limited (429). Waiting {wait_seconds}s "
+                    f"({wait_seconds // 60}m {wait_seconds % 60}s) before retry...",
                     file=sys.stderr,
                 )
-                time.sleep(wait_time)
+                time.sleep(wait_seconds)
                 continue
         
         # Non-rate-limit error or final attempt: fail
@@ -265,9 +314,8 @@ def main() -> int:
     # Get all possible retry delays upfront
     backoff_delays = get_backoff_delays()
     
-    # Track how many crates we've published to apply progressive inter-crate delays
-    published_count = 0
-    inter_crate_delays = [1, 2, 3, 5, 7, 10, 15, 22, 32, 46, 60]  # increasing delays between crates
+    # Fixed delay between crates to respect rate limits
+    inter_crate_delay = 10  # seconds
 
     for crate_idx, crate in enumerate(ordered):
         if args.execute and args.dry_run:
@@ -318,12 +366,10 @@ def main() -> int:
                 print(f"fatal error publishing {crate}", file=sys.stderr)
                 return result
 
-        # Wait progressively longer between each successful publish
+        # Wait fixed delay between crates
         if args.execute and crate_idx < len(ordered) - 1:  # Don't wait after the last crate
-            delay_idx = min(crate_idx, len(inter_crate_delays) - 1)
-            delay = inter_crate_delays[delay_idx]
-            print(f"Waiting {delay}s before next crate...")
-            time.sleep(delay)
+            print(f"Waiting {inter_crate_delay}s before next crate...")
+            time.sleep(inter_crate_delay)
 
     if args.execute:
         if args.dry_run:
