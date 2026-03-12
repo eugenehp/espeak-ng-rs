@@ -31,6 +31,13 @@ cargo publish -p espeak-ng-rs
 
 Use the helper script to publish all workspace crates in order:
 
+In `--execute` mode, the script runs required preflight checks first and
+aborts publishing if any check fails:
+
+- `cargo test`
+- `cargo test --features "c-oracle,bundled-espeak"`
+- `cargo test --features "c-oracle,bundled-espeak" --test oracle_comparison -- --nocapture`
+
 ```bash
 # Preview the publish order and commands only
 python3 scripts/publish_all_crates.py
@@ -46,6 +53,9 @@ python3 scripts/publish_all_crates.py --execute --dry-run
 
 # Local dry-run when working tree is not committed
 python3 scripts/publish_all_crates.py --execute --dry-run --allow-dirty
+
+# Emergency override: skip preflight checks
+python3 scripts/publish_all_crates.py --execute --skip-preflight
 ```
 
 ## Before publishing the main crate

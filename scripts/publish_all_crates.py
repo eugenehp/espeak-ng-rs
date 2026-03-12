@@ -72,6 +72,37 @@ def has_patch_crates_io() -> bool:
     return "[patch.crates-io]" in text
 
 
+def run_streaming(cmd: list[str]) -> int:
+    completed = subprocess.run(cmd, cwd=ROOT, check=False)
+    return completed.returncode
+
+
+def run_preflight_checks() -> int:
+    checks: list[list[str]] = [
+        ["cargo", "test"],
+        ["cargo", "test", "--features", "c-oracle,bundled-espeak"],
+        [
+            "cargo",
+            "test",
+            "--features",
+            "c-oracle,bundled-espeak",
+            "--test",
+            "oracle_comparison",
+            "--",
+            "--nocapture",
+        ],
+    ]
+
+    print("\nPreflight checks (required before publish):")
+    for cmd in checks:
+        print("\n$", " ".join(cmd))
+        code = run_streaming(cmd)
+        if code != 0:
+            print("\nerror: preflight check failed; publish aborted", file=sys.stderr)
+            return code
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Publish all workspace crates in dependency-safe order."
@@ -101,9 +132,19 @@ def main() -> int:
         action="store_true",
         help="Pass --dry-run to cargo publish (ignored unless --execute is set).",
     )
+    parser.add_argument(
+        "--skip-preflight",
+        action="store_true",
+        help="Skip required preflight test checks before publishing.",
+    )
 
     args = parser.parse_args()
     include_main = not args.no_main
+
+    if args.execute and not args.skip_preflight:
+        preflight_code = run_preflight_checks()
+        if preflight_code != 0:
+            return preflight_code
 
     crate_names = workspace_crate_names()
     ordered = ordered_publish_list(crate_names, include_main=include_main)

@@ -258,6 +258,12 @@ python3 scripts/publish_all_crates.py --execute --dry-run --allow-dirty
 python3 scripts/publish_all_crates.py --execute
 ```
 
+`scripts/publish_all_crates.py --execute` enforces these preflight checks
+before any crate is published and aborts on first failure.
+
+The same gates are enforced in CI on push/PR by
+`.github/workflows/ci.yml`.
+
 Use [PUBLISHING.md](PUBLISHING.md) for full publication details.
 
 ---
