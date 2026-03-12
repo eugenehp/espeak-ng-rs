@@ -882,14 +882,21 @@ fn verify_hashtab_ordering() {
 
 #[test]
 fn check_en_dict_md5() {
+    let dir = data_dir();
+    let en_path = dir.join("en_dict");
+    if !en_path.exists() {
+        println!("[SKIP] en_dict not found at {}", en_path.display());
+        return;
+    }
+
     // Check if we're reading the right file
-    let data = std::fs::read("/usr/share/espeak-ng-data/en_dict").unwrap();
+    let data = std::fs::read(&en_path).unwrap();
     println!("File size: {} bytes", data.len());
     println!("First 8 bytes: {:?}", &data[..8]);
     // Check the hash of "hello" using TransposeAlphabet and then look for it
     use espeak_ng::dictionary::*;
     use espeak_ng::dictionary::lookup::*;
-    let dict = Dictionary::load("en", std::path::Path::new("/usr/share/espeak-ng-data")).unwrap();
+    let dict = Dictionary::load("en", &dir).unwrap();
     let result = lookup(&dict, "hello", &LookupCtx::default());
     println!("hello lookup: {:?}", result.map(|r| r.phonemes));
 }

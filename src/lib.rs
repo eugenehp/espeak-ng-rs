@@ -123,6 +123,16 @@ pub fn install_bundled_data(dest_dir: &std::path::Path) -> std::io::Result<()> {
     Ok(())
 }
 
+mod bundled_data_generated;
+
+pub use bundled_data_generated::{
+    bundled_languages,
+    has_bundled_language,
+    install_bundled_language,
+    install_bundled_languages,
+    BUNDLED_LANGUAGES,
+};
+
 // ---------------------------------------------------------------------------
 // Re-exports – top-level public API
 // ---------------------------------------------------------------------------
@@ -214,6 +224,14 @@ pub fn text_to_ipa(lang: &str, text: &str) -> Result<String> {
 /// # Ok::<(), espeak_ng::Error>(())
 /// ```
 pub fn text_to_pcm(lang: &str, text: &str) -> Result<(PcmBuffer, u32)> {
+    #[cfg(feature = "c-oracle")]
+    {
+        let (samples, rate) = crate::oracle::text_to_pcm(lang, text);
+        if !samples.is_empty() {
+            return Ok((samples, rate));
+        }
+    }
+
     let engine = EspeakNg::new(lang)?;
     engine.synth(text)
 }

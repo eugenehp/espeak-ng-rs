@@ -1,21 +1,21 @@
-//! Demonstrates the `bundled-data` feature: extract embedded data to a temp
-//! dir, then use it without any system-installed eSpeak NG package.
+//! Demonstrates bundled data features: either the full `bundled-data` feature
+//! or one or more selective `bundled-data-<lang>` features.
 //!
 //! Run with:
 //!   cargo run --example bundled_data_demo --features bundled-data
+//!   cargo run --example bundled_data_demo --features bundled-data-en,bundled-data-de
 
 fn main() -> std::io::Result<()> {
-    #[cfg(not(feature = "bundled-data"))]
-    {
-        eprintln!("This example requires --features bundled-data");
-        eprintln!("Run: cargo run --example bundled_data_demo --features bundled-data");
+    if !cfg!(feature = "bundled-data") && espeak_ng::bundled_languages().is_empty() {
+        eprintln!("This example requires bundled data features");
+        eprintln!("Run one of:");
+        eprintln!("  cargo run --example bundled_data_demo --features bundled-data");
+        eprintln!("  cargo run --example bundled_data_demo --features bundled-data-en,bundled-data-de");
         return Ok(());
     }
 
     #[cfg(feature = "bundled-data")]
     {
-        use std::path::PathBuf;
-
         // Create a temporary directory for the data
         let data_dir = std::env::temp_dir().join("espeak-ng-bundled-demo");
         std::fs::create_dir_all(&data_dir)?;
@@ -48,6 +48,41 @@ fn main() -> std::io::Result<()> {
         println!("\nSynthesis: {} samples at {} Hz", samples.len(), rate);
 
         // Clean up
+        std::fs::remove_dir_all(&data_dir)?;
+        println!("\nTemp dir cleaned up. Done.");
+        Ok(())
+    }
+
+    #[cfg(not(feature = "bundled-data"))]
+    {
+        let data_dir = std::env::temp_dir().join("espeak-ng-bundled-demo");
+        std::fs::create_dir_all(&data_dir)?;
+
+        let selected = espeak_ng::bundled_languages();
+        println!("Installing selective bundled data {:?} -> {}", selected, data_dir.display());
+        espeak_ng::install_bundled_languages(&data_dir, selected)?;
+        println!("  {} files installed", count_files(&data_dir));
+
+        let test_cases = [
+            ("en", "hello world"),
+            ("de", "guten Tag"),
+            ("fr", "bonjour"),
+            ("es", "hola mundo"),
+            ("uk", "privit"),
+            ("ru", "privet"),
+        ];
+
+        println!("\nText -> IPA (using selective bundled data):");
+        for (lang, text) in test_cases {
+            if !espeak_ng::has_bundled_language(lang) {
+                continue;
+            }
+            let engine = espeak_ng::EspeakNg::with_data_dir(lang, &data_dir)
+                .expect("failed to init engine");
+            let ipa = engine.text_to_phonemes(text).unwrap_or_default();
+            println!("  [{lang}] {text:20} -> {ipa}");
+        }
+
         std::fs::remove_dir_all(&data_dir)?;
         println!("\nTemp dir cleaned up. Done.");
         Ok(())

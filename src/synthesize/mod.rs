@@ -624,11 +624,9 @@ fn synthesize_phoneme_info(
                 // Compute raw sum (frames 0..n-1, excluding last per LookupSpect)
                 let raw_sum: usize = seq.frames[..n-1].iter()
                     .map(|f| f.length as usize).sum::<usize>().max(1);
-                // Each frame's new length (in ms, proportional)
-                // Final output duration = sum(frame_ms * 22050/1000 * length_mod/256)
-                // = raw_sum_ms * length_mod/256 scaled
-                // We want total = target_samples → scale factor = target_samples * 256 / (raw_sum * 22050/1000 * length_mod/256)
-                let scaled_sum = (raw_sum as f64 * 22050.0 / 1000.0 * speed_factor) as usize;
+                // Frame length is in STEPSIZE units (64 samples at 22050 Hz), not ms.
+                // Estimate current total samples for frames[0..n-1] before rescaling.
+                let scaled_sum = (raw_sum as f64 * 64.0 * speed_factor) as usize;
                 if scaled_sum > 0 {
                     let scale256 = target_samples * 256 / scaled_sum.max(1);
                     for fr in &mut seq.frames[..n-1] {

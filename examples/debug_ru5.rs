@@ -1,5 +1,5 @@
 use espeak_ng::dictionary::{
-    Dictionary, N_HASH_DICT,
+    Dictionary,
     lookup::hash_word,
     transpose::{transpose_alphabet, TransposeConfig}
 };

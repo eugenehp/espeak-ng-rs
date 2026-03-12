@@ -5,7 +5,7 @@
 members = [
     ".",
     "data-crates/espeak-ng-data-phonemes",
-    "data-crates/espeak-ng-data-dict-ru",
+    "data-crates/espeak-ng-data-dict-*",
     "data-crates/espeak-ng-data-dicts",
 ]
 resolver = "2"
@@ -16,8 +16,9 @@ resolver = "2"
 # Publish order:
 #   1. cargo publish -p espeak-ng-data-phonemes
 #   2. cargo publish -p espeak-ng-data-dict-ru
-#   3. cargo publish -p espeak-ng-data-dicts
-#   4. cargo publish -p espeak-ng-rs
+#   3. cargo publish -p espeak-ng-data-dict-<lang>   # optional per-language crates
+#   4. cargo publish -p espeak-ng-data-dicts
+#   5. cargo publish -p espeak-ng-rs
 [patch.crates-io]
 espeak-ng-data-phonemes = { path = "data-crates/espeak-ng-data-phonemes" }
 espeak-ng-data-dict-ru  = { path = "data-crates/espeak-ng-data-dict-ru" }
@@ -75,6 +76,123 @@ bundled-data = [
     "dep:espeak-ng-data-dicts",
 ]
 
+# BEGIN generated per-language features
+bundled-data-af = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-af"]
+bundled-data-am = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-am"]
+bundled-data-an = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-an"]
+bundled-data-ar = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-ar"]
+bundled-data-as = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-as"]
+bundled-data-az = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-az"]
+bundled-data-ba = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-ba"]
+bundled-data-be = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-be"]
+bundled-data-bg = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-bg"]
+bundled-data-bn = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-bn"]
+bundled-data-bpy = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-bpy"]
+bundled-data-bs = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-bs"]
+bundled-data-ca = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-ca"]
+bundled-data-chr = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-chr"]
+bundled-data-cmn = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-cmn"]
+bundled-data-cs = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-cs"]
+bundled-data-cv = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-cv"]
+bundled-data-cy = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-cy"]
+bundled-data-da = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-da"]
+bundled-data-de = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-de"]
+bundled-data-el = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-el"]
+bundled-data-en = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-en"]
+bundled-data-eo = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-eo"]
+bundled-data-es = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-es"]
+bundled-data-et = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-et"]
+bundled-data-eu = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-eu"]
+bundled-data-fa = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-fa"]
+bundled-data-fi = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-fi"]
+bundled-data-fr = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-fr"]
+bundled-data-ga = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-ga"]
+bundled-data-gd = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-gd"]
+bundled-data-gn = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-gn"]
+bundled-data-grc = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-grc"]
+bundled-data-gu = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-gu"]
+bundled-data-hak = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-hak"]
+bundled-data-haw = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-haw"]
+bundled-data-he = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-he"]
+bundled-data-hi = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-hi"]
+bundled-data-hr = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-hr"]
+bundled-data-ht = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-ht"]
+bundled-data-hu = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-hu"]
+bundled-data-hy = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-hy"]
+bundled-data-ia = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-ia"]
+bundled-data-id = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-id"]
+bundled-data-io = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-io"]
+bundled-data-is = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-is"]
+bundled-data-it = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-it"]
+bundled-data-ja = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-ja"]
+bundled-data-jbo = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-jbo"]
+bundled-data-ka = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-ka"]
+bundled-data-kk = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-kk"]
+bundled-data-kl = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-kl"]
+bundled-data-kn = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-kn"]
+bundled-data-ko = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-ko"]
+bundled-data-kok = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-kok"]
+bundled-data-ku = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-ku"]
+bundled-data-ky = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-ky"]
+bundled-data-la = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-la"]
+bundled-data-lb = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-lb"]
+bundled-data-lfn = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-lfn"]
+bundled-data-lt = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-lt"]
+bundled-data-lv = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-lv"]
+bundled-data-mi = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-mi"]
+bundled-data-mk = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-mk"]
+bundled-data-ml = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-ml"]
+bundled-data-mr = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-mr"]
+bundled-data-ms = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-ms"]
+bundled-data-mt = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-mt"]
+bundled-data-mto = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-mto"]
+bundled-data-my = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-my"]
+bundled-data-nci = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-nci"]
+bundled-data-ne = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-ne"]
+bundled-data-nl = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-nl"]
+bundled-data-no = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-no"]
+bundled-data-nog = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-nog"]
+bundled-data-om = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-om"]
+bundled-data-or = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-or"]
+bundled-data-pa = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-pa"]
+bundled-data-pap = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-pap"]
+bundled-data-piqd = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-piqd"]
+bundled-data-pl = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-pl"]
+bundled-data-pt = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-pt"]
+bundled-data-py = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-py"]
+bundled-data-qdb = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-qdb"]
+bundled-data-qu = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-qu"]
+bundled-data-quc = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-quc"]
+bundled-data-qya = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-qya"]
+bundled-data-ro = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-ro"]
+bundled-data-ru = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-ru"]
+bundled-data-sd = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-sd"]
+bundled-data-shn = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-shn"]
+bundled-data-si = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-si"]
+bundled-data-sjn = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-sjn"]
+bundled-data-sk = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-sk"]
+bundled-data-sl = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-sl"]
+bundled-data-smj = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-smj"]
+bundled-data-sq = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-sq"]
+bundled-data-sr = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-sr"]
+bundled-data-sv = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-sv"]
+bundled-data-sw = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-sw"]
+bundled-data-ta = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-ta"]
+bundled-data-te = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-te"]
+bundled-data-th = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-th"]
+bundled-data-ti = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-ti"]
+bundled-data-tk = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-tk"]
+bundled-data-tn = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-tn"]
+bundled-data-tr = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-tr"]
+bundled-data-tt = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-tt"]
+bundled-data-ug = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-ug"]
+bundled-data-uk = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-uk"]
+bundled-data-ur = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-ur"]
+bundled-data-uz = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-uz"]
+bundled-data-vi = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-vi"]
+bundled-data-yue = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-yue"]
+# END generated per-language features
+
 # ---------------------------------------------------------------------------
 # Dependencies
 # ---------------------------------------------------------------------------
@@ -86,6 +204,122 @@ libc      = { version = "0.2", optional = true }
 espeak-ng-data-phonemes = { version = "0.1.0", path = "data-crates/espeak-ng-data-phonemes", optional = true }
 espeak-ng-data-dict-ru  = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-ru",  optional = true }
 espeak-ng-data-dicts    = { version = "0.1.0", path = "data-crates/espeak-ng-data-dicts",    optional = true }
+
+# BEGIN generated per-language dependencies
+espeak-ng-data-dict-af = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-af", optional = true }
+espeak-ng-data-dict-am = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-am", optional = true }
+espeak-ng-data-dict-an = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-an", optional = true }
+espeak-ng-data-dict-ar = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-ar", optional = true }
+espeak-ng-data-dict-as = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-as", optional = true }
+espeak-ng-data-dict-az = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-az", optional = true }
+espeak-ng-data-dict-ba = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-ba", optional = true }
+espeak-ng-data-dict-be = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-be", optional = true }
+espeak-ng-data-dict-bg = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-bg", optional = true }
+espeak-ng-data-dict-bn = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-bn", optional = true }
+espeak-ng-data-dict-bpy = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-bpy", optional = true }
+espeak-ng-data-dict-bs = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-bs", optional = true }
+espeak-ng-data-dict-ca = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-ca", optional = true }
+espeak-ng-data-dict-chr = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-chr", optional = true }
+espeak-ng-data-dict-cmn = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-cmn", optional = true }
+espeak-ng-data-dict-cs = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-cs", optional = true }
+espeak-ng-data-dict-cv = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-cv", optional = true }
+espeak-ng-data-dict-cy = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-cy", optional = true }
+espeak-ng-data-dict-da = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-da", optional = true }
+espeak-ng-data-dict-de = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-de", optional = true }
+espeak-ng-data-dict-el = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-el", optional = true }
+espeak-ng-data-dict-en = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-en", optional = true }
+espeak-ng-data-dict-eo = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-eo", optional = true }
+espeak-ng-data-dict-es = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-es", optional = true }
+espeak-ng-data-dict-et = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-et", optional = true }
+espeak-ng-data-dict-eu = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-eu", optional = true }
+espeak-ng-data-dict-fa = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-fa", optional = true }
+espeak-ng-data-dict-fi = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-fi", optional = true }
+espeak-ng-data-dict-fr = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-fr", optional = true }
+espeak-ng-data-dict-ga = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-ga", optional = true }
+espeak-ng-data-dict-gd = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-gd", optional = true }
+espeak-ng-data-dict-gn = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-gn", optional = true }
+espeak-ng-data-dict-grc = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-grc", optional = true }
+espeak-ng-data-dict-gu = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-gu", optional = true }
+espeak-ng-data-dict-hak = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-hak", optional = true }
+espeak-ng-data-dict-haw = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-haw", optional = true }
+espeak-ng-data-dict-he = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-he", optional = true }
+espeak-ng-data-dict-hi = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-hi", optional = true }
+espeak-ng-data-dict-hr = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-hr", optional = true }
+espeak-ng-data-dict-ht = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-ht", optional = true }
+espeak-ng-data-dict-hu = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-hu", optional = true }
+espeak-ng-data-dict-hy = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-hy", optional = true }
+espeak-ng-data-dict-ia = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-ia", optional = true }
+espeak-ng-data-dict-id = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-id", optional = true }
+espeak-ng-data-dict-io = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-io", optional = true }
+espeak-ng-data-dict-is = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-is", optional = true }
+espeak-ng-data-dict-it = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-it", optional = true }
+espeak-ng-data-dict-ja = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-ja", optional = true }
+espeak-ng-data-dict-jbo = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-jbo", optional = true }
+espeak-ng-data-dict-ka = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-ka", optional = true }
+espeak-ng-data-dict-kk = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-kk", optional = true }
+espeak-ng-data-dict-kl = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-kl", optional = true }
+espeak-ng-data-dict-kn = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-kn", optional = true }
+espeak-ng-data-dict-ko = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-ko", optional = true }
+espeak-ng-data-dict-kok = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-kok", optional = true }
+espeak-ng-data-dict-ku = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-ku", optional = true }
+espeak-ng-data-dict-ky = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-ky", optional = true }
+espeak-ng-data-dict-la = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-la", optional = true }
+espeak-ng-data-dict-lb = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-lb", optional = true }
+espeak-ng-data-dict-lfn = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-lfn", optional = true }
+espeak-ng-data-dict-lt = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-lt", optional = true }
+espeak-ng-data-dict-lv = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-lv", optional = true }
+espeak-ng-data-dict-mi = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-mi", optional = true }
+espeak-ng-data-dict-mk = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-mk", optional = true }
+espeak-ng-data-dict-ml = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-ml", optional = true }
+espeak-ng-data-dict-mr = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-mr", optional = true }
+espeak-ng-data-dict-ms = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-ms", optional = true }
+espeak-ng-data-dict-mt = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-mt", optional = true }
+espeak-ng-data-dict-mto = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-mto", optional = true }
+espeak-ng-data-dict-my = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-my", optional = true }
+espeak-ng-data-dict-nci = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-nci", optional = true }
+espeak-ng-data-dict-ne = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-ne", optional = true }
+espeak-ng-data-dict-nl = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-nl", optional = true }
+espeak-ng-data-dict-no = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-no", optional = true }
+espeak-ng-data-dict-nog = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-nog", optional = true }
+espeak-ng-data-dict-om = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-om", optional = true }
+espeak-ng-data-dict-or = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-or", optional = true }
+espeak-ng-data-dict-pa = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-pa", optional = true }
+espeak-ng-data-dict-pap = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-pap", optional = true }
+espeak-ng-data-dict-piqd = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-piqd", optional = true }
+espeak-ng-data-dict-pl = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-pl", optional = true }
+espeak-ng-data-dict-pt = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-pt", optional = true }
+espeak-ng-data-dict-py = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-py", optional = true }
+espeak-ng-data-dict-qdb = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-qdb", optional = true }
+espeak-ng-data-dict-qu = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-qu", optional = true }
+espeak-ng-data-dict-quc = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-quc", optional = true }
+espeak-ng-data-dict-qya = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-qya", optional = true }
+espeak-ng-data-dict-ro = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-ro", optional = true }
+espeak-ng-data-dict-sd = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-sd", optional = true }
+espeak-ng-data-dict-shn = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-shn", optional = true }
+espeak-ng-data-dict-si = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-si", optional = true }
+espeak-ng-data-dict-sjn = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-sjn", optional = true }
+espeak-ng-data-dict-sk = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-sk", optional = true }
+espeak-ng-data-dict-sl = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-sl", optional = true }
+espeak-ng-data-dict-smj = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-smj", optional = true }
+espeak-ng-data-dict-sq = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-sq", optional = true }
+espeak-ng-data-dict-sr = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-sr", optional = true }
+espeak-ng-data-dict-sv = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-sv", optional = true }
+espeak-ng-data-dict-sw = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-sw", optional = true }
+espeak-ng-data-dict-ta = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-ta", optional = true }
+espeak-ng-data-dict-te = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-te", optional = true }
+espeak-ng-data-dict-th = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-th", optional = true }
+espeak-ng-data-dict-ti = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-ti", optional = true }
+espeak-ng-data-dict-tk = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-tk", optional = true }
+espeak-ng-data-dict-tn = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-tn", optional = true }
+espeak-ng-data-dict-tr = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-tr", optional = true }
+espeak-ng-data-dict-tt = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-tt", optional = true }
+espeak-ng-data-dict-ug = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-ug", optional = true }
+espeak-ng-data-dict-uk = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-uk", optional = true }
+espeak-ng-data-dict-ur = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-ur", optional = true }
+espeak-ng-data-dict-uz = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-uz", optional = true }
+espeak-ng-data-dict-vi = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-vi", optional = true }
+espeak-ng-data-dict-yue = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-yue", optional = true }
+# END generated per-language dependencies
 
 # ---------------------------------------------------------------------------
 # Dev / benchmark dependencies

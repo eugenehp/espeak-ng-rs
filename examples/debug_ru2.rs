@@ -1,4 +1,4 @@
-use espeak_ng::translate::{Translator, word_to_phonemes, LangOptions};
+use espeak_ng::translate::Translator;
 
 fn main() {
     use espeak_ng::EspeakNg;
@@ -7,12 +7,12 @@ fn main() {
         Err(e) => println!("Engine load FAILED: {e}"),
     }
 
-    match Translator::new("ru") {
+    match Translator::new_default("ru") {
         Ok(t) => {
-            println!("Translator OK, lang={}", t.lang_name());
+            println!("Translator OK");
             // Try to translate the word
-            let phonemes = t.text_to_phonemes("привет");
-            println!("text_to_phonemes: {:?}", phonemes);
+            let ipa = t.text_to_ipa("привет");
+            println!("text_to_ipa: {:?}", ipa);
         }
         Err(e) => println!("Translator FAILED: {e}"),
     }

@@ -4,6 +4,27 @@
 
 use std::process::Command;
 
+fn espeak_bin_path() -> String {
+    std::env::var("ESPEAK_NG_BIN")
+        .ok()
+        .or_else(|| option_env!("ESPEAK_NG_BIN").map(str::to_owned))
+        .unwrap_or_else(|| "espeak-ng".to_string())
+}
+
+fn maybe_data_path() -> Option<String> {
+    std::env::var("ESPEAK_NG_DATA")
+        .ok()
+        .or_else(|| option_env!("ESPEAK_NG_DATA").map(str::to_owned))
+}
+
+fn espeak_cmd() -> Command {
+    let mut cmd = Command::new(espeak_bin_path());
+    if let Some(data) = maybe_data_path() {
+        cmd.env("ESPEAK_DATA_PATH", data);
+    }
+    cmd
+}
+
 // ---------------------------------------------------------------------------
 // Data directory helpers
 // ---------------------------------------------------------------------------
@@ -30,7 +51,7 @@ pub fn data_available() -> bool {
 /// Returns `true` if the `espeak-ng` binary is reachable on PATH.
 #[allow(dead_code)]
 pub fn espeak_available() -> bool {
-    Command::new("espeak-ng")
+    espeak_cmd()
         .arg("--version")
         .output()
         .map(|o| o.status.success())
@@ -47,7 +68,7 @@ pub fn espeak_available() -> bool {
 /// This is the most conservative oracle: no FFI, just the installed binary.
 #[allow(dead_code)]
 pub fn try_espeak_ipa(lang: &str, text: &str) -> Option<String> {
-    let output = Command::new("espeak-ng")
+    let output = espeak_cmd()
         .args(["-v", lang, "-q", "--ipa", "--", text])
         .output()
         .ok()?;
@@ -81,7 +102,7 @@ pub fn espeak_ipa(lang: &str, text: &str) -> String {
 /// or `None` if the binary is not available.
 #[allow(dead_code)]
 pub fn try_espeak_phonemes(lang: &str, text: &str) -> Option<String> {
-    let output = Command::new("espeak-ng")
+    let output = espeak_cmd()
         .args(["-v", lang, "-q", "-x", "--", text])
         .output()
         .ok()?;
@@ -118,7 +139,7 @@ pub fn try_espeak_wav(lang: &str, text: &str) -> Option<Vec<u8>> {
         n,
     ));
 
-    let status = Command::new("espeak-ng")
+    let status = espeak_cmd()
         .args(["-v", lang, "-w", tmpfile.to_str().unwrap(), "--", text])
         .status()
         .ok()?;

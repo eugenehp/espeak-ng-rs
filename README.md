@@ -188,6 +188,10 @@ The bundle contains:
 - **200 voice definition files** (`voices/`) — includes asia/ps, ps voices
 - **Binary phoneme data** (`phondata`, `phonindex`, `phontab`, `intonations`)
 
+For selective embedding, the repository also contains per-language dictionary
+crates under `data-crates/espeak-ng-data-dict-<lang>` in addition to the
+aggregate `espeak-ng-data-dicts` crate.
+
 ```bash
 # Use bundled data explicitly
 ESPEAK_DATA_PATH=/path/to/espeak-ng-rs/espeak-ng-data cargo test
@@ -200,16 +204,61 @@ ESPEAK_DATA_PATH=/path/to/espeak-ng-rs/espeak-ng-data cargo test
 | Feature           | What it does                                                                 |
 |-------------------|------------------------------------------------------------------------------|
 | `c-oracle`        | Links `libespeak-ng` via FFI; enables the `oracle` module for comparison tests and benchmarks. Requires `libespeak-ng` to be installed (`pkg-config: espeak-ng`). |
+| `bundled-data`    | Embeds the full eSpeak NG dataset via the aggregate data crates and enables `install_bundled_data()`. |
+| `bundled-data-<lang>` | Embeds phoneme data plus a single language dictionary crate and enables selective installers such as `install_bundled_language()`. |
 | `bundled-espeak`  | Downloads eSpeak NG 1.52.0 from GitHub, builds it with CMake, and bakes the binary/data paths into the benchmarks. Requires `cmake`, a C compiler, `curl`/`wget`, `tar`. |
 
 ```bash
 # FFI oracle
 cargo test --features c-oracle
 
+# Full embedded data
+cargo test --features bundled-data
+
+# Selective embedded data
+cargo test --features bundled-data-en,bundled-data-uk
+
+# Selective bundled-data demo
+cargo run --example bundled_data_selective_demo --features bundled-data-en,bundled-data-uk
+
 # Bundled build (no system install needed)
 cargo bench --features bundled-espeak
 cargo bench --features bundled-espeak,c-oracle   # both
 ```
+
+Selective bundled-data helpers exposed by the main crate:
+- `espeak_ng::bundled_languages()`
+- `espeak_ng::has_bundled_language("uk")`
+- `espeak_ng::install_bundled_language(&data_dir, "uk")`
+- `espeak_ng::install_bundled_languages(&data_dir, &["en", "uk"])`
+
+---
+
+## Publishing checklist
+
+Before anything is published, make sure tests are valid and passing.
+
+```bash
+# 1) Baseline test suite
+cargo test
+
+# 2) Oracle + bundled-espeak path
+cargo test --features "c-oracle,bundled-espeak"
+
+# 3) Optional selective bundled-data checks
+cargo test --test bundled_data_selective --features bundled-data-en,bundled-data-de
+
+# 4) Preview publish order/commands
+python3 scripts/publish_all_crates.py
+
+# 5) Dry-run publish checks (local changes allowed)
+python3 scripts/publish_all_crates.py --execute --dry-run --allow-dirty
+
+# 6) Actual publish (when ready)
+python3 scripts/publish_all_crates.py --execute
+```
+
+Use [PUBLISHING.md](PUBLISHING.md) for full publication details.
 
 ---
 

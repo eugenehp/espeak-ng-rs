@@ -228,7 +228,6 @@ impl PhonemeData {
 
         // STRESS constants (from synthesize.h)
         const STRESS_IS_DIMINISHED:   u8 = 0;
-        const STRESS_IS_NOT_STRESSED: u8 = 2;
         const STRESS_IS_PRIMARY:      u8 = 4;
 
         // condition_level[condition] table from StressCondition()
@@ -257,7 +256,6 @@ impl PhonemeData {
             let w = u16::from_le_bytes([pi[off], pi[off + 1]]);
             let instn_type = w >> 12;
             let instn2 = ((w >> 8) & 0xf) as u8;
-            let data_lo5 = (w & 0x1f) as u8;  // lower 5 bits for condition data
             let data_u8 = (w & 0xff) as u8;   // lower 8 bits for phoneme code / jump offset
 
             if instn_type == 1 && instn2 < 8 {
@@ -331,7 +329,6 @@ impl PhonemeData {
             } else if instn_type == 6 {
                 // Unconditional jump (instn2>>1 == 0 means case 0: prog += data-1)
                 if (instn2 >> 1) == 0 {
-                    let jump = data_lo5 as usize; // jump by data-1 (from InterpretPhoneme case 0)
                     // Actually prog += (instn & 0xff) - 1, so jump = data_u8 - 1
                     let jump_by = (data_u8 as usize).saturating_sub(1);
                     i += 1 + jump_by;

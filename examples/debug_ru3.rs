@@ -1,4 +1,3 @@
-use espeak_ng::translate::{Translator, tokenize};
 use espeak_ng::dictionary::Dictionary;
 use std::path::PathBuf;
 

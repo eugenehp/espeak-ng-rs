@@ -1,0 +1,14 @@
+[package]
+name        = "espeak-ng-data-dict-cv"
+version     = "0.1.0"
+edition     = "2021"
+description = "eSpeak NG dictionary data for cv_dict"
+license     = "GPL-3.0-or-later"
+keywords    = ["espeak", "tts", "cv", "dictionary", "data"]
+categories  = ["multimedia::audio", "accessibility"]
+
+include = [
+    "build.rs",
+    "src/**",
+    "data/cv_dict",
+]

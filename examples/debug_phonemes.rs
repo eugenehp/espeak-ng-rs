@@ -2,11 +2,10 @@
 use std::path::Path;
 use espeak_ng::phoneme::PhonemeData;
 use espeak_ng::translate::Translator;
-use espeak_ng::synthesize::{bytecode, phondata::SpectSeq};
+use espeak_ng::synthesize::bytecode;
 
 fn main() {
     let data_path = Path::new("/usr/share/espeak-ng-data");
-    let phondata_bytes = std::fs::read(data_path.join("phondata")).unwrap();
     let phonindex_bytes = std::fs::read(data_path.join("phonindex")).unwrap();
     let mut phdata = PhonemeData::load(data_path).unwrap();
     phdata.select_table_by_name("en").unwrap();

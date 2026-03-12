@@ -179,7 +179,459 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
 
 [[package]]
+name = "espeak-ng-data-dict-af"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-am"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-an"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-ar"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-as"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-az"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-ba"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-be"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-bg"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-bn"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-bpy"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-bs"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-ca"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-chr"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-cmn"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-cs"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-cv"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-cy"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-da"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-de"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-el"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-en"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-eo"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-es"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-et"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-eu"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-fa"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-fi"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-fr"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-ga"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-gd"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-gn"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-grc"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-gu"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-hak"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-haw"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-he"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-hi"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-hr"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-ht"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-hu"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-hy"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-ia"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-id"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-io"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-is"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-it"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-ja"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-jbo"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-ka"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-kk"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-kl"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-kn"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-ko"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-kok"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-ku"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-ky"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-la"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-lb"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-lfn"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-lt"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-lv"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-mi"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-mk"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-ml"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-mr"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-ms"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-mt"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-mto"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-my"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-nci"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-ne"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-nl"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-no"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-nog"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-om"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-or"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-pa"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-pap"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-piqd"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-pl"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-pt"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-py"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-qdb"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-qu"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-quc"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-qya"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-ro"
+version = "0.1.0"
+
+[[package]]
 name = "espeak-ng-data-dict-ru"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-sd"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-shn"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-si"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-sjn"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-sk"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-sl"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-smj"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-sq"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-sr"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-sv"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-sw"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-ta"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-te"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-th"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-ti"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-tk"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-tn"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-tr"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-tt"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-ug"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-uk"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-ur"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-uz"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-vi"
+version = "0.1.0"
+
+[[package]]
+name = "espeak-ng-data-dict-yue"
 version = "0.1.0"
 
 [[package]]
@@ -196,7 +648,120 @@ version = "0.1.0"
 dependencies = [
  "bitflags",
  "criterion",
+ "espeak-ng-data-dict-af",
+ "espeak-ng-data-dict-am",
+ "espeak-ng-data-dict-an",
+ "espeak-ng-data-dict-ar",
+ "espeak-ng-data-dict-as",
+ "espeak-ng-data-dict-az",
+ "espeak-ng-data-dict-ba",
+ "espeak-ng-data-dict-be",
+ "espeak-ng-data-dict-bg",
+ "espeak-ng-data-dict-bn",
+ "espeak-ng-data-dict-bpy",
+ "espeak-ng-data-dict-bs",
+ "espeak-ng-data-dict-ca",
+ "espeak-ng-data-dict-chr",
+ "espeak-ng-data-dict-cmn",
+ "espeak-ng-data-dict-cs",
+ "espeak-ng-data-dict-cv",
+ "espeak-ng-data-dict-cy",
+ "espeak-ng-data-dict-da",
+ "espeak-ng-data-dict-de",
+ "espeak-ng-data-dict-el",
+ "espeak-ng-data-dict-en",
+ "espeak-ng-data-dict-eo",
+ "espeak-ng-data-dict-es",
+ "espeak-ng-data-dict-et",
+ "espeak-ng-data-dict-eu",
+ "espeak-ng-data-dict-fa",
+ "espeak-ng-data-dict-fi",
+ "espeak-ng-data-dict-fr",
+ "espeak-ng-data-dict-ga",
+ "espeak-ng-data-dict-gd",
+ "espeak-ng-data-dict-gn",
+ "espeak-ng-data-dict-grc",
+ "espeak-ng-data-dict-gu",
+ "espeak-ng-data-dict-hak",
+ "espeak-ng-data-dict-haw",
+ "espeak-ng-data-dict-he",
+ "espeak-ng-data-dict-hi",
+ "espeak-ng-data-dict-hr",
+ "espeak-ng-data-dict-ht",
+ "espeak-ng-data-dict-hu",
+ "espeak-ng-data-dict-hy",
+ "espeak-ng-data-dict-ia",
+ "espeak-ng-data-dict-id",
+ "espeak-ng-data-dict-io",
+ "espeak-ng-data-dict-is",
+ "espeak-ng-data-dict-it",
+ "espeak-ng-data-dict-ja",
+ "espeak-ng-data-dict-jbo",
+ "espeak-ng-data-dict-ka",
+ "espeak-ng-data-dict-kk",
+ "espeak-ng-data-dict-kl",
+ "espeak-ng-data-dict-kn",
+ "espeak-ng-data-dict-ko",
+ "espeak-ng-data-dict-kok",
+ "espeak-ng-data-dict-ku",
+ "espeak-ng-data-dict-ky",
+ "espeak-ng-data-dict-la",
+ "espeak-ng-data-dict-lb",
+ "espeak-ng-data-dict-lfn",
+ "espeak-ng-data-dict-lt",
+ "espeak-ng-data-dict-lv",
+ "espeak-ng-data-dict-mi",
+ "espeak-ng-data-dict-mk",
+ "espeak-ng-data-dict-ml",
+ "espeak-ng-data-dict-mr",
+ "espeak-ng-data-dict-ms",
+ "espeak-ng-data-dict-mt",
+ "espeak-ng-data-dict-mto",
+ "espeak-ng-data-dict-my",
+ "espeak-ng-data-dict-nci",
+ "espeak-ng-data-dict-ne",
+ "espeak-ng-data-dict-nl",
+ "espeak-ng-data-dict-no",
+ "espeak-ng-data-dict-nog",
+ "espeak-ng-data-dict-om",
+ "espeak-ng-data-dict-or",
+ "espeak-ng-data-dict-pa",
+ "espeak-ng-data-dict-pap",
+ "espeak-ng-data-dict-piqd",
+ "espeak-ng-data-dict-pl",
+ "espeak-ng-data-dict-pt",
+ "espeak-ng-data-dict-py",
+ "espeak-ng-data-dict-qdb",
+ "espeak-ng-data-dict-qu",
+ "espeak-ng-data-dict-quc",
+ "espeak-ng-data-dict-qya",
+ "espeak-ng-data-dict-ro",
  "espeak-ng-data-dict-ru",
+ "espeak-ng-data-dict-sd",
+ "espeak-ng-data-dict-shn",
+ "espeak-ng-data-dict-si",
+ "espeak-ng-data-dict-sjn",
+ "espeak-ng-data-dict-sk",
+ "espeak-ng-data-dict-sl",
+ "espeak-ng-data-dict-smj",
+ "espeak-ng-data-dict-sq",
+ "espeak-ng-data-dict-sr",
+ "espeak-ng-data-dict-sv",
+ "espeak-ng-data-dict-sw",
+ "espeak-ng-data-dict-ta",
+ "espeak-ng-data-dict-te",
+ "espeak-ng-data-dict-th",
+ "espeak-ng-data-dict-ti",
+ "espeak-ng-data-dict-tk",
+ "espeak-ng-data-dict-tn",
+ "espeak-ng-data-dict-tr",
+ "espeak-ng-data-dict-tt",
+ "espeak-ng-data-dict-ug",
+ "espeak-ng-data-dict-uk",
+ "espeak-ng-data-dict-ur",
+ "espeak-ng-data-dict-uz",
+ "espeak-ng-data-dict-vi",
+ "espeak-ng-data-dict-yue",
  "espeak-ng-data-dicts",
  "espeak-ng-data-phonemes",
  "libc",

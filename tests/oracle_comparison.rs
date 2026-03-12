@@ -15,7 +15,7 @@
 
 mod common;
 
-use espeak_ng::{text_to_ipa, Error};
+use espeak_ng::{text_to_ipa, text_to_pcm, Error};
 
 // ---------------------------------------------------------------------------
 // Helper: get C oracle output for a text+language pair.
@@ -24,6 +24,95 @@ use espeak_ng::{text_to_ipa, Error};
 
 fn oracle(lang: &str, text: &str) -> Option<String> {
     common::try_espeak_ipa(lang, text)
+}
+
+fn trim_silence(pcm: &[i16], threshold: i16) -> &[i16] {
+    let first = pcm.iter().position(|&s| s.unsigned_abs() >= threshold as u16);
+    let last = pcm.iter().rposition(|&s| s.unsigned_abs() >= threshold as u16);
+    match (first, last) {
+        (Some(start), Some(end)) if start <= end => &pcm[start..=end],
+        _ => &[],
+    }
+}
+
+fn envelope(pcm: &[i16], window: usize) -> Vec<i16> {
+    if pcm.is_empty() || window == 0 {
+        return Vec::new();
+    }
+
+    let mut out = Vec::with_capacity(pcm.len() / window + 1);
+    for chunk in pcm.chunks(window) {
+        let avg = chunk
+            .iter()
+            .map(|s| s.unsigned_abs() as u64)
+            .sum::<u64>() / chunk.len() as u64;
+        out.push(avg.min(i16::MAX as u64) as i16);
+    }
+    out
+}
+
+fn best_aligned_snr_db(reference: &[i16], test: &[i16], max_shift: usize) -> Option<(f64, isize, usize)> {
+    if reference.is_empty() || test.is_empty() {
+        return None;
+    }
+
+    let mut best: Option<(f64, isize, usize)> = None;
+
+    for shift in -(max_shift as isize)..=(max_shift as isize) {
+        let (ref_start, test_start) = if shift >= 0 {
+            (shift as usize, 0usize)
+        } else {
+            (0usize, (-shift) as usize)
+        };
+
+        if ref_start >= reference.len() || test_start >= test.len() {
+            continue;
+        }
+
+        let overlap = (reference.len() - ref_start).min(test.len() - test_start);
+        if overlap < 16 {
+            continue;
+        }
+
+        let ref_slice = &reference[ref_start..ref_start + overlap];
+        let test_slice = &test[test_start..test_start + overlap];
+
+        let mut dot_rt = 0.0f64;
+        let mut dot_tt = 0.0f64;
+        let mut signal_power = 0.0f64;
+        for (&r, &t) in ref_slice.iter().zip(test_slice.iter()) {
+            let rf = r as f64;
+            let tf = t as f64;
+            dot_rt += rf * tf;
+            dot_tt += tf * tf;
+            signal_power += rf * rf;
+        }
+        if dot_tt <= 1e-12 || signal_power <= 1e-12 {
+            continue;
+        }
+
+        // Best scalar gain for test_slice in least-squares sense.
+        let gain = dot_rt / dot_tt;
+
+        let mut noise_power = 0.0f64;
+        for (&r, &t) in ref_slice.iter().zip(test_slice.iter()) {
+            let e = r as f64 - gain * t as f64;
+            noise_power += e * e;
+        }
+
+        let snr = if noise_power <= 1e-12 {
+            f64::INFINITY
+        } else {
+            10.0 * (signal_power / noise_power).log10()
+        };
+
+        match best {
+            Some((best_snr, _, _)) if snr <= best_snr => {}
+            _ => best = Some((snr, shift, overlap)),
+        }
+    }
+
+    best
 }
 
 // ---------------------------------------------------------------------------
@@ -365,5 +454,73 @@ fn en_hello_audio_oracle_baseline() {
         "[ORACLE] 'hello' in English: {} samples @ 22050 Hz, RMS = {:.1}",
         samples.len(),
         rms_val
+    );
+}
+
+/// Strict audio parity check against C espeak-ng for a representative utterance.
+///
+/// We trim leading/trailing silence and search a small time-shift window to
+/// account for implementation-level frame alignment differences.
+///
+/// Pass criterion: best aligned envelope-SNR >= 16 dB.
+#[test]
+fn en_hello_audio_matches_oracle_snr() {
+    let text = "hello";
+    let Some(wav_bytes) = common::try_espeak_wav("en", text) else {
+        eprintln!("[SKIP] espeak-ng not on PATH");
+        return;
+    };
+
+    let c_pcm = common::wav_to_pcm(&wav_bytes);
+    let (rust_pcm, rate) = text_to_pcm("en", text).expect("Rust synthesis should succeed");
+    assert_eq!(rate, 22050, "expected 22050 Hz sample rate");
+
+    let c_trim = trim_silence(&c_pcm, 20);
+    let rust_trim = trim_silence(&rust_pcm, 20);
+
+    assert!(!c_trim.is_empty(), "C oracle audio should not be silent");
+    assert!(!rust_trim.is_empty(), "Rust audio should not be silent");
+
+    let duration_ratio = rust_trim.len() as f64 / c_trim.len() as f64;
+    assert!(
+        (0.90..=1.10).contains(&duration_ratio),
+        "duration mismatch too large: Rust={} C={} ratio={:.3}",
+        rust_trim.len(),
+        c_trim.len(),
+        duration_ratio
+    );
+
+    let c_rms = common::rms(c_trim);
+    let rust_rms = common::rms(rust_trim);
+    let rms_ratio = rust_rms / c_rms.max(1e-9);
+    assert!(
+        (0.60..=1.67).contains(&rms_ratio),
+        "RMS mismatch too large: Rust={:.1} C={:.1} ratio={:.3}",
+        rust_rms,
+        c_rms,
+        rms_ratio
+    );
+
+    // Compare amplitude envelopes (10 ms windows), then align within +/- 12 windows.
+    // This is robust to phase differences while still penalizing timing/amplitude drift.
+    let c_env = envelope(c_trim, 220);
+    let rust_env = envelope(rust_trim, 220);
+
+    let (snr, shift, overlap) = best_aligned_snr_db(&c_env, &rust_env, 12)
+        .expect("could not compute aligned SNR");
+
+    eprintln!(
+        "[PARITY] en/{text} envelope-SNR={:.2} dB shift={} windows overlap={}",
+        snr,
+        shift,
+        overlap
+    );
+
+    assert!(
+        snr >= 16.0,
+        "audio parity below threshold: envelope-SNR={:.2} dB (shift={} overlap={})",
+        snr,
+        shift,
+        overlap
     );
 }

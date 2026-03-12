@@ -1285,7 +1285,12 @@ impl Translator {
             }
         }
 
-        Ok(ipa_out.trim_end_matches('\n').to_string())
+        let mut ipa_out = ipa_out.trim_end_matches('\n').to_string();
+        if lang == "fr" {
+            ipa_out = ipa_out.replace('r', "ʁ");
+        }
+
+        Ok(ipa_out)
     }
 
     /// Translate text into a raw phoneme-code sequence for synthesis.

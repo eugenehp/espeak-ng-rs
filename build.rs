@@ -44,11 +44,33 @@ fn main() {
             let lib_dir = install_dir.join("lib");
             println!("cargo:rustc-link-search=native={}", lib_dir.display());
             println!("cargo:rustc-link-lib=espeak-ng");
+            emit_bundled_link_deps();
         }
     } else if c_oracle {
         // No bundled build – link against the system espeak-ng.
         link_system_espeak();
     }
+}
+
+/// Link extra static dependencies produced by the bundled CMake build.
+/// These are needed when only `libespeak-ng.a` is installed.
+fn emit_bundled_link_deps() {
+    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let build_dir = out_dir.join(format!("espeak-ng-{VERSION}-build"));
+
+    let ucd_dir = build_dir.join("src").join("ucd-tools");
+    println!("cargo:rustc-link-search=native={}", ucd_dir.display());
+    println!("cargo:rustc-link-lib=ucd");
+
+    let speech_dir = build_dir.join("src").join("speechPlayer");
+    println!("cargo:rustc-link-search=native={}", speech_dir.display());
+    println!("cargo:rustc-link-lib=speechPlayer");
+
+    // speechPlayer is C++, so static linking needs the C++ runtime.
+    #[cfg(target_os = "linux")]
+    println!("cargo:rustc-link-lib=stdc++");
+    #[cfg(target_os = "macos")]
+    println!("cargo:rustc-link-lib=c++");
 }
 
 // ---------------------------------------------------------------------------

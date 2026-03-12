@@ -20,18 +20,45 @@ use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int, c_void};
 use std::sync::{Mutex, OnceLock};
 
+fn espeak_bin_path() -> String {
+    std::env::var("ESPEAK_NG_BIN")
+        .ok()
+        .or_else(|| option_env!("ESPEAK_NG_BIN").map(str::to_owned))
+        .unwrap_or_else(|| "espeak-ng".to_string())
+}
+
+fn maybe_data_path() -> Option<String> {
+    std::env::var("ESPEAK_NG_DATA")
+        .ok()
+        .or_else(|| option_env!("ESPEAK_NG_DATA").map(str::to_owned))
+}
+
+fn espeak_cmd() -> std::process::Command {
+    let mut cmd = std::process::Command::new(espeak_bin_path());
+    if let Some(data) = maybe_data_path() {
+        cmd.env("ESPEAK_DATA_PATH", data);
+    }
+    cmd
+}
+
+fn wav_to_pcm(wav: &[u8]) -> Option<Vec<i16>> {
+    if wav.len() < 44 {
+        return None;
+    }
+    Some(
+        wav[44..]
+            .chunks_exact(2)
+            .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
+            .collect(),
+    )
+}
+
 // ---------------------------------------------------------------------------
 // Raw C declarations
 // From: /usr/include/espeak-ng/speak_lib.h
 //       /usr/include/espeak-ng/espeak_ng.h
 // ---------------------------------------------------------------------------
 
-#[allow(non_camel_case_types)]
-type c_uint = u32;
-
-/// `AUDIO_OUTPUT_RETRIEVAL` – we want PCM samples returned via callback,
-/// not played to a sound device.
-const AUDIO_OUTPUT_RETRIEVAL: c_int = 1;
 /// `AUDIO_OUTPUT_SYNCHRONOUS` – synthesize synchronously.
 const AUDIO_OUTPUT_SYNCHRONOUS: c_int = 3;
 
@@ -39,8 +66,6 @@ const AUDIO_OUTPUT_SYNCHRONOUS: c_int = 3;
 const ESPEAK_CHARS_UTF8: c_int = 1;
 /// `espeakPHONEMES_IPA` – return IPA strings in the phoneme callback.
 const ESPEAK_PHONEMES_IPA: c_int = 0x02;
-/// Bit flag: `espeakPHONEMES` – text in [[ ]] is treated as phonemes.
-const ESPEAK_FLAGS_PHONEMES: c_int = 0x100;
 
 extern "C" {
     // espeak (legacy API) -----------------------------------------------
@@ -178,6 +203,7 @@ pub fn sample_rate() -> u32 {
 pub fn text_to_ipa(lang: &str, text: &str) -> String {
     let mut guard = get_oracle().lock().unwrap();
     ensure_voice(&mut guard, lang);
+    let mut ipa_parts: Vec<String> = Vec::new();
 
     // espeak_TextToPhonemes walks a pointer through the input text,
     // clause by clause.  We loop until it returns NULL.
@@ -203,8 +229,6 @@ pub fn text_to_ipa(lang: &str, text: &str) -> String {
         // Null-terminate the input for C.
         let c_text = CString::new(text).expect("text must not contain interior nuls");
         let mut ptr: *const c_void = c_text.as_ptr() as *const c_void;
-
-        let mut ipa_parts: Vec<String> = Vec::new();
 
         loop {
             let result = espeak_TextToPhonemes(
@@ -245,7 +269,7 @@ pub fn text_to_ipa(lang: &str, text: &str) -> String {
 ///
 /// Returns `Err` if `espeak-ng` is not on PATH.
 pub fn text_to_ipa_cli(lang: &str, text: &str) -> Result<String, String> {
-    let output = std::process::Command::new("espeak-ng")
+    let output = espeak_cmd()
         .args(["-v", lang, "-q", "--ipa", "--", text])
         .output()
         .map_err(|e| format!("failed to run espeak-ng: {e}"))?;
@@ -271,10 +295,26 @@ pub fn text_to_ipa_cli(lang: &str, text: &str) -> Result<String, String> {
 /// Not yet implemented – synthesis via the callback API is more complex
 /// than phoneme conversion.  This stub returns an empty buffer.
 pub fn text_to_pcm(_lang: &str, _text: &str) -> (Vec<i16>, u32) {
-    // TODO: set up the synth callback, buffer, etc.
-    // For now, just return the sample rate so benchmarks can be written.
+    let lang = _lang;
+    let text = _text;
     let sr = sample_rate();
-    (Vec::new(), sr)
+
+    let output = match espeak_cmd()
+        .args(["--stdout", "-v", lang, "--", text])
+        .output()
+    {
+        Ok(o) => o,
+        Err(_) => return (Vec::new(), sr),
+    };
+
+    if !output.status.success() {
+        return (Vec::new(), sr);
+    }
+
+    match wav_to_pcm(&output.stdout) {
+        Some(pcm) => (pcm, sr),
+        None => (Vec::new(), sr),
+    }
 }
 
 // ---------------------------------------------------------------------------

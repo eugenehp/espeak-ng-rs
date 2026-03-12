@@ -1,0 +1,14 @@
+[package]
+name        = "espeak-ng-data-dict-pap"
+version     = "0.1.0"
+edition     = "2021"
+description = "eSpeak NG dictionary data for pap_dict"
+license     = "GPL-3.0-or-later"
+keywords    = ["espeak", "tts", "pap", "dictionary", "data"]
+categories  = ["multimedia::audio", "accessibility"]
+
+include = [
+    "build.rs",
+    "src/**",
+    "data/pap_dict",
+]
