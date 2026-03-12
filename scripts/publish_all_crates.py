@@ -78,6 +78,86 @@ def run_streaming(cmd: list[str]) -> int:
     return completed.returncode
 
 
+def get_backoff_delays() -> list[int]:
+    """
+    Return increasing delays in seconds: 1, 2, 3, 5, 7, 10, 15, 22, 32, 46, 60, ...
+    capping at 600 seconds (10 minutes).
+    """
+    delays = [1, 2, 3, 5, 7, 10]
+    while delays[-1] < 600:
+        # Add ~1.5x the previous delay, bounded by 600 max
+        next_delay = min(int(delays[-1] * 1.5), 600)
+        if next_delay == delays[-1]:
+            next_delay = delays[-1] + 30
+        delays.append(next_delay)
+    return delays
+
+
+def is_rate_limit_error(output: str) -> bool:
+    """Check if the output indicates a 429 rate limit error."""
+    return "429" in output or "too many" in output.lower() or "try again" in output.lower()
+
+
+def is_already_published_error(output: str) -> bool:
+    """Check if the output indicates the crate version was already published."""
+    lower = output.lower()
+    return (
+        "already exists" in lower
+        or "already published" in lower
+        or "cannot overwrite" in lower
+        or "crate version already" in lower
+    )
+
+
+def publish_with_retry(cmd: list[str], crate: str, backoff_delays: list[int]) -> int:
+    """
+    Publish a crate with exponential backoff retry on rate limit (429) errors.
+    Returns the exit code: 0 on success, 1 if already published (skipped), 2 on other failures.
+    """
+    full_output = ""
+    
+    for attempt, delay in enumerate(backoff_delays, start=1):
+        print(f"\n$ {' '.join(cmd)}")
+        if attempt > 1:
+            print(f"(Retry attempt {attempt} after {backoff_delays[attempt-2]}s delay)")
+        
+        completed = run(cmd, check=False)
+        full_output = completed.stdout + completed.stderr
+        
+        if completed.stdout:
+            print(completed.stdout, end="")
+        if completed.stderr:
+            print(completed.stderr, end="", file=sys.stderr)
+        
+        # Success: return immediately
+        if completed.returncode == 0:
+            return 0
+        
+        # Check if already published (skip gracefully)
+        if is_already_published_error(full_output):
+            print(f"(Crate {crate} already published; skipping)", file=sys.stderr)
+            return 1  # Return 1 to indicate "skipped"
+        
+        # Check for rate limit error
+        if is_rate_limit_error(full_output):
+            if attempt < len(backoff_delays):
+                wait_time = delay
+                print(
+                    f"\nerror: Rate limited (429). Waiting {wait_time}s before retry...",
+                    file=sys.stderr,
+                )
+                time.sleep(wait_time)
+                continue
+        
+        # Non-rate-limit error or final attempt: fail
+        print(f"publish failed for crate {crate}", file=sys.stderr)
+        return 2  # Return 2 to indicate fatal error
+    
+    # All retries exhausted
+    print(f"publish failed for crate {crate} (max retries exhausted)", file=sys.stderr)
+    return 2
+
+
 def run_preflight_checks() -> int:
     checks: list[list[str]] = [
         ["cargo", "test"],
@@ -182,7 +262,14 @@ def main() -> int:
     for idx, crate in enumerate(ordered, start=1):
         print(f"  {idx:>3}. {crate}")
 
-    for crate in ordered:
+    # Get all possible retry delays upfront
+    backoff_delays = get_backoff_delays()
+    
+    # Track how many crates we've published to apply progressive inter-crate delays
+    published_count = 0
+    inter_crate_delays = [1, 2, 3, 5, 7, 10, 15, 22, 32, 46, 60]  # increasing delays between crates
+
+    for crate_idx, crate in enumerate(ordered):
         if args.execute and args.dry_run:
             # Use `cargo package` for dry-run: it is fully offline and does the
             # same packaging + verification without contacting crates.io.
@@ -199,27 +286,44 @@ def main() -> int:
                 # Always pass --allow-dirty for dry-run: nothing is uploaded, so
                 # requiring a clean git tree is unnecessarily strict.
                 cmd.append("--allow-dirty")
+            
+            print(f"\n$ {' '.join(cmd)}")
+            if not args.execute:
+                continue
+
+            completed = run(cmd, check=False)
+            if completed.stdout:
+                print(completed.stdout, end="")
+            if completed.stderr:
+                print(completed.stderr, end="", file=sys.stderr)
+
+            if completed.returncode != 0:
+                print(f"publish failed for crate {crate}", file=sys.stderr)
+                return completed.returncode
         else:
+            # Real publish with retry logic
             cmd = ["cargo", "publish", "-p", crate]
             if args.allow_dirty:
                 cmd.append("--allow-dirty")
 
-        print("\n$", " ".join(cmd))
-        if not args.execute:
-            continue
+            result = publish_with_retry(cmd, crate, backoff_delays)
+            if result == 0:
+                # Successfully published
+                published_count += 1
+            elif result == 1:
+                # Already published; skip gracefully
+                pass
+            else:
+                # Fatal error (result == 2 or other)
+                print(f"fatal error publishing {crate}", file=sys.stderr)
+                return result
 
-        completed = run(cmd, check=False)
-        if completed.stdout:
-            print(completed.stdout, end="")
-        if completed.stderr:
-            print(completed.stderr, end="", file=sys.stderr)
-
-        if completed.returncode != 0:
-            print(f"publish failed for crate {crate}", file=sys.stderr)
-            return completed.returncode
-
-        # Wait 1 second before publishing the next crate
-        time.sleep(1)
+        # Wait progressively longer between each successful publish
+        if args.execute and crate_idx < len(ordered) - 1:  # Don't wait after the last crate
+            delay_idx = min(crate_idx, len(inter_crate_delays) - 1)
+            delay = inter_crate_delays[delay_idx]
+            print(f"Waiting {delay}s before next crate...")
+            time.sleep(delay)
 
     if args.execute:
         if args.dry_run:
