@@ -7,7 +7,7 @@ import json
 import subprocess
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -131,9 +131,9 @@ def extract_retry_after_timestamp(output: str) -> int | None:
         # Parse the timestamp: "Thu, 12 Mar 2026 06:59:09 GMT"
         # or "Thu 12 Mar 2026 06:59:09 GMT" (in case comma is missing)
         timestamp_str_clean = timestamp_str.replace(",", "")
-        retry_time = datetime.strptime(timestamp_str_clean, "%a %d %b %Y %H:%M:%S %Z")
+        retry_time = datetime.strptime(timestamp_str_clean, "%a %d %b %Y %H:%M:%S %Z").replace(tzinfo=timezone.utc)
         # Get current time
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         wait_seconds = int((retry_time - now).total_seconds())
         # Add a small buffer (5 seconds) to ensure the limit has actually reset
         return max(wait_seconds + 5, 0)
@@ -313,13 +313,21 @@ def main() -> int:
 
     # Get all possible retry delays upfront
     backoff_delays = get_backoff_delays()
+    published_count = 0
     
     # Fixed delay between crates to respect rate limits
     inter_crate_delay = 10  # seconds
 
     for crate_idx, crate in enumerate(ordered):
         was_published = False  # Track if we actually published this crate
-        if args.execute and args.dry_run:
+        if not args.execute:
+            cmd = ["cargo", "publish", "-p", crate]
+            if args.allow_dirty:
+                cmd.append("--allow-dirty")
+            print(f"\n$ {' '.join(cmd)}")
+            continue
+
+        if args.dry_run:
             # Use `cargo package` for dry-run: it is fully offline and does the
             # same packaging + verification without contacting crates.io.
             # `cargo publish --dry-run` hits the registry API even in dry-run
@@ -335,10 +343,8 @@ def main() -> int:
                 # Always pass --allow-dirty for dry-run: nothing is uploaded, so
                 # requiring a clean git tree is unnecessarily strict.
                 cmd.append("--allow-dirty")
-            
+
             print(f"\n$ {' '.join(cmd)}")
-            if not args.execute:
-                continue
 
             completed = run(cmd, check=False)
             if completed.stdout:
@@ -377,7 +383,7 @@ def main() -> int:
         if args.dry_run:
             print("\nDry-run complete (cargo package only; nothing uploaded to crates.io).")
         else:
-            print("\nDone.")
+            print(f"\nDone. Published {published_count} crate(s).")
     else:
         print("\nDry-run mode (command preview only). Use --execute to publish.")
 
