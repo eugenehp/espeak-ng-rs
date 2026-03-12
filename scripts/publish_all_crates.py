@@ -6,6 +6,7 @@ import argparse
 import json
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -216,6 +217,9 @@ def main() -> int:
         if completed.returncode != 0:
             print(f"publish failed for crate {crate}", file=sys.stderr)
             return completed.returncode
+
+        # Wait 1 second before publishing the next crate
+        time.sleep(1)
 
     if args.execute:
         if args.dry_run:
