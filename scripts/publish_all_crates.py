@@ -195,8 +195,9 @@ def main() -> int:
                 cmd = ["cargo", "check", "-p", crate]
             else:
                 cmd = ["cargo", "package", "-p", crate]
-                if args.allow_dirty:
-                    cmd.append("--allow-dirty")
+                # Always pass --allow-dirty for dry-run: nothing is uploaded, so
+                # requiring a clean git tree is unnecessarily strict.
+                cmd.append("--allow-dirty")
         else:
             cmd = ["cargo", "publish", "-p", crate]
             if args.allow_dirty:
