@@ -104,13 +104,18 @@ let (samples, rate) = espeak_ng::text_to_pcm("en", "hello world")?;
 
 ### `translate/`
 - `text_to_ipa(lang, text) → String` public API
-- Tokeniser: words, digit strings, punctuation, clause boundaries
+- Tokeniser: words, parsed number tokens, punctuation, clause boundaries
 - `word_to_phonemes`: dictionary lookup → suffix stripping → translation rules
-- Number-to-phonemes (English):
-  - Integers 0–999 999 999 999 via dict entries (`_0`–`_19`, `_NX`, `_0C`, `_0M1`, `_0M2`)
+- Typed number grammar:
+  - `NumberGrammar` models ordinal parsing, tens ordering, hundreds, and thousands behavior per language
+  - `NumberToken` distinguishes cardinals, decimals, and ordinals before phoneme rendering
+  - `Pronunciation` builder handles `END_WORD` (||) separators without manual byte trimming in each branch
+- Number-to-phonemes:
+  - Integers 0–999 999 999 999 via grouped scale dict entries (`_0`–`_19`, `_NX`, `_0C`, `_0M1`, `_0M2`, `_0M3`)
   - `NUM_1900` year format (1900 → "nineteen hundred")
   - Decimal numbers: integer + point + individual digits
-  - `END_WORD` (||) markers preserved → correct inter-word spacing
+  - Per-language number grammar for conjunctions, units-before-tens ordering, and omitted `one` prefixes
+  - Ordinal numbers via `_#<suffix>` dict entries, language ordinal indicators, ordinal-dot languages, and scale-aware ordinal composition
 - IPA rendering (`phonemes_to_ipa_full`):
   - Primary (ˈ) / secondary (ˌ) stress marks before vowels
   - `END_WORD` → word-boundary space
@@ -364,10 +369,10 @@ espeak-ng-rs/
 
 ## Known limitations
 
-- **Number translation** covers English only; other languages fall back to spelling out digits.
+- **Number translation** uses typed per-language grammar plus grouped scale composition through billions, but it still does not cover every `numbers.c` feature and format.
+- **Ordinal numbers** are supported via `_#<suffix>` dict entries (English "1st", Spanish "1º", …), language ordinal indicators (Dutch "1e"), and ordinal-dot languages (German "3.").
 - **Prefix stripping** not yet implemented (very rare in English).
 - **`phonSWITCH`** (mid-word language switching) not yet handled.
-- **Ordinal numbers** ("1st", "2nd") not yet supported.
 
 ---
 
