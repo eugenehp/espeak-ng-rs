@@ -601,16 +601,19 @@ pub fn match_rule(
                     distance_left += 2;
                     if distance_left > 18 { distance_left = 19; }
 
-                    if pre_ptr == 0 || pre_ptr > word.len() { failed = 1; break; }
+                    if pre_ptr >= word.len() || word[pre_ptr] == 0 { failed = 1; break; }
 
-                    let (cur_lw, _) = utf8_decode_backwards(word, pre_ptr);
-                    last_letter_w = cur_lw; // save before we move back more
+                    // C reads the current character first, then steps left and
+                    // decodes the previous character for the actual PRE match.
+                    let (cur_lw, _) = utf8_decode(word, pre_ptr);
+                    last_letter_w = cur_lw;
 
-                    // Decode the character to the left of pre_ptr
-                    let (lw, xbytes) = utf8_decode_backwards(word, pre_ptr);
+                    if pre_ptr == 0 { failed = 1; break; }
+                    pre_ptr -= 1;
+
+                    let (lw, xbytes) = utf8_decode_backwards(word, pre_ptr + 1);
                     letter_w = lw;
-                    let letter = if pre_ptr > 0 { word[pre_ptr - 1] } else { 0 };
-                    if pre_ptr > 0 { pre_ptr -= 1; }
+                    let letter = word[pre_ptr];
 
                     match rb {
                         RULE_LETTERGP => {
@@ -771,9 +774,21 @@ pub fn match_rule(
                 if match_.points >= best.points {
                     if std::env::var("ESPEAK_DEBUG_RULES").is_ok() {
                         let ph_off = match_.phonemes_offset;
-                        eprintln!("  [RULE MATCH] rule_start={} abs={} points={} ph_off={:?}",
-                            _rule_start, rules_abs_offset + _rule_start, match_.points, 
-                            if ph_off == usize::MAX { None } else { Some(ph_off) });
+                        let rule_end = rules[_rule_start..]
+                            .iter()
+                            .position(|&b| b == 0)
+                            .map(|rel| _rule_start + rel)
+                            .unwrap_or(rules.len());
+                        let rule_bytes = &rules[_rule_start..rule_end];
+                        eprintln!(
+                            "  [RULE MATCH] word={:?} rule_start={} abs={} points={} ph_off={:?} rule={:?}",
+                            String::from_utf8_lossy(ctx.word),
+                            _rule_start,
+                            rules_abs_offset + _rule_start,
+                            match_.points,
+                            if ph_off == usize::MAX { None } else { Some(ph_off) },
+                            rule_bytes,
+                        );
                     }
                     best = match_.clone();
                     total_consumed = consumed;

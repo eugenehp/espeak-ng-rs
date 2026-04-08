@@ -272,7 +272,10 @@ impl PhonemeData {
                 };
 
                 if fires && data_u8 != 0 {
-                    return data_u8; // changed phoneme code
+                    if self.get(data_u8).is_some() {
+                        return data_u8; // changed phoneme code
+                    }
+                    return code;
                 }
                 // Condition didn't fire; continue scanning
                 i += 1;
@@ -338,7 +341,10 @@ impl PhonemeData {
             } else if instn_type == 0 {
                 if instn2 == 1 {
                     // ChangePhoneme(data) — type 0, instn2=1
-                    return data_u8;
+                    if self.get(data_u8).is_some() {
+                        return data_u8;
+                    }
+                    return code;
                 }
                 // Other type-0 instructions: skip
                 i += 1;

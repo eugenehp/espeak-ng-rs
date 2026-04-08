@@ -176,6 +176,7 @@ pub const SUFX_I:   u32 = 0x0200;
 pub const SUFX_P:   u32 = 0x0400;
 pub const SUFX_V:   u32 = 0x0800;
 pub const SUFX_D:   u32 = 0x1000;
+pub const SUFX_A:   u32 = 0x40000;
 pub const SUFX_S:   u32 = 0x0008; // FLAG_SUFX_S
 pub const SUFX_UNPRON: u32 = 0x8000;
 

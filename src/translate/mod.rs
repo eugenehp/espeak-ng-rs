@@ -68,12 +68,17 @@ use crate::error::{Error, Result};
 use crate::phoneme::load::PhonemeData;
 use crate::dictionary::file::Dictionary;
 use crate::dictionary::lookup::{lookup, LookupCtx};
+use crate::dictionary::rules::is_letter_wc;
 use crate::dictionary::rules::translate_rules_phdata;
-use crate::dictionary::{SUFX_I, FLAG_SUFFIX_REMOVED};
+use crate::dictionary::{
+    FLAG_SUFX, FLAG_SUFX_E_ADDED, FLAG_SUFFIX_REMOVED, FLAG_SUFFIX_VOWEL, FLAG_SUFX_S,
+    LETTERGP_B, LETTERGP_VOWEL2, SUFX_A, SUFX_E, SUFX_I,
+};
 use crate::dictionary::stress::{set_word_stress, promote_strend_stress, change_word_stress,
                                apply_word_final_devoicing, apply_alt_stress_upgrade, StressOpts};
 
 use ipa_table::{
+    EN_IPA_OVERRIDES,
     phoneme_ipa_lang,
     IPA_STRESS_PRIMARY, IPA_STRESS_SECONDARY,
     PendingStress, PHON_STRESS_P, PHON_STRESS_P2, PHON_STRESS_TONIC,
@@ -473,6 +478,9 @@ pub fn phonemes_to_ipa_full(
                 need_space = false;
             }
 
+            let word_final = phoneme_bytes[idx+1..].iter()
+                .all(|&c| c == 0 || c <= 8 || c == 15);
+
             // Emit pending stress before vowels
             if is_vowel {
                 match stress {
@@ -514,11 +522,29 @@ pub fn phonemes_to_ipa_full(
             }
 
             // Look up IPA: try phonindex i_IPA_NAME first, then mnemonic fallback
-            let ipa = if let Some(ipa_str) = phdata.phoneme_ipa_string(ph.program) {
+            let override_ipa = if use_en_overrides {
+                EN_IPA_OVERRIDES.iter()
+                    .find_map(|&(override_code, ipa)| (override_code == code).then(|| ipa.to_string()))
+            } else {
+                None
+            };
+            let ipa = if let Some(override_ipa) = override_ipa {
+                override_ipa
+            } else if let Some(ipa_str) = phdata.phoneme_ipa_string(ph.program) {
                 ipa_str
             } else {
-                phoneme_ipa_lang(code, ph.mnemonic, is_vowel, use_en_overrides)
+                phoneme_ipa_lang(code, ph.mnemonic, is_vowel, false)
             };
+            let mut ipa = ipa;
+            if use_en_overrides && is_vowel {
+                let b1 = ((ph.mnemonic >> 8) & 0xff) as u8;
+                let b2 = ((ph.mnemonic >> 16) & 0xff) as u8;
+                let b3 = ((ph.mnemonic >> 24) & 0xff) as u8;
+                let has_rhotic_liaison = b1 != 0 && (b2 == b'3' || b3 == b'3');
+                if has_rhotic_liaison && !word_final {
+                    ipa.push('ɹ');
+                }
+            }
             out.push_str(&ipa);
             prev_phcode = code;
         }
@@ -538,6 +564,87 @@ pub struct WordResult {
     pub phonemes: Vec<u8>,
     /// Raw dictionary flags (0 if not found in dictionary).
     pub dict_flags: u32,
+}
+
+fn append_raw_phonemes(dst: &mut Vec<u8>, src: &[u8]) {
+    for &b in src {
+        if b == 0 {
+            break;
+        }
+        dst.push(b);
+    }
+}
+
+fn combine_rules_result(result: &crate::dictionary::rules::RulesResult) -> Vec<u8> {
+    let mut combined = Vec::new();
+    append_raw_phonemes(&mut combined, &result.phonemes);
+    append_raw_phonemes(&mut combined, &result.end_phonemes);
+    combined
+}
+
+fn english_suffix_needs_e(stem: &str, dict: &Dictionary) -> bool {
+    const ADD_E_EXCEPTIONS: &[&str] = &["ion"];
+    const ADD_E_ADDITIONS: &[&str] = &["c", "rs", "ir", "ur", "ath", "ns", "u", "spong", "rang", "larg"];
+
+    let chars: Vec<char> = stem.chars().collect();
+    if chars.len() < 2 {
+        return false;
+    }
+
+    let penultimate = chars[chars.len() - 2] as u32;
+    let last = chars[chars.len() - 1] as u32;
+    if is_letter_wc(&dict.letter_bits, penultimate, dict.letter_bits_offset, LETTERGP_VOWEL2)
+        && is_letter_wc(&dict.letter_bits, last, dict.letter_bits_offset, LETTERGP_B)
+    {
+        return !ADD_E_EXCEPTIONS.iter().any(|suffix| stem.ends_with(suffix));
+    }
+
+    ADD_E_ADDITIONS.iter().any(|suffix| stem.ends_with(suffix))
+}
+
+fn remove_standard_suffix(word: &str, end_type: u32, dict: &Dictionary) -> Option<(String, u32, u32)> {
+    let suffix_len_chars = (end_type & 0x3f) as usize;
+    if suffix_len_chars == 0 {
+        return None;
+    }
+
+    let mut chars: Vec<char> = word.chars().collect();
+    if suffix_len_chars > chars.len() {
+        return None;
+    }
+
+    let suffix_start = chars.len() - suffix_len_chars;
+    let ending: String = chars[suffix_start..].iter().collect();
+    chars.truncate(suffix_start);
+
+    if (end_type & SUFX_I) != 0 && chars.last() == Some(&'i') {
+        *chars.last_mut().unwrap() = 'y';
+    }
+
+    let mut stem: String = chars.iter().collect();
+    let mut end_flags = (end_type & 0xfff0) | FLAG_SUFX;
+
+    if (end_type & SUFX_E) != 0 && dict.lang == "en" && english_suffix_needs_e(&stem, dict) {
+        stem.push('e');
+        end_flags |= FLAG_SUFX_E_ADDED;
+    }
+
+    if ending == "s" || ending == "es" {
+        end_flags |= FLAG_SUFX_S;
+    }
+    if ending.starts_with('\'') {
+        end_flags &= !FLAG_SUFX;
+    }
+
+    let mut stem_word_flags = 0;
+    if (end_flags & FLAG_SUFX) != 0 {
+        stem_word_flags |= FLAG_SUFFIX_REMOVED;
+    }
+    if (end_type & SUFX_A) != 0 {
+        stem_word_flags |= FLAG_SUFFIX_VOWEL;
+    }
+
+    Some((stem, end_flags, stem_word_flags))
 }
 
 // ---------------------------------------------------------------------------
@@ -843,113 +950,83 @@ pub fn word_to_phonemes(
     );
 
     if !result.phonemes.is_empty() {
-        // ── Suffix stripping: re-translate stem if a suffix rule fired ──
-        // Only re-translate stem when SUFX_I requires stem reconstruction.
-        // SUFX_I: stem had 'y' changed to 'i' (e.g., "happy" → "happi" + "ly").
-        // The suffix phonemes don't include the link vowel from the stem's final 'y'.
-        if std::env::var("DBG_SUFFIX").is_ok() {
-            eprintln!("DBG '{}': end_type={:#010x} SUFX_I={} suffix_start={}",
-                word, result.end_type, result.end_type & SUFX_I != 0, result.suffix_start);
-        }
-        let needs_stem_retranslation = result.end_type != 0
-            && (result.end_type & SUFX_I) != 0
-            && result.suffix_start > 1;
-        let mut phonemes = if needs_stem_retranslation {
-            // A suffix rule fired with SUFX_I. Reconstruct the stem by:
-            // 1. Stripping suffix_length chars from the end of the word
-            // 2. If SUFX_I and stem ends in 'i': change to 'y' (reverse y→i transformation)
-            // This mirrors C's RemoveEnding() in dictionary.c:2905
-            let suffix_len = (result.end_type & 0x7f) as usize; // low 7 bits = suffix letter count
-            let word_bytes = word.as_bytes();
-            let stem_end_pos = word_bytes.len().saturating_sub(suffix_len);
-            let mut stem_word = word_bytes[..stem_end_pos].to_vec();
+        let mut stress_dict_flags = dict_flags_from_lookup;
+        let mut phonemes = if result.end_type != 0 && result.suffix_start > 1 {
+            if let Some((stem, end_flags, stem_word_flags)) =
+                remove_standard_suffix(word, result.end_type, dict)
+            {
+                let stem_lookup = lookup(
+                    dict,
+                    &stem,
+                    &LookupCtx {
+                        lookup_symbol: true,
+                        end_flags,
+                        ..Default::default()
+                    },
+                );
 
-            if (result.end_type & SUFX_I) != 0 {
-                // Restore 'y' if stem ends in 'i'
-                if stem_word.last() == Some(&b'i') {
-                    *stem_word.last_mut().unwrap() = b'y';
+                let mut combined = Vec::new();
+                let mut used_stem = false;
+
+                if let Some(stem_lookup) = stem_lookup {
+                    if !stem_lookup.phonemes.is_empty() {
+                        combined.extend_from_slice(&stem_lookup.phonemes);
+                        stress_dict_flags = stem_lookup.flags1.0;
+                        used_stem = true;
+                    }
                 }
-            }
 
-            // Re-translate the stem with FLAG_SUFFIX_REMOVED to mimic C's TranslateRules
-            // call with wflags | FLAG_SUFFIX_REMOVED. This causes rules with RULE_NO_SUFFIX ('N')
-            // to be disabled, allowing different rule selection (e.g., 'y' after consonant
-            // gives 'I'(ɪ) instead of 'i' when the word originally had a suffix).
-            if let Ok(stem_str) = std::str::from_utf8(&stem_word) {
-                // Build stem word buffer with leading/trailing space
-                let mut stem_buf = Vec::with_capacity(stem_str.len() + 3);
-                stem_buf.push(b' ');
-                stem_buf.extend_from_slice(stem_str.as_bytes());
-                stem_buf.push(b' ');
-                stem_buf.push(0);
+                if !used_stem {
+                    let mut stem_buf = Vec::with_capacity(stem.len() + 3);
+                    stem_buf.push(b' ');
+                    stem_buf.extend_from_slice(stem.as_bytes());
+                    stem_buf.push(b' ');
+                    stem_buf.push(0);
 
-                let mut stem_vc = 0i32;
-                let mut stem_sc = 0i32;
-                let stem_rules = translate_rules_phdata(
-                    dict, &stem_buf, 1, FLAG_SUFFIX_REMOVED, 0, &letter_bits, 0,
-                    &mut stem_vc, &mut stem_sc, Some(phdata));
+                    let mut stem_vc = 0i32;
+                    let mut stem_sc = 0i32;
+                    let stem_rules = translate_rules_phdata(
+                        dict,
+                        &stem_buf,
+                        1,
+                        stem_word_flags,
+                        0,
+                        &letter_bits,
+                        0,
+                        &mut stem_vc,
+                        &mut stem_sc,
+                        Some(phdata),
+                    );
+                    let stem_phonemes = combine_rules_result(&stem_rules);
+                    if !stem_phonemes.is_empty() {
+                        combined.extend_from_slice(&stem_phonemes);
+                        used_stem = true;
+                    }
+                }
 
-                // Combine stem phonemes + stem's end_phonemes (which may contain
-                // the final phoneme of the stem, e.g. 'I'(ɪ) from 'y' in "happy")
-                let mut full_stem_ph = Vec::new();
-                let stem_body = &stem_rules.phonemes;
-                let body_len = stem_body.iter().position(|&b| b == 0).unwrap_or(stem_body.len());
-                full_stem_ph.extend_from_slice(&stem_body[..body_len]);
-                let stem_tail = &stem_rules.end_phonemes;
-                for &b in stem_tail { if b == 0 { break; } full_stem_ph.push(b); }
-
-                if full_stem_ph.is_empty() {
-                    // Stem re-translation gave nothing; fall back to direct rules result
-                    let mut combined = Vec::new();
-                    let sp = &result.phonemes;
-                    let sl = sp.iter().position(|&b| b == 0).unwrap_or(sp.len());
-                    combined.extend_from_slice(&sp[..sl]);
-                    for &b in &result.end_phonemes { if b == 0 { break; } combined.push(b); }
+                if used_stem {
+                    append_raw_phonemes(&mut combined, &result.end_phonemes);
                     combined.push(0);
                     combined
                 } else {
-                    // Apply stress to full stem phonemes
-                    full_stem_ph.push(0);
-                    set_word_stress(&mut full_stem_ph, phdata, stress_opts, Some(0), -1, 0);
-
-                    let stem_len = full_stem_ph.iter().position(|&b| b == 0).unwrap_or(full_stem_ph.len());
-                    let mut combined = Vec::new();
-                    combined.extend_from_slice(&full_stem_ph[..stem_len]);
-
-                    // Append suffix phonemes from the word rule (result.end_phonemes)
-                    for &b in &result.end_phonemes {
-                        if b == 0 { break; }
-                        // Skip stress markers from suffix (stem stress already applied)
-                        if b == 6 || b == 7 || b == 4 || b == 5 { continue; }
-                        combined.push(b);
-                    }
-                    combined.push(0);
-                    combined
+                    let mut fallback = combine_rules_result(&result);
+                    fallback.push(0);
+                    fallback
                 }
             } else {
-                // UTF-8 error: combine stem + suffix phonemes as fallback
-                let mut combined = Vec::new();
-                let stem_ph = &result.phonemes;
-                let stem_len = stem_ph.iter().position(|&b| b == 0).unwrap_or(stem_ph.len());
-                combined.extend_from_slice(&stem_ph[..stem_len]);
-                for &b in &result.end_phonemes { if b == 0 { break; } combined.push(b); }
-                combined.push(0);
-                combined
+                let mut fallback = combine_rules_result(&result);
+                fallback.push(0);
+                fallback
             }
         } else {
-            // No stem re-translation: concatenate stem + suffix phonemes directly
-            let mut combined = Vec::new();
-            let stem_ph = &result.phonemes;
-            let stem_len = stem_ph.iter().position(|&b| b == 0).unwrap_or(stem_ph.len());
-            combined.extend_from_slice(&stem_ph[..stem_len]);
-            for &b in &result.end_phonemes { if b == 0 { break; } combined.push(b); }
+            let mut combined = combine_rules_result(&result);
             combined.push(0);
             combined
         };
 
         // Apply stress placement; use dict flags from FLAGS-only entry if available
-        let flags_for_stress = if dict_flags_from_lookup != 0 {
-            Some(dict_flags_from_lookup as u32)
+        let flags_for_stress = if stress_dict_flags != 0 {
+            Some(stress_dict_flags as u32)
         } else {
             Some(0)  // non-NULL mirrors C's behavior of passing non-NULL dictionary_flags
         };
@@ -962,7 +1039,7 @@ pub fn word_to_phonemes(
         if stress_opts.word_final_devoicing {
             apply_word_final_devoicing(&mut phonemes, phdata);
         }
-        return WordResult { phonemes, dict_flags: dict_flags_from_lookup };
+        return WordResult { phonemes, dict_flags: stress_dict_flags };
     }
 
     // Could not translate (unknown word)
@@ -1505,5 +1582,38 @@ mod tests {
         let ipa = t.text_to_ipa("the").unwrap();
         // "the" in isolation gets primary stress via clause-level promotion (matches C oracle)
         assert_eq!(ipa, "ðˈə");
+    }
+
+    fn run_ipa_table(lang: &str, dict_name: &str, cases: &[(&str, &str)]) {
+        let dict_path = format!("espeak-ng-data/{dict_name}");
+        if !Path::new(&dict_path).exists() { return; }
+        let t = Translator::new_default(lang).unwrap();
+        for &(input, expected) in cases {
+            let ipa = t.text_to_ipa(input).unwrap();
+            assert_eq!(ipa, expected, "lang={lang} input={input:?}");
+        }
+    }
+
+    #[test]
+    fn text_to_ipa_english_rule_regressions() {
+        run_ipa_table("en", "en_dict", &[
+            ("sky", "skˈaɪ"),
+            ("caused", "kˈɔːzd"),
+            ("reflection", "ɹɪflˈɛkʃən"),
+            ("droplets", "dɹˈɒplɪts"),
+            ("appearing", "ɐpˈiəɹɪŋ"),
+            ("meteorological", "mˌiːtɪˌɔːɹəlˈɒdʒɪkəl"),
+        ]);
+    }
+
+    #[test]
+    fn text_to_ipa_english_sentence_weak_forms() {
+        let t = Translator::new_default("en").unwrap();
+        if !Path::new("/usr/share/espeak-ng-data/en_dict").exists() { return; }
+        let ipa = t.text_to_ipa("A rainbow is a meteorological phenomenon that is caused by reflection, refraction and dispersion of light in water droplets resulting in a spectrum of light appearing in the sky.").unwrap();
+        assert_eq!(
+            ipa,
+            "ɐ ɹˈeɪnbəʊ ɪz ɐ mˌiːtɪˌɔːɹəlˈɒdʒɪkəl fɪnˈɒmɪnən ðat ɪz kˈɔːzd baɪ ɹɪflˈɛkʃən\nɹɪfɹˈakʃən and dɪspˈɜːʃən ɒv lˈaɪt ɪn wˈɔːtə dɹˈɒplɪts ɹɪzˈʌltɪŋ ɪn ɐ spˈɛktɹəm ɒv lˈaɪt ɐpˈiəɹɪŋ ɪnðə skˈaɪ"
+        );
     }
 }
