@@ -295,6 +295,29 @@ impl LangOptions {
 }
 
 // ---------------------------------------------------------------------------
+// CJK character detection
+// ---------------------------------------------------------------------------
+
+/// Returns `true` if `c` is a CJK ideographic character.
+///
+/// These characters should each form an individual word token,
+/// matching the C espeak-ng behaviour for languages with `words 1`
+/// (e.g. Chinese, Japanese Kanji, Korean Hanja).
+fn is_cjk_ideograph(c: char) -> bool {
+    let cp = c as u32;
+    // CJK Unified Ideographs
+    (0x4E00..=0x9FFF).contains(&cp)
+    // CJK Unified Ideographs Extension A
+    || (0x3400..=0x4DBF).contains(&cp)
+    // CJK Unified Ideographs Extension B-H
+    || (0x20000..=0x323AF).contains(&cp)
+    // CJK Compatibility Ideographs
+    || (0xF900..=0xFAFF).contains(&cp)
+    // CJK Radicals / Kangxi
+    || (0x2F00..=0x2FDF).contains(&cp)
+}
+
+// ---------------------------------------------------------------------------
 // Token types for the simple tokenizer
 // ---------------------------------------------------------------------------
 
@@ -498,12 +521,27 @@ pub fn tokenize_opts(text: &str, grammar: &NumberGrammar) -> Vec<Token> {
             }
 
             tokens.push(Token::Number(NumberToken::Cardinal(digits)));
+        } else if is_cjk_ideograph(c) {
+            // CJK ideographic characters: each character is a separate word.
+            tokens.push(Token::Word(c.to_string()));
+            // Consume any additional CJK characters as individual words.
+            while let Some(&next) = chars.peek() {
+                if is_cjk_ideograph(next) {
+                    tokens.push(Token::Word(next.to_string()));
+                    chars.next();
+                } else {
+                    break;
+                }
+            }
         } else if c.is_alphabetic() || c == '\'' {
             // Accumulate a word (letters, apostrophes, hyphens within words).
             let mut word = String::new();
             word.push(c);
             while let Some(&next) = chars.peek() {
-                if next.is_alphabetic() || next == '\'' {
+                if is_cjk_ideograph(next) {
+                    // Stop word accumulation at CJK boundary.
+                    break;
+                } else if next.is_alphabetic() || next == '\'' {
                     word.push(next);
                     chars.next();
                 } else if next == '-' {
@@ -2041,6 +2079,59 @@ mod tests {
         let ipa = t.text_to_ipa("the").unwrap();
         // "the" in isolation gets primary stress via clause-level promotion (matches C oracle)
         assert_eq!(ipa, "ðˈə");
+    }
+
+    // ── CJK tokenize ────────────────────────────────────────────────────
+
+    #[test]
+    fn tokenize_chinese_chars_are_individual_words() {
+        let tokens = tokenize("你好世界");
+        assert_eq!(tokens, vec![
+            Token::Word("你".to_string()),
+            Token::Word("好".to_string()),
+            Token::Word("世".to_string()),
+            Token::Word("界".to_string()),
+        ]);
+    }
+
+    #[test]
+    fn tokenize_cjk_with_spaces() {
+        let tokens = tokenize("你好 世界");
+        assert_eq!(tokens, vec![
+            Token::Word("你".to_string()),
+            Token::Word("好".to_string()),
+            Token::Space,
+            Token::Word("世".to_string()),
+            Token::Word("界".to_string()),
+        ]);
+    }
+
+    #[test]
+    fn tokenize_mixed_cjk_and_latin() {
+        let tokens = tokenize("Hello你好World世界");
+        assert_eq!(tokens, vec![
+            Token::Word("Hello".to_string()),
+            Token::Word("你".to_string()),
+            Token::Word("好".to_string()),
+            Token::Word("World".to_string()),
+            Token::Word("世".to_string()),
+            Token::Word("界".to_string()),
+        ]);
+    }
+
+    #[test]
+    fn tokenize_single_cjk_char() {
+        let tokens = tokenize("你");
+        assert_eq!(tokens, vec![Token::Word("你".to_string())]);
+    }
+
+    #[test]
+    fn tokenize_cjk_with_punctuation() {
+        let tokens = tokenize("你好，世界！");
+        assert!(tokens.contains(&Token::Word("你".to_string())));
+        assert!(tokens.contains(&Token::Word("好".to_string())));
+        assert!(tokens.contains(&Token::Word("世".to_string())));
+        assert!(tokens.contains(&Token::Word("界".to_string())));
     }
 
     // ── ordinal numbers ───────────────────────────────────────────────────
