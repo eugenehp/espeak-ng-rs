@@ -29,14 +29,16 @@ fn main() {
     }
     
     // Try word_to_phonemes
-    use espeak_ng::translate::word_to_phonemes;
+    use espeak_ng::translate::{word_to_phonemes, LangOptions};
     use espeak_ng::dictionary::stress::StressOpts;
     let stress_opts = StressOpts::for_lang("ru");
+    let lang_opts = LangOptions::for_lang("ru");
     let word = "привет";
     let result = word_to_phonemes(word, 
         &Dictionary::from_bytes("ru", std::fs::read(&dict_path).unwrap()).unwrap(),
         &phdata,
-        &stress_opts);
+        &stress_opts,
+        &lang_opts);
     println!("word_to_phonemes({:?}) phonemes: {:?}", word, result.phonemes);
     println!("  dict_flags: {:08x}", result.dict_flags);
     

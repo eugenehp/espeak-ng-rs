@@ -2,7 +2,7 @@
 use espeak_ng::dictionary::Dictionary;
 use espeak_ng::phoneme::PhonemeData;
 use espeak_ng::dictionary::stress::StressOpts;
-use espeak_ng::translate::{word_to_phonemes, default_data_dir};
+use espeak_ng::translate::{word_to_phonemes, default_data_dir, LangOptions};
 use std::path::PathBuf;
 
 fn main() {
@@ -11,11 +11,12 @@ fn main() {
     let mut phdata = PhonemeData::load(&data_dir).unwrap();
     phdata.select_table_by_name("ru").unwrap();
     let stress = StressOpts::for_lang("ru");
+    let lang_opts = LangOptions::for_lang("ru");
 
     let words = ["да", "мама", "а", "Россия", "мыло"];
     for word in &words {
         let lower = word.to_lowercase();
-        let result = word_to_phonemes(&lower, &dict, &phdata, &stress);
+        let result = word_to_phonemes(&lower, &dict, &phdata, &stress, &lang_opts);
         let c_ipa = std::process::Command::new("espeak-ng")
             .args(["-v", "ru", "-q", "--ipa", word])
             .output().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
