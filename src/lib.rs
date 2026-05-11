@@ -34,6 +34,17 @@
 //! # Ok::<(), espeak_ng::Error>(())
 //! ```
 //!
+//! ## `espeak-ng` command-line program
+//!
+//! Building the crate also produces two optional **`cargo install`** executables (see
+//! `Cargo.toml` `[[bin]]` targets):
+//!
+//! - **`espeak-ng-rs`** — always built; use this name when the system `espeak-ng` must stay
+//!   first on your `PATH`.
+//! - **`espeak-ng`** — built when the default `install-espeak-ng-shim` feature is enabled;
+//!   omit with `cargo install espeak-ng --no-default-features` to avoid installing this
+//!   name. Run **`espeak-ng-rs --help`** or **`espeak-ng --help`** after installation.
+//!
 //! ## Convenience functions
 //!
 //! For one-shot calls that don't need a persistent engine:

@@ -141,10 +141,11 @@ impl Default for StressOpts {
 impl StressOpts {
     pub fn for_lang(lang: &str) -> Self {
         let mut opts = StressOpts::default();
-        let name = lang_name(lang);
+        let primary = primary_bcp47_subtag(lang);
+        let name = lang_name(primary);
         opts.translator_name = name;
 
-        match lang {
+        match primary {
             "en" => {
                 opts.stress_rule  = STRESSPOSN_1L;
                 opts.stress_flags = 0x08;
@@ -221,6 +222,10 @@ impl StressOpts {
         }
         opts
     }
+}
+
+fn primary_bcp47_subtag(tag: &str) -> &str {
+    tag.split('-').find(|s| !s.is_empty()).unwrap_or(tag)
 }
 
 fn lang_name(lang: &str) -> u32 {

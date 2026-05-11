@@ -48,7 +48,53 @@ cargo test --test oracle_comparison -- --nocapture
 
 ---
 
-## Usage
+## Command-line program (`espeak-ng` / `espeak-ng-rs`)
+
+The workspace builds **`espeak-ng-rs`** (always) and, by default, an **`espeak-ng`** binary as well.
+Installing from crates.io puts executables in `~/.cargo/bin` (or `$CARGO_HOME/bin`).
+
+```bash
+# Default: install both names — `espeak-ng` from this crate may run instead of the C tool
+# when ~/.cargo/bin appears first on your PATH.
+cargo install espeak-ng
+
+# Only the Rust port under a distinct name (system `espeak-ng` stays first on PATH).
+cargo install espeak-ng --no-default-features
+
+# Or install just one binary explicitly:
+cargo install espeak-ng --bin espeak-ng-rs
+cargo install espeak-ng --features install-espeak-ng-shim --bin espeak-ng
+```
+
+After installation:
+
+```bash
+espeak-ng-rs -q --ipa -v en-us -- "When choices cease"
+# or, when the shim is installed and your PATH resolves to this crate:
+espeak-ng -q --ipa -v en-us -- "When choices cease"
+```
+
+From a clone (no install):
+
+```bash
+cargo build --release --bin espeak-ng-rs
+# Optional shim (same as default features):
+cargo build --release --bin espeak-ng
+```
+
+Supported options include **`-v`**, **`-q`**, **`--ipa`**, **`-x`**, **`--path`**, **`--sep`**, **`--phonout`**, **`-w` / `--stdout`**, **`--stdin`**, **`--`**, **`--help`**, **`--version`**, and synthesis tuning **`-s` / `-p` / `-P` / `-a`**.
+
+**Caveats:** system audio playback is **not** implemented (use **`-w`** or **`--stdout`** for WAV). **`--ipa`** follows the same pipeline as the Rust library and matches the C CLI when using the same data; **`-x`** can still diverge in a few stress edge cases versus upstream.
+
+Example:
+
+```bash
+./target/release/espeak-ng-rs "When choices cease" --ipa -v en-us --path=/path/to/espeak-ng-data
+./target/release/espeak-ng-rs -q -x -v en --sep=_ "hello world"
+./target/release/espeak-ng-rs -w out.wav "hello"
+```
+
+## Usage (Rust API)
 
 ```rust
 // Text → IPA phonemes
@@ -62,8 +108,9 @@ espeak_ng::text_to_ipa("en", "happily")?;     // "hˈapɪli"
 espeak_ng::text_to_ipa("de", "schön")?;       // "ʃˈøːn"
 espeak_ng::text_to_ipa("fr", "bonjour")?;     // "bɔ̃ʒˈuːɹ"
 
-// Text → raw PCM (22050 Hz, mono, 16-bit) — not yet implemented
+// Text → raw PCM (22 050 Hz, mono, 16-bit)
 let (samples, rate) = espeak_ng::text_to_pcm("en", "hello world")?;
+assert_eq!(rate, 22050);
 ```
 
 ---
@@ -212,6 +259,7 @@ ESPEAK_DATA_PATH=/path/to/espeak-ng-rs/espeak-ng-data cargo test
 
 | Feature           | What it does                                                                 |
 |-------------------|------------------------------------------------------------------------------|
+| `install-espeak-ng-shim` (default) | Also builds the `espeak-ng` executable alongside `espeak-ng-rs`. Disable for `cargo install` when the C `espeak-ng` must remain the default on your PATH. |
 | `c-oracle`        | Links `libespeak-ng` via FFI; enables the `oracle` module for comparison tests and benchmarks. Requires `libespeak-ng` to be installed (`pkg-config: espeak-ng`). |
 | `bundled-data`    | Embeds the full eSpeak NG dataset via the aggregate data crates and enables `install_bundled_data()`. |
 | `bundled-data-<lang>` | Embeds phoneme data plus a single language dictionary crate and enables selective installers such as `install_bundled_language()`. |
@@ -319,6 +367,10 @@ Benchmark groups:
 ```
 espeak-ng-rs/
 ├── src/
+│   ├── bin/
+│   │   ├── espeak_cli.rs   shared CLI implementation (`include!`d by both binaries)
+│   │   ├── espeak-ng-rs.rs crate root for the `espeak-ng-rs` executable (always built)
+│   │   └── espeak-ng.rs    crate root for the optional `espeak-ng` shim (`install-espeak-ng-shim`)
 │   ├── lib.rs              public API + module declarations
 │   ├── error.rs            EspeakError enum, Result alias
 │   ├── encoding/
@@ -369,6 +421,7 @@ espeak-ng-rs/
 
 ## Known limitations
 
+- **CLI** (`espeak-ng` / `espeak-ng-rs`): Cargo publishes **`espeak-ng-rs`** under a dedicated name. The **`espeak-ng`** executable is optional (crate feature `install-espeak-ng-shim`, on by default); turn it off with `cargo install espeak-ng --no-default-features` if the C program must stay first on your PATH. There is no device playback, only WAV via **`-w`** / **`--stdout`**.
 - **Number translation** uses typed per-language grammar plus grouped scale composition through billions, but it still does not cover every `numbers.c` feature and format.
 - **Ordinal numbers** are supported via `_#<suffix>` dict entries (English "1st", Spanish "1º", …), language ordinal indicators (Dutch "1e"), and ordinal-dot languages (German "3.").
 - **Prefix stripping** not yet implemented (very rare in English).

@@ -41,7 +41,7 @@ use std::path::{Path, PathBuf};
 use crate::error::{Error, Result};
 use crate::phoneme::PhonemeData;
 use crate::synthesize::{PcmBuffer, Synthesizer, VoiceParams};
-use crate::translate::{default_data_dir, Translator};
+use crate::translate::{default_data_dir, normalize_voice_tag, Translator};
 
 // ---------------------------------------------------------------------------
 // Parameter – mirrors espeak_PARAMETER
@@ -117,7 +117,7 @@ impl VoiceSpec {
     /// Equivalent to calling `espeak_ng_SetVoiceByName("en")`.
     pub fn by_name(lang: &str) -> Self {
         VoiceSpec {
-            language: Some(lang.to_string()),
+            language: Some(normalize_voice_tag(lang)),
             ..Default::default()
         }
     }
@@ -145,7 +145,7 @@ pub struct VoiceSpecBuilder {
 impl VoiceSpecBuilder {
     /// Set the language tag (e.g. `"en"`, `"de"`, `"fr"`).
     pub fn language(mut self, lang: &str) -> Self {
-        self.spec.language = Some(lang.to_string());
+        self.spec.language = Some(normalize_voice_tag(lang));
         self
     }
 
@@ -563,7 +563,7 @@ impl Default for Builder {
 impl Builder {
     /// Select a language / voice by BCP-47 tag (e.g. `"en"`, `"de"`, `"fr"`).
     pub fn voice(mut self, lang: &str) -> Self {
-        self.lang = lang.to_string();
+        self.lang = normalize_voice_tag(lang);
         self
     }
 
@@ -638,6 +638,12 @@ mod tests {
     fn voice_spec_by_name() {
         let v = VoiceSpec::by_name("de");
         assert_eq!(v.effective_lang(), "de");
+    }
+
+    #[test]
+    fn voice_spec_by_name_normalizes_region_tag() {
+        let v = VoiceSpec::by_name("en_US");
+        assert_eq!(v.effective_lang(), "en-us");
     }
 
     #[test]

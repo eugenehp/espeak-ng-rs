@@ -30,11 +30,24 @@ homepage    = "https://github.com/eugenehp/espeak-ng-rs"
 name = "espeak_ng"
 path = "src/lib.rs"
 
+# Also builds `espeak-ng` (may shadow a system binary when both are on PATH).
+# Use `cargo install espeak-ng --no-default-features` to install only
+# `espeak-ng-rs`.
+[[bin]]
+name = "espeak-ng"
+path = "src/bin/espeak-ng.rs"
+required-features = ["install-espeak-ng-shim"]
+
+[[bin]]
+name = "espeak-ng-rs"
+path = "src/bin/espeak-ng-rs.rs"
+
 # ---------------------------------------------------------------------------
 # Feature flags
 # ---------------------------------------------------------------------------
 [features]
-default = []
+default = ["install-espeak-ng-shim"]
+install-espeak-ng-shim = []
 
 # Enables the oracle module: links libespeak-ng and exposes a thin FFI wrapper
 # used by integration tests and benchmarks to compare Rust output against C.

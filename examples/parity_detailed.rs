@@ -1,4 +1,8 @@
-//! Detailed parity check against espeak-ng CLI
+//! Detailed parity check against espeak-ng CLI.
+//!
+//! This program fixes the voice at `-v en` for the C baseline. For regional
+//! tags (`en-us`, `en-rp`, …) use [`espeak_ng::text_to_ipa`] or
+//! [`espeak_ng::Translator::new`] as in the `parity_check` example.
 use std::path::Path;
 use std::process::Command;
 use espeak_ng::phoneme::PhonemeData;

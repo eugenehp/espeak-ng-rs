@@ -1,6 +1,10 @@
 //! Demonstrates bundled data features: either the full `bundled-data` feature
 //! or one or more selective `bundled-data-<lang>` features.
 //!
+//! You can pass regional voice tags such as `en-us` or `en-rp` whenever the
+//! underlying dictionary exists (e.g. `en-us` uses the shared `en_dict` plus the
+//! `en-us` phoneme table).
+//!
 //! Run with:
 //!   cargo run --example bundled_data_demo --features bundled-data
 //!   cargo run --example bundled_data_demo --features bundled-data-en,bundled-data-de
@@ -30,6 +34,8 @@ fn main() -> std::io::Result<()> {
 
         let test_cases = [
             ("en", "hello world"),
+            ("en-us", "hello world"),
+            ("en-rp", "hello world"),
             ("de", "guten Tag"),
             ("fr", "bonjour"),
             ("es", "hola mundo"),
@@ -65,6 +71,8 @@ fn main() -> std::io::Result<()> {
 
         let test_cases = [
             ("en", "hello world"),
+            ("en-us", "hello world"),
+            ("en-rp", "hello world"),
             ("de", "guten Tag"),
             ("fr", "bonjour"),
             ("es", "hola mundo"),
@@ -74,7 +82,8 @@ fn main() -> std::io::Result<()> {
 
         println!("\nText -> IPA (using selective bundled data):");
         for (lang, text) in test_cases {
-            if !espeak_ng::has_bundled_language(lang) {
+            let base = lang.split('-').next().unwrap_or(lang);
+            if !espeak_ng::has_bundled_language(base) {
                 continue;
             }
             let engine = espeak_ng::EspeakNg::with_data_dir(lang, &data_dir)

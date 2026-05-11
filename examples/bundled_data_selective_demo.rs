@@ -1,5 +1,8 @@
 //! Demonstrates selective bundled data features (`bundled-data-<lang>`).
 //!
+//! Regional tags like `en-us` or `en-rp` work as long as the base language data
+//! is installed (e.g. `bundled-data-en` covers `en`, `en-us`, and `en-rp`).
+//!
 //! Run with:
 //!   cargo run --example bundled_data_selective_demo --features bundled-data-en,bundled-data-uk
 
@@ -20,6 +23,8 @@ fn main() -> std::io::Result<()> {
 
     let samples = [
         ("en", "hello world"),
+        ("en-us", "hello world"),
+        ("en-rp", "hello world"),
         ("de", "guten Tag"),
         ("fr", "bonjour"),
         ("uk", "privit"),
@@ -27,7 +32,8 @@ fn main() -> std::io::Result<()> {
 
     println!("\nText -> IPA for available selected languages:");
     for (lang, text) in samples {
-        if !espeak_ng::has_bundled_language(lang) {
+        let base = lang.split('-').next().unwrap_or(lang);
+        if !espeak_ng::has_bundled_language(base) {
             continue;
         }
         let engine = espeak_ng::EspeakNg::with_data_dir(lang, &data_dir)

@@ -64,6 +64,39 @@ pub fn default_data_dir() -> String {
     "/usr/share/espeak-ng-data".to_string()
 }
 
+/// Normalise a voice / language tag to the form espeak-ng uses internally
+/// (lowercase ASCII, hyphen separators).
+///
+/// Accepts common BCP-47-style input such as `en-us`, `en_US`, or `EN-us`.
+pub fn normalize_voice_tag(s: &str) -> String {
+    s.trim().replace('_', "-").to_ascii_lowercase()
+}
+
+/// First subtag of a normalised BCP-47 tag (`en-gb` → `en`).
+pub(crate) fn primary_bcp47_subtag(tag: &str) -> &str {
+    tag.split('-').find(|part| !part.is_empty()).unwrap_or(tag)
+}
+
+/// Pick which `<stem>_dict` file to load: try the longest matching prefix of
+/// `voice_tag` that exists under `data_dir`, then shorter prefixes (locale fall back
+/// to language-only, e.g. `en-us` → `en_dict`).
+pub(crate) fn resolve_dict_stem(data_dir: &Path, voice_tag: &str) -> Option<String> {
+    let parts: Vec<&str> = voice_tag
+        .split('-')
+        .filter(|p| !p.is_empty())
+        .collect();
+    if parts.is_empty() {
+        return None;
+    }
+    for len in (1..=parts.len()).rev() {
+        let stem = parts[..len].join("-");
+        if data_dir.join(format!("{stem}_dict")).exists() {
+            return Some(stem);
+        }
+    }
+    None
+}
+
 use crate::error::{Error, Result};
 use crate::phoneme::load::PhonemeData;
 use crate::dictionary::file::Dictionary;
@@ -71,8 +104,8 @@ use crate::dictionary::lookup::{lookup, LookupCtx};
 use crate::dictionary::rules::is_letter_wc;
 use crate::dictionary::rules::translate_rules_phdata;
 use crate::dictionary::{
-    FLAG_SUFX, FLAG_SUFX_E_ADDED, FLAG_SUFFIX_REMOVED, FLAG_SUFFIX_VOWEL, FLAG_SUFX_S,
-    LETTERGP_B, LETTERGP_VOWEL2, SUFX_A, SUFX_E, SUFX_I,
+    FLAG_PREFIX_REMOVED, FLAG_SUFX, FLAG_SUFX_E_ADDED, FLAG_SUFFIX_REMOVED, FLAG_SUFFIX_VOWEL,
+    FLAG_SUFX_S, LETTERGP_B, LETTERGP_VOWEL2, SUFX_A, SUFX_E, SUFX_I, SUFX_P,
 };
 use crate::dictionary::stress::{set_word_stress, promote_strend_stress, change_word_stress,
                                apply_word_final_devoicing, apply_alt_stress_upgrade, StressOpts};
@@ -166,7 +199,7 @@ pub struct Clause {
 /// Language-specific translation options.
 #[derive(Debug, Clone)]
 pub struct LangOptions {
-    /// BCP-47 language tag, e.g. "en", "fr", "de"
+    /// BCP-47 language tag, e.g. `"en"`, `"en-us"`, `"fr"`, `"de"`
     pub lang: String,
     /// Words per minute (default 175)
     pub rate: u32,
@@ -233,6 +266,7 @@ pub struct ThousandsGrammar {
 impl NumberGrammar {
     fn for_lang(lang: &str) -> Self {
         let mut grammar = Self::default();
+        let lang = primary_bcp47_subtag(lang);
         match lang {
             "en" => {
                 grammar.hundreds.use_conjunction_with_remainder = true;
@@ -291,9 +325,10 @@ impl Default for LangOptions {
 
 impl LangOptions {
     pub fn for_lang(lang: &str) -> Self {
+        let lang = normalize_voice_tag(lang);
         Self {
-            lang: lang.to_string(),
-            number_grammar: NumberGrammar::for_lang(lang),
+            number_grammar: NumberGrammar::for_lang(&lang),
+            lang,
             ..Default::default()
         }
     }
@@ -710,13 +745,17 @@ pub fn phonemes_to_ipa_full(
         }
 
         // ── Real phoneme ─────────────────────────────────────────────────
-        // Apply synthesis-stage ChangeIf stress resolution.
-        // Phonemes like Russian `o` use `ChangeIfNotStressed(V)` which maps the
-        // phoneme to a different code based on its stress level.  We resolve
-        // this here so the IPA string lookup uses the acoustically correct code.
-        let is_primary = stress == PendingStress::Primary;
-        let resolved_code = phdata.resolve_stressed_phoneme(code, is_primary);
-        let code = resolved_code; // shadow with resolved code
+        // English `--ipa` output matches the C dictionary path: keep phoneme codes
+        // from rules without synthesis-stage stress reductions (e.g. /V/ → schwa),
+        // or "unseen" renders as ə… instead of ʌ….
+        // Other languages (e.g. Spanish, Russian) still need ChangeIf resolution
+        // for stressed vowel allophones.
+        let code = if use_en_overrides {
+            code
+        } else {
+            let is_primary = stress == PendingStress::Primary;
+            phdata.resolve_stressed_phoneme(code, is_primary)
+        };
 
         if let Some(ph) = phdata.get(code) {
             let is_vowel = ph.typ == 2; // phVOWEL
@@ -887,6 +926,31 @@ fn english_suffix_needs_e(stem: &str, dict: &Dictionary) -> bool {
     }
 
     ADD_E_ADDITIONS.iter().any(|suffix| stem.ends_with(suffix))
+}
+
+fn remove_standard_prefix(word: &str, end_type: u32) -> Option<(String, u32)> {
+    if end_type & SUFX_P == 0 {
+        return None;
+    }
+    let n_chars = (end_type & 0x3f) as usize;
+    if n_chars == 0 {
+        return None;
+    }
+    let cut_end = word
+        .char_indices()
+        .nth(n_chars.saturating_sub(1))
+        .map(|(idx, c)| idx + c.len_utf8());
+    let Some(start_after) = cut_end else {
+        return None;
+    };
+    if start_after > word.len() {
+        return None;
+    }
+    let stem = word[start_after..].to_string();
+    if stem.is_empty() {
+        return None;
+    }
+    Some((stem, FLAG_PREFIX_REMOVED))
 }
 
 fn remove_standard_suffix(word: &str, end_type: u32, dict: &Dictionary) -> Option<(String, u32, u32)> {
@@ -1411,6 +1475,17 @@ pub fn word_to_phonemes(
     stress_opts: &StressOpts,
     lang_opts: &LangOptions,
 ) -> WordResult {
+    word_to_phonemes_inner(word, dict, phdata, stress_opts, lang_opts, 0)
+}
+
+fn word_to_phonemes_inner(
+    word: &str,
+    dict: &Dictionary,
+    phdata: &PhonemeData,
+    stress_opts: &StressOpts,
+    lang_opts: &LangOptions,
+    rule_word_flags: u32,
+) -> WordResult {
     let ctx = LookupCtx {
         lookup_symbol: true,
         ..Default::default()
@@ -1445,11 +1520,13 @@ pub fn word_to_phonemes(
         }
     }
 
-    if let Some(token) = NumberToken::parse(word, &lang_opts.number_grammar) {
-        if let Some(result) =
-            translate_number_token(&token, dict, phdata, stress_opts, &lang_opts.number_grammar)
-        {
-            return result;
+    if rule_word_flags == 0 {
+        if let Some(token) = NumberToken::parse(word, &lang_opts.number_grammar) {
+            if let Some(result) =
+                translate_number_token(&token, dict, phdata, stress_opts, &lang_opts.number_grammar)
+            {
+                return result;
+            }
         }
     }
 
@@ -1470,7 +1547,7 @@ pub fn word_to_phonemes(
         dict,
         &word_buf,
         1,   // word_start = 1 (skip leading space)
-        0,   // word_flags
+        rule_word_flags,
         0,   // dict_flags
         &letter_bits,
         0,   // dict_condition
@@ -1479,9 +1556,37 @@ pub fn word_to_phonemes(
         Some(phdata),
     );
 
-    if !result.phonemes.is_empty() {
+    fn rules_produced_output(r: &crate::dictionary::rules::RulesResult) -> bool {
+        if r.spellword || r.end_type != 0 {
+            return true;
+        }
+        r.phonemes.iter().any(|&b| b != 0) || r.end_phonemes.iter().any(|&b| b != 0)
+    }
+
+    if rules_produced_output(&result) {
         let mut stress_dict_flags = dict_flags_from_lookup;
-        let mut phonemes = if result.end_type != 0 && result.suffix_start > 1 {
+        let mut phonemes = if result.end_type != 0 && (result.end_type & SUFX_P) != 0 {
+            if let Some((stem, stem_word_flags)) = remove_standard_prefix(word, result.end_type) {
+                let mut combined = Vec::new();
+                append_raw_phonemes(&mut combined, &result.end_phonemes);
+                let stem_wr = word_to_phonemes_inner(
+                    &stem,
+                    dict,
+                    phdata,
+                    stress_opts,
+                    lang_opts,
+                    stem_word_flags,
+                );
+                append_raw_phonemes(&mut combined, &stem_wr.phonemes);
+                stress_dict_flags = stem_wr.dict_flags;
+                combined.push(0);
+                combined
+            } else {
+                let mut fallback = combine_rules_result(&result);
+                fallback.push(0);
+                fallback
+            }
+        } else if result.end_type != 0 && result.suffix_start > 1 {
             if let Some((stem, end_flags, stem_word_flags)) =
                 remove_standard_suffix(word, result.end_type, dict)
             {
@@ -1579,6 +1684,282 @@ pub fn word_to_phonemes(
 // ---------------------------------------------------------------------------
 // Translator
 // ---------------------------------------------------------------------------
+
+/// One sentence / clause unit for dictionary + stress promotion (`text_to_ipa` and
+/// `translate_to_codes` share this pipeline — GitHub #4 and related parity).
+#[derive(Clone, PartialEq)]
+pub(crate) enum TranslateEntryKind {
+    Word,
+    ClauseBoundary,
+    Other,
+}
+
+pub(crate) struct TranslateEntry {
+    pub(crate) phonemes:   Vec<u8>,
+    pub(crate) dict_flags: u32,
+    pub(crate) kind:       TranslateEntryKind,
+    pub(crate) word_lower: Option<String>,
+}
+
+pub(crate) fn build_translate_entries(
+    tokens: &[Token],
+    dict: &Dictionary,
+    phdata: &PhonemeData,
+    stress_opts: &StressOpts,
+    options: &LangOptions,
+) -> Vec<TranslateEntry> {
+    let mut entries: Vec<TranslateEntry> = Vec::with_capacity(tokens.len());
+    for token in tokens {
+        match token {
+            Token::Word(word) => {
+                let lower = word.to_lowercase();
+                let wr = word_to_phonemes(&lower, dict, phdata, stress_opts, options);
+                entries.push(TranslateEntry {
+                    phonemes:   wr.phonemes,
+                    dict_flags: wr.dict_flags,
+                    kind:       TranslateEntryKind::Word,
+                    word_lower: Some(lower),
+                });
+            }
+            Token::Number(token) => {
+                let wr = translate_number_token(
+                    token,
+                    dict,
+                    phdata,
+                    stress_opts,
+                    &options.number_grammar,
+                )
+                .unwrap_or_else(|| {
+                    let surface = token.surface();
+                    word_to_phonemes(&surface, dict, phdata, stress_opts, options)
+                });
+                entries.push(TranslateEntry {
+                    phonemes:   wr.phonemes,
+                    dict_flags: wr.dict_flags,
+                    kind:       TranslateEntryKind::Word,
+                    word_lower: Some(token.surface().to_string().to_lowercase()),
+                });
+            }
+            Token::ClauseBoundary(_) => {
+                entries.push(TranslateEntry {
+                    phonemes:   Vec::new(),
+                    dict_flags: 0,
+                    kind:       TranslateEntryKind::ClauseBoundary,
+                    word_lower: None,
+                });
+            }
+            _ => {
+                entries.push(TranslateEntry {
+                    phonemes:   Vec::new(),
+                    dict_flags: 0,
+                    kind:       TranslateEntryKind::Other,
+                    word_lower: None,
+                });
+            }
+        }
+    }
+    entries
+}
+
+pub(crate) fn promote_translate_entries(
+    entries: &mut [TranslateEntry],
+    phdata: &PhonemeData,
+    lang: &str,
+) {
+    const FLAG_STREND: u32 = 1 << 9;
+    const FLAG_STREND2: u32 = 1 << 10;
+    const PHON_STRESS_P_CODE: u8 = 6;
+    const PHON_STRESS_P2_CODE: u8 = 7;
+
+    fn promote_clause(entries: &mut [TranslateEntry], phdata: &PhonemeData, lang: &str) {
+        let n = entries.len();
+        #[allow(clippy::needless_range_loop)]
+        for i in 0..n {
+            if entries[i].kind != TranslateEntryKind::Word {
+                continue;
+            }
+            let dict_flags = entries[i].dict_flags;
+            if dict_flags & (FLAG_STREND | FLAG_STREND2) == 0 {
+                continue;
+            }
+
+            let is_last_word = entries[i + 1..]
+                .iter()
+                .all(|e| e.kind != TranslateEntryKind::Word);
+            let following_all_unstressed = entries[i + 1..]
+                .iter()
+                .filter(|e| e.kind == TranslateEntryKind::Word)
+                .all(|e| {
+                    !e.phonemes
+                        .iter()
+                        .any(|&c| c == PHON_STRESS_P_CODE || c == PHON_STRESS_P2_CODE)
+                });
+
+            promote_strend_stress(
+                &mut entries[i].phonemes,
+                phdata,
+                dict_flags,
+                is_last_word,
+                following_all_unstressed,
+            );
+        }
+
+        let has_primary = entries
+            .iter()
+            .filter(|e| e.kind == TranslateEntryKind::Word)
+            .any(|e| {
+                e.phonemes
+                    .iter()
+                    .any(|&c| c == PHON_STRESS_P_CODE || c == PHON_STRESS_P2_CODE)
+            });
+
+        if !has_primary {
+            let last_secondary = entries
+                .iter()
+                .enumerate()
+                .rev()
+                .find(|(_, e)| {
+                    e.kind == TranslateEntryKind::Word
+                        && !e.phonemes.is_empty()
+                        && e.phonemes.iter().any(|&c| c == 4 || c == 5)
+                })
+                .map(|(i, _)| i);
+
+            if let Some(idx) = last_secondary {
+                change_word_stress(&mut entries[idx].phonemes, phdata, 4);
+            } else {
+                let last_word = entries
+                    .iter()
+                    .enumerate()
+                    .rev()
+                    .find(|(_, e)| {
+                        e.kind == TranslateEntryKind::Word && !e.phonemes.is_empty()
+                    })
+                    .map(|(i, _)| i);
+                if let Some(idx) = last_word {
+                    change_word_stress(&mut entries[idx].phonemes, phdata, 4);
+                }
+            }
+        }
+
+        if primary_bcp47_subtag(lang) == "en" {
+            apply_en_wh_clause_initial_secondary(entries, phdata);
+        }
+    }
+
+    fn apply_en_wh_clause_initial_secondary(
+        entries: &mut [TranslateEntry],
+        phdata: &PhonemeData,
+    ) {
+        const PHON_STRESS_2: u8 = 4;
+        const PHON_STRESS_P: u8 = 6;
+        const PHON_STRESS_P2: u8 = 7;
+        const WH: &[&str] = &[
+            "when", "where", "what", "who", "why", "how", "which", "while",
+        ];
+
+        let word_ix: Vec<usize> = entries
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| e.kind == TranslateEntryKind::Word && !e.phonemes.is_empty())
+            .map(|(i, _)| i)
+            .collect();
+        if word_ix.len() < 2 {
+            return;
+        }
+        let i0 = word_ix[0];
+        let i1 = word_ix[1];
+        let Some(w) = entries[i0].word_lower.as_deref() else {
+            return;
+        };
+        if !WH.iter().any(|&kw| kw == w) {
+            return;
+        }
+        if !entries[i1]
+            .phonemes
+            .iter()
+            .any(|&c| c == PHON_STRESS_P || c == PHON_STRESS_P2)
+        {
+            return;
+        }
+        let ph = &entries[i0].phonemes;
+        let Some(fv) = ph
+            .iter()
+            .position(|&c| phdata.get(c).map(|p| p.typ == 2).unwrap_or(false))
+        else {
+            return;
+        };
+        if ph[..fv].iter().any(|&c| matches!(c, 4 | 5 | 6 | 7)) {
+            return;
+        }
+        let mut new_ph = ph.to_vec();
+        new_ph.insert(fv, PHON_STRESS_2);
+        entries[i0].phonemes = new_ph;
+    }
+
+    let clause_boundaries: Vec<usize> = entries
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| e.kind == TranslateEntryKind::ClauseBoundary)
+        .map(|(i, _)| i)
+        .collect();
+
+    let lang_for_promo = lang;
+    if clause_boundaries.is_empty() {
+        promote_clause(entries, phdata, lang_for_promo);
+    } else {
+        let mut prev_end = 0usize;
+        let mut boundaries_with_end = clause_boundaries.clone();
+        boundaries_with_end.push(entries.len());
+        for &bound in &boundaries_with_end {
+            let slice_end = if bound < entries.len() { bound } else { entries.len() };
+            if slice_end > prev_end {
+                promote_clause(&mut entries[prev_end..slice_end], phdata, lang_for_promo);
+            }
+            prev_end = if bound < entries.len() { bound + 1 } else { entries.len() };
+        }
+    }
+}
+
+/// English “linking ɹ” after **or** before a vowel-initial word (same condition as IPA post-pass).
+pub(crate) fn apply_en_or_linking_r(entries: &mut [TranslateEntry], phdata: &PhonemeData) {
+    let r_code = phdata.lookup_phoneme("r");
+    if r_code == 0 {
+        return;
+    }
+
+    fn next_word_vowel_initial(entries: &[TranslateEntry], from: usize, phdata: &PhonemeData) -> bool {
+        entries[from + 1..]
+            .iter()
+            .find(|e| e.kind == TranslateEntryKind::Word && !e.phonemes.is_empty())
+            .map(|e| {
+                e.phonemes
+                    .iter()
+                    .find(|&&c| c > 8 && c != 15)
+                    .and_then(|&c| phdata.get(c))
+                    .map(|ph| ph.typ == 2)
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false)
+    }
+
+    for i in 0..entries.len() {
+        if entries[i].kind != TranslateEntryKind::Word {
+            continue;
+        }
+        if entries[i].word_lower.as_deref() != Some("or") {
+            continue;
+        }
+        if !next_word_vowel_initial(entries, i, phdata) {
+            continue;
+        }
+        while entries[i].phonemes.last() == Some(&0) {
+            entries[i].phonemes.pop();
+        }
+        entries[i].phonemes.push(r_code);
+        entries[i].phonemes.push(0);
+    }
+}
 
 /// Top-level text translator.
 ///
@@ -1679,16 +2060,16 @@ impl Translator {
     ///   3. Phoneme code → IPA string rendering
     pub fn text_to_ipa(&self, text: &str) -> Result<String> {
         let lang = &self.options.lang;
-        let dict_path = self.data_dir.join(format!("{}_dict", lang));
+        let dict_stem = resolve_dict_stem(&self.data_dir, lang).ok_or_else(|| {
+            Error::NotImplemented("text_to_ipa: dict not found")
+        })?;
+        let dict_path = self.data_dir.join(format!("{dict_stem}_dict"));
         let phontab_path = self.data_dir.join("phontab");
 
         // Load dictionary
-        if !dict_path.exists() {
-            return Err(Error::NotImplemented("text_to_ipa: dict not found"));
-        }
         let dict_bytes = std::fs::read(&dict_path)
             .map_err(Error::Io)?;
-        let dict = Dictionary::from_bytes(lang, dict_bytes)?;
+        let dict = Dictionary::from_bytes(&dict_stem, dict_bytes)?;
 
         // Load phoneme data
         if !phontab_path.exists() {
@@ -1703,151 +2084,14 @@ impl Translator {
         // Tokenize
         let tokens = tokenize_opts(text, &self.options.number_grammar);
 
-        // Translate all words first, collecting (phonemes, dict_flags) pairs
-        #[derive(Clone, PartialEq)]
-        enum EntryKind {
-            Word,
-            ClauseBoundary,
-            Other,
-        }
-
-        struct EntryFull {
-            phonemes: Vec<u8>,
-            dict_flags: u32,
-            kind: EntryKind,
-        }
-
-        let mut entries: Vec<EntryFull> = Vec::new();
-
-        for token in &tokens {
-            match token {
-                Token::Word(word) => {
-                    let lower = word.to_lowercase();
-                    let wr = word_to_phonemes(&lower, &dict, &phdata, &stress_opts, &self.options);
-                    entries.push(EntryFull {
-                        phonemes: wr.phonemes,
-                        dict_flags: wr.dict_flags,
-                        kind: EntryKind::Word,
-                    });
-                }
-                Token::Number(token) => {
-                    let wr = translate_number_token(
-                        token,
-                        &dict,
-                        &phdata,
-                        &stress_opts,
-                        &self.options.number_grammar,
-                    )
-                    .unwrap_or_else(|| {
-                        let surface = token.surface();
-                        word_to_phonemes(&surface, &dict, &phdata, &stress_opts, &self.options)
-                    });
-                    entries.push(EntryFull {
-                        phonemes: wr.phonemes,
-                        dict_flags: wr.dict_flags,
-                        kind: EntryKind::Word,
-                    });
-                }
-                Token::ClauseBoundary(_) => {
-                    entries.push(EntryFull {
-                        phonemes: Vec::new(),
-                        dict_flags: 0,
-                        kind: EntryKind::ClauseBoundary,
-                    });
-                }
-                _ => {
-                    entries.push(EntryFull {
-                        phonemes: Vec::new(),
-                        dict_flags: 0,
-                        kind: EntryKind::Other,
-                    });
-                }
-            }
-        }
-
-        // Split entries into clauses at ClauseBoundary tokens, apply promotions per-clause
-        const FLAG_STREND:  u32 = 1 << 9;   // 0x200
-        const FLAG_STREND2: u32 = 1 << 10;  // 0x400
-        const PHON_STRESS_P_CODE: u8 = 6;
-        const PHON_STRESS_P2_CODE: u8 = 7;
-
-        /// Apply strend + clause-level stress promotion to a slice of entries.
-        /// Entries in slice form one clause (no ClauseBoundary tokens inside).
-        fn promote_clause(entries: &mut [EntryFull], phdata: &PhonemeData) {
-            // $strend/$strend2 promotion
-            let n = entries.len();
-            for i in 0..n {
-                if entries[i].kind != EntryKind::Word { continue; }
-                let dict_flags = entries[i].dict_flags;
-                if dict_flags & (FLAG_STREND | FLAG_STREND2) == 0 { continue; }
-
-                let is_last_word = entries[i+1..].iter().all(|e| e.kind != EntryKind::Word);
-                let following_all_unstressed = entries[i+1..].iter()
-                    .filter(|e| e.kind == EntryKind::Word)
-                    .all(|e| !e.phonemes.iter().any(|&c| c == PHON_STRESS_P_CODE || c == PHON_STRESS_P2_CODE));
-
-                promote_strend_stress(
-                    &mut entries[i].phonemes,
-                    phdata,
-                    dict_flags,
-                    is_last_word,
-                    following_all_unstressed,
-                );
-            }
-
-            // Clause-level stress promotion: if no primary stress, promote last stressed word
-            let has_primary = entries.iter()
-                .filter(|e| e.kind == EntryKind::Word)
-                .any(|e| e.phonemes.iter().any(|&c| c == PHON_STRESS_P_CODE || c == PHON_STRESS_P2_CODE));
-
-            if !has_primary {
-                let last_secondary = entries.iter().enumerate()
-                    .rev()
-                    .find(|(_, e)| e.kind == EntryKind::Word && !e.phonemes.is_empty()
-                        && e.phonemes.iter().any(|&c| c == 4 || c == 5))
-                    .map(|(i, _)| i);
-
-                if let Some(idx) = last_secondary {
-                    change_word_stress(&mut entries[idx].phonemes, phdata, 4);
-                } else {
-                    let last_word = entries.iter().enumerate()
-                        .rev()
-                        .find(|(_, e)| e.kind == EntryKind::Word && !e.phonemes.is_empty())
-                        .map(|(i, _)| i);
-                    if let Some(idx) = last_word {
-                        change_word_stress(&mut entries[idx].phonemes, phdata, 4);
-                    }
-                }
-            }
-        }
-
-        // Find clause boundaries and promote each clause independently
-        let clause_boundaries: Vec<usize> = {
-            let mut tmp = Vec::new();
-            for i in 0..entries.len() {
-                if entries[i].kind == EntryKind::ClauseBoundary {
-                    tmp.push(i);
-                }
-            }
-            tmp
-        };
-
-        if clause_boundaries.is_empty() {
-            // Single clause
-            promote_clause(&mut entries, &phdata);
-        } else {
-            // Multiple clauses: promote each separately
-            let mut prev_end = 0usize;
-            let mut boundaries_with_end: Vec<usize> = clause_boundaries.clone();
-            boundaries_with_end.push(entries.len()); // sentinel
-            for &bound in &boundaries_with_end {
-                let slice_end = if bound < entries.len() { bound } else { entries.len() };
-                if slice_end > prev_end {
-                    promote_clause(&mut entries[prev_end..slice_end], &phdata);
-                }
-                prev_end = if bound < entries.len() { bound + 1 } else { entries.len() };
-            }
-        }
+        let mut entries = build_translate_entries(
+            &tokens,
+            &dict,
+            &phdata,
+            &stress_opts,
+            &self.options,
+        );
+        promote_translate_entries(&mut entries, &phdata, lang);
 
         // Render to IPA with clause boundary newlines
         let mut ipa_out = String::new();
@@ -1857,13 +2101,13 @@ impl Translator {
 
         for (ei, entry) in entries.iter().enumerate() {
             match entry.kind {
-                EntryKind::Word => {
+                TranslateEntryKind::Word => {
                     let phonemes = &entry.phonemes;
                     if phonemes.is_empty() { continue; }
-                    let use_en_overrides = lang == "en";
+                    let use_en_overrides = primary_bcp47_subtag(lang) == "en";
                     // Check if next word starts with a vowel (for liaison)
                     let next_starts_vowel = entries[ei+1..].iter()
-                        .find(|e| e.kind == EntryKind::Word && !e.phonemes.is_empty())
+                        .find(|e| e.kind == TranslateEntryKind::Word && !e.phonemes.is_empty())
                         .map(|e| {
                             // Check first real phoneme
                             e.phonemes.iter()
@@ -1875,7 +2119,7 @@ impl Translator {
                         .unwrap_or(false);
                     // Suppress liaison phonemes at word-final when next word is not vowel-initial
                     let suppress_liaison = !next_starts_vowel;
-                    let (word_ipa, new_stress) = phonemes_to_ipa_full(
+                    let (mut word_ipa, new_stress) = phonemes_to_ipa_full(
                         phonemes,
                         &phdata,
                         stress,
@@ -1884,13 +2128,21 @@ impl Translator {
                         suppress_liaison,
                     );
                     stress = new_stress;
+                    if use_en_overrides
+                        && entry.word_lower.as_deref() == Some("or")
+                        && next_starts_vowel
+                        && word_ipa.ends_with("ɔː")
+                        && !word_ipa.ends_with("ɔːɹ")
+                    {
+                        word_ipa.push('ɹ');
+                    }
                     if !word_ipa.is_empty() {
                         ipa_out.push_str(&word_ipa);
                         first_word = false;
                         clause_has_output = true;
                     }
                 }
-                EntryKind::ClauseBoundary => {
+                TranslateEntryKind::ClauseBoundary => {
                     // Output \n between clauses (when previous clause had output)
                     if clause_has_output {
                         ipa_out.push('\n');
@@ -1900,12 +2152,12 @@ impl Translator {
                     // Reset word spacing for new clause
                     first_word = true;
                 }
-                EntryKind::Other => {}
+                TranslateEntryKind::Other => {}
             }
         }
 
         let mut ipa_out = ipa_out.trim_end_matches('\n').to_string();
-        if lang == "fr" {
+        if primary_bcp47_subtag(lang) == "fr" {
             ipa_out = ipa_out.replace('r', "ʁ");
         }
 
@@ -1914,7 +2166,9 @@ impl Translator {
 
     /// Translate text into a raw phoneme-code sequence for synthesis.
     ///
-    /// Returns a `Vec<PhonemeCode>` where each item describes one phoneme
+    /// Uses the same token → dictionary → **clause-level stress promotion** pipeline as
+    /// [`Translator::text_to_ipa`] (including English clause-initial WH secondary stress and
+    /// linking **/r/** after **or** before a vowel), then flattens to phoneme bytes.
     /// event (phoneme code + stress level).  This is the intermediate
     /// representation between the dictionary/rule engine and the IPA renderer;
     /// exposing it lets the synthesizer drive waveform generation directly
@@ -1931,14 +2185,14 @@ impl Translator {
     /// | 35+  | actual phoneme                |
     pub fn translate_to_codes(&self, text: &str) -> Result<Vec<PhonemeCode>> {
         let lang = &self.options.lang;
-        let dict_path = self.data_dir.join(format!("{}_dict", lang));
+        let dict_stem = resolve_dict_stem(&self.data_dir, lang).ok_or_else(|| {
+            Error::NotImplemented("translate_to_codes: dict not found")
+        })?;
+        let dict_path = self.data_dir.join(format!("{dict_stem}_dict"));
         let phontab_path = self.data_dir.join("phontab");
 
-        if !dict_path.exists() {
-            return Err(Error::NotImplemented("translate_to_codes: dict not found"));
-        }
         let dict_bytes = std::fs::read(&dict_path).map_err(Error::Io)?;
-        let dict = Dictionary::from_bytes(lang, dict_bytes)?;
+        let dict = Dictionary::from_bytes(&dict_stem, dict_bytes)?;
 
         if !phontab_path.exists() {
             return Err(Error::NotImplemented("translate_to_codes: phontab not found"));
@@ -1948,38 +2202,46 @@ impl Translator {
         let stress_opts = StressOpts::for_lang(lang);
 
         let tokens = tokenize_opts(text, &self.options.number_grammar);
-        let mut codes: Vec<PhonemeCode> = Vec::new();
+        let mut entries = build_translate_entries(
+            &tokens,
+            &dict,
+            &phdata,
+            &stress_opts,
+            &self.options,
+        );
+        promote_translate_entries(&mut entries, &phdata, lang);
+        if primary_bcp47_subtag(lang) == "en" {
+            apply_en_or_linking_r(&mut entries, &phdata);
+        }
 
-        for token in &tokens {
+        debug_assert_eq!(tokens.len(), entries.len());
+        let mut codes: Vec<PhonemeCode> = Vec::new();
+        for (token, entry) in tokens.iter().zip(entries.iter()) {
             match token {
-                Token::Word(word) => {
-                    let lower = word.to_lowercase();
-                    let wr = word_to_phonemes(&lower, &dict, &phdata, &stress_opts, &self.options);
-                    for &b in &wr.phonemes {
-                        codes.push(PhonemeCode { code: b, is_boundary: false });
-                    }
-                }
-                Token::Number(token) => {
-                    let wr = translate_number_token(
-                        token,
-                        &dict,
-                        &phdata,
-                        &stress_opts,
-                        &self.options.number_grammar,
-                    )
-                    .unwrap_or_else(|| {
-                        let surface = token.surface();
-                        word_to_phonemes(&surface, &dict, &phdata, &stress_opts, &self.options)
-                    });
-                    for &b in &wr.phonemes {
-                        codes.push(PhonemeCode { code: b, is_boundary: false });
+                Token::Word(_) | Token::Number(_) => {
+                    for &b in &entry.phonemes {
+                        if b != 0 {
+                            codes.push(PhonemeCode {
+                                code:         b,
+                                is_boundary:  false,
+                                clause_char:  None,
+                            });
+                        }
                     }
                 }
                 Token::Space => {
-                    codes.push(PhonemeCode { code: 15, is_boundary: true }); // END_WORD
+                    codes.push(PhonemeCode {
+                        code:         15,
+                        is_boundary:  true,
+                        clause_char:  None,
+                    }); // END_WORD
                 }
-                Token::ClauseBoundary(_) => {
-                    codes.push(PhonemeCode { code: 0, is_boundary: true }); // pause
+                Token::ClauseBoundary(punct) => {
+                    codes.push(PhonemeCode {
+                        code:         0,
+                        is_boundary:  true,
+                        clause_char:  Some(*punct),
+                    }); // pause + clause
                 }
                 _ => {}
             }
@@ -1996,6 +2258,9 @@ pub struct PhonemeCode {
     pub code: u8,
     /// True if this is a boundary marker (word boundary, clause boundary).
     pub is_boundary: bool,
+    /// When this item ends a clause (`Token::ClauseBoundary`), the punctuation
+    /// character (`,`, `.`, etc.).  Used for CLI phoneme output formatting.
+    pub clause_char: Option<char>,
 }
 
 // ---------------------------------------------------------------------------
@@ -2028,6 +2293,25 @@ mod tests {
         let t = Translator::new_default("en").unwrap();
         assert_eq!(t.options.lang, "en");
         assert_eq!(t.options.rate, 175);
+    }
+
+    #[test]
+    fn normalize_voice_tag_us_underscore() {
+        assert_eq!(normalize_voice_tag("en_US"), "en-us");
+        assert_eq!(normalize_voice_tag(" EN-us "), "en-us");
+    }
+
+    #[test]
+    fn lang_options_en_us_matches_en_number_grammar() {
+        let o = LangOptions::for_lang("en-US");
+        assert_eq!(o.lang, "en-us");
+        assert_eq!(o.number_grammar, LangOptions::for_lang("en").number_grammar);
+    }
+
+    #[test]
+    fn translator_new_default_normalizes_voice_tag() {
+        let t = Translator::new_default("en_US").unwrap();
+        assert_eq!(t.options.lang, "en-us");
     }
 
     #[test]
@@ -2130,6 +2414,101 @@ mod tests {
         let ipa = t.text_to_ipa("be").unwrap();
         // "be" in isolation gets primary stress via clause-level promotion
         assert_eq!(ipa, "bˈiː");
+    }
+
+    #[test]
+    fn text_to_ipa_en_us_falls_back_to_en_dict() {
+        let data_dir = Path::new("espeak-ng-data");
+        let data_dir = if data_dir.join("en_dict").exists() {
+            data_dir
+        } else if Path::new("/usr/share/espeak-ng-data/en_dict").exists() {
+            Path::new("/usr/share/espeak-ng-data")
+        } else {
+            return;
+        };
+        let t = Translator::new("en_US", Some(data_dir)).unwrap();
+        assert_eq!(t.options.lang, "en-us");
+        let ipa = t.text_to_ipa("hello").unwrap();
+        assert!(!ipa.is_empty());
+        let t_en = Translator::new("en", Some(data_dir)).unwrap();
+        assert_eq!(ipa, t_en.text_to_ipa("hello").unwrap());
+    }
+
+    #[test]
+    fn word_to_ipa_unseen_retranslates_stem_after_un_prefix() {
+        let data_dir = Path::new("espeak-ng-data");
+        let data_dir = if data_dir.join("en_dict").exists() {
+            data_dir
+        } else if Path::new("/usr/share/espeak-ng-data/en_dict").exists() {
+            Path::new("/usr/share/espeak-ng-data")
+        } else {
+            return;
+        };
+        let t = Translator::new("en-us", Some(data_dir)).unwrap();
+        let ipa = t.text_to_ipa("unseen").unwrap();
+        assert!(
+            ipa.contains("sˈiːn") || ipa.contains("siːn"),
+            "expected 'seen' syllable in output: {ipa:?}"
+        );
+    }
+
+    #[test]
+    fn word_to_ipa_seen_or_unseen_us_has_no_control_chars() {
+        let data_dir = Path::new("espeak-ng-data");
+        let data_dir = if data_dir.join("en_dict").exists() {
+            data_dir
+        } else if Path::new("/usr/share/espeak-ng-data/en_dict").exists() {
+            Path::new("/usr/share/espeak-ng-data")
+        } else {
+            return;
+        };
+        let t = Translator::new("en-us", Some(data_dir)).unwrap();
+        let ipa = t.text_to_ipa("seen or unseen,").unwrap();
+        assert!(
+            !ipa.chars().any(|c| c.is_control()),
+            "IPA must not contain C0 controls: {ipa:?}"
+        );
+    }
+
+    /// GitHub #4: `translate_to_codes` must apply the same clause promotions as `text_to_ipa`
+    /// (WH-word secondary stress; linking **r** after **or**).
+    #[test]
+    fn github_issue4_translate_codes_matches_ipa_pipeline() {
+        let data_dir = Path::new("espeak-ng-data");
+        let data_dir = if data_dir.join("en_dict").exists() {
+            data_dir
+        } else if Path::new("/usr/share/espeak-ng-data/en_dict").exists() {
+            Path::new("/usr/share/espeak-ng-data")
+        } else {
+            return;
+        };
+        let mut phdata = PhonemeData::load(data_dir).unwrap();
+        phdata.select_table_by_name("en-us").unwrap();
+        let r_code = phdata.lookup_phoneme("r");
+        assert!(r_code > 0, "en-us phontab should define r");
+
+        let t = Translator::new("en-us", Some(data_dir)).unwrap();
+        let wh = t.translate_to_codes("When choices cease").unwrap();
+        let flat: Vec<u8> = wh
+            .iter()
+            .filter(|c| !c.is_boundary)
+            .map(|c| c.code)
+            .collect();
+        assert!(
+            flat.len() >= 3 && flat[0] == 58 && flat[1] == 4,
+            "expected w then secondary stress (4) for clause-initial when: {flat:?}"
+        );
+
+        let or_line = t.translate_to_codes("seen or unseen").unwrap();
+        let flat: Vec<u8> = or_line
+            .iter()
+            .filter(|c| !c.is_boundary)
+            .map(|c| c.code)
+            .collect();
+        assert!(
+            flat.windows(2).any(|w| w[0] == 140 && w[1] == r_code),
+            "expected linking /r/ phoneme after dict tail of or (140): {flat:?}"
+        );
     }
 
     #[test]

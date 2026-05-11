@@ -436,8 +436,14 @@ impl PhonemeData {
                     ipa_bytes.push((word & 0xff) as u8);
                 }
                 ipa_bytes.truncate(data);
-                return String::from_utf8(ipa_bytes).ok()
-                    .filter(|s| !s.is_empty() && !s.starts_with('\u{0001}'));
+                let s = String::from_utf8(ipa_bytes).ok()?;
+                // Phoneme programs may prefix IPA data with C0 control bytes used as
+                // in-engine markers; they must not appear in user-facing IPA output.
+                let cleaned: String = s.chars().filter(|c| !c.is_control()).collect();
+                if cleaned.is_empty() {
+                    return None;
+                }
+                return Some(cleaned);
             }
         }
         None

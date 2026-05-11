@@ -22,10 +22,16 @@
 //   # Specific group only:
 //   cargo bench -- encoding
 //   cargo bench -- resonator
-//   cargo bench --features bundled-espeak -- "text_to_ipa/c_cli"
+//   Verification (Rust `text_to_ipa` vs `espeak-ng --ipa`) runs automatically for
+//   a **core** phrase list when the espeak-ng binary is available.  Phrases that
+//   still diverge (long English paragraph, Russian, Chinese, `de` “Guten Morgen”
+//   tap-R, …) are benchmarked but not asserted — use `SKIP_IPA_VERIFY=1` to skip
+//   checks entirely.
+//
+//   cargo bench --features bundled-espeak -- "text_to_ipa/issue4_regional"
 
 use criterion::{
-    black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput,
+    black_box, criterion_group, BenchmarkId, Criterion, Throughput,
 };
 use std::time::Duration;
 
@@ -81,6 +87,70 @@ fn c_cli_text_to_ipa(lang: &str, text: &str) -> String {
 
 fn text_bytes(s: &str) -> u64 {
     s.len() as u64
+}
+
+fn sync_rust_data_with_cli_for_ipa() {
+    if let Some(dir) = espeak_data() {
+        std::env::set_var("ESPEAK_DATA_PATH", dir);
+    }
+}
+
+/// `(lang, text)` pairs that must match espeak-ng `--ipa` when benches run with
+/// verification enabled.  (Benchmarks may still measure additional languages.)
+fn ipa_verify_corpus() -> Vec<(&'static str, &'static str)> {
+    let mut v = Vec::new();
+    v.extend([
+        ("en", "hello"),
+        (
+            "en",
+            "The quick brown fox jumps over the lazy dog.",
+        ),
+        ("fr", "bonjour"),
+        ("de", "Guten Tag"),
+        ("es", "hola"),
+    ]);
+    for voice in ["en-us", "en-rp"] {
+        for text in [
+            "When choices cease",
+            "unseen",
+            "seen or unseen,",
+        ] {
+            v.push((voice, text));
+        }
+    }
+    v.extend([
+        ("en", "Hi"),
+        ("en", "hello"),
+        ("en", "Hello world"),
+        ("fr", "Bonjour"),
+    ]);
+    v
+}
+
+fn verify_ipa_benchmark_corpus() {
+    let pairs = ipa_verify_corpus();
+    let mut failures: Vec<(&'static str, &'static str, String, String)> = Vec::new();
+    for &(lang, text) in &pairs {
+        let c_ipa = c_cli_text_to_ipa(lang, text);
+        match espeak_ng::text_to_ipa(lang, text) {
+            Ok(r) if r == c_ipa => {}
+            Ok(r) => failures.push((lang, text, c_ipa, r)),
+            Err(e) => failures.push((lang, text, c_ipa, format!("Rust error: {e}"))),
+        }
+    }
+    if failures.is_empty() {
+        eprintln!("[ipa verify] {} Rust vs C CLI pairs OK", pairs.len());
+        return;
+    }
+    let mut msg = String::from("IPA mismatch — Rust `text_to_ipa` ≠ espeak-ng CLI:\n\n");
+    for (lang, text, c_ipa, r_ipa) in &failures {
+        msg.push_str(&format!(
+            "  lang={lang:?} text={text:?}\n    C: {c_ipa}\n    R: {r_ipa}\n\n"
+        ));
+    }
+    msg.push_str("Build with --features bundled-espeak so both use the same data tree,\n\
+                  or set SKIP_IPA_VERIFY=1 to benchmark timings only.\n");
+    panic!("{msg}");
 }
 
 // ---------------------------------------------------------------------------
@@ -283,18 +353,65 @@ fn bench_c_cli(c: &mut Criterion) {
 // Group 6: First-phoneme latency
 // ---------------------------------------------------------------------------
 
+fn bench_issue4_regional(c: &mut Criterion) {
+    if !espeak_available() {
+        eprintln!(
+            "\n[SKIP] bench_issue4_regional: espeak-ng not available (see bench_c_cli).\n"
+        );
+        return;
+    }
+
+    let texts: &[&str] = &[
+        "When choices cease",
+        "unseen",
+        "seen or unseen,",
+    ];
+    let voices: &[&str] = &["en-us", "en-rp"];
+
+    let mut group = c.benchmark_group("text_to_ipa/issue4_regional");
+    group.measurement_time(Duration::from_secs(5));
+    group.sample_size(15);
+    group.warm_up_time(Duration::from_secs(1));
+
+    for &voice in voices {
+        for &text in texts {
+            let slug = text
+                .chars()
+                .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+                .collect::<String>();
+            let id = format!("{voice}/{slug}");
+            group.throughput(Throughput::Bytes(text_bytes(text)));
+            group.bench_with_input(
+                BenchmarkId::new("rust", &id),
+                &(voice, text),
+                |b, &(voice, text)| {
+                    b.iter(|| black_box(espeak_ng::text_to_ipa(black_box(voice), black_box(text))))
+                },
+            );
+            group.bench_with_input(
+                BenchmarkId::new("c_cli", &id),
+                &(voice, text),
+                |b, &(voice, text)| {
+                    b.iter(|| black_box(c_cli_text_to_ipa(black_box(voice), black_box(text))))
+                },
+            );
+        }
+    }
+    group.finish();
+}
+
 fn bench_latency(c: &mut Criterion) {
     if !espeak_available() {
         eprintln!("\n[SKIP] bench_latency: see bench_c_cli message above.\n");
         return;
     }
 
-    let phrases: &[(&str, &str)] = &[
-        ("en/hi",          "Hi"),
-        ("en/hello",       "hello"),
-        ("en/hello_world", "Hello world"),
-        ("fr/bonjour",     "Bonjour"),
-        ("de/guten",       "Guten Morgen"),
+    let phrases: &[(&str, &str, &str)] = &[
+        ("en", "en/hi",           "Hi"),
+        ("en", "en/hello",        "hello"),
+        ("en", "en/hello_world",  "Hello world"),
+        ("fr", "fr/bonjour",      "Bonjour"),
+        ("de", "de/guten",        "Guten Morgen"),
     ];
 
     let mut group = c.benchmark_group("latency/first_phoneme");
@@ -302,16 +419,16 @@ fn bench_latency(c: &mut Criterion) {
     group.sample_size(15);
     group.warm_up_time(Duration::from_secs(2));
 
-    for (id, text) in phrases {
+    for (lang, id, text) in phrases {
         group.bench_with_input(
             BenchmarkId::new("c_cli", id),
-            text,
-            |b, &text| b.iter(|| black_box(c_cli_text_to_ipa("en", black_box(text)))),
+            &(*lang, *text),
+            |b, &(lang, text)| b.iter(|| black_box(c_cli_text_to_ipa(lang, black_box(text)))),
         );
         group.bench_with_input(
             BenchmarkId::new("rust", id),
-            text,
-            |b, &text| b.iter(|| black_box(espeak_ng::text_to_ipa("en", black_box(text)))),
+            &(*lang, *text),
+            |b, &(lang, text)| b.iter(|| black_box(espeak_ng::text_to_ipa(lang, black_box(text)))),
         );
     }
     group.finish();
@@ -364,25 +481,36 @@ fn bench_ffi(c: &mut Criterion) {
 
 #[cfg(not(feature = "c-oracle"))]
 criterion_group!(
-    benches,
+    all_benchmarks,
     bench_encoding,
     bench_encoding_name_lookup,
     bench_resonator,
     bench_rust_text_to_ipa,
     bench_c_cli,
+    bench_issue4_regional,
     bench_latency,
 );
 
 #[cfg(feature = "c-oracle")]
 criterion_group!(
-    benches,
+    all_benchmarks,
     bench_encoding,
     bench_encoding_name_lookup,
     bench_resonator,
     bench_rust_text_to_ipa,
     bench_c_cli,
+    bench_issue4_regional,
     bench_latency,
     bench_ffi,
 );
 
-criterion_main!(benches);
+fn main() {
+    sync_rust_data_with_cli_for_ipa();
+    if espeak_available() && std::env::var("SKIP_IPA_VERIFY").is_err() {
+        verify_ipa_benchmark_corpus();
+    }
+    all_benchmarks();
+    Criterion::default()
+        .configure_from_args()
+        .final_summary();
+}
