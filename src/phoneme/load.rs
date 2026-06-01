@@ -21,6 +21,10 @@ use super::{
 
 const PHONEME_TAB_ENTRY_SIZE: usize = 16;
 
+// Sample rate to assume when phondata is absent. Every espeak-ng voice is
+// 22.05 kHz, and the phonemizer doesn't care about it anyway.
+const DEFAULT_SAMPLE_RATE: u32 = 22050;
+
 // ---------------------------------------------------------------------------
 // PhonemeData — the fully loaded dataset
 // ---------------------------------------------------------------------------
@@ -33,10 +37,12 @@ const PHONEME_TAB_ENTRY_SIZE: usize = 16;
 pub struct PhonemeData {
     /// All phoneme table definitions parsed from `phontab`.
     pub tables: Vec<PhonemeTabList>,
-    /// Sample rate read from `phondata` header (typically 22050).
+    /// Sample rate from the `phondata` header (typically 22050), or the
+    /// 22.05 kHz default when `phondata` wasn't loaded.
     pub sample_rate: u32,
 
-    /// Raw bytes of `phondata` (waveform / formant data).
+    /// Raw bytes of `phondata` (waveform / formant data). Empty when the file
+    /// was missing and only the phonemizer is in use.
     pub phondata: Vec<u8>,
     /// Raw bytes of `phonindex` (u16 offsets into phondata).
     pub phonindex: Vec<u8>,
@@ -61,18 +67,26 @@ impl PhonemeData {
     pub fn load(data_dir: &Path) -> Result<Self> {
         let phoneme_tab_data = read_file(data_dir, "phontab")?;
         let phonindex        = read_file(data_dir, "phonindex")?;
-        let phondata         = read_file(data_dir, "phondata")?;
         let intonations      = read_file(data_dir, "intonations")?;
 
-        // Verify version magic from phondata bytes 0-3
-        if phondata.len() < 8 {
-            return Err(Error::InvalidData("phondata too short".into()));
-        }
-        let version = u32::from_le_bytes(phondata[0..4].try_into().unwrap());
-        if version != VERSION_PHDATA {
-            return Err(Error::VersionMismatch { got: version, expected: VERSION_PHDATA });
-        }
-        let sample_rate = u32::from_le_bytes(phondata[4..8].try_into().unwrap());
+        // phondata is the waveform/formant data for espeak's own synthesizer.
+        // Phonemization (text -> IPA) never touches it, so the file is
+        // optional: when it's missing we load everything the phonemizer needs
+        // and leave phondata empty. Synthesis callers must supply it.
+        let phondata = read_file(data_dir, "phondata").unwrap_or_default();
+        let sample_rate = if phondata.is_empty() {
+            DEFAULT_SAMPLE_RATE
+        } else {
+            // A present but truncated header is still a genuine error.
+            if phondata.len() < 8 {
+                return Err(Error::InvalidData("phondata too short".into()));
+            }
+            let version = u32::from_le_bytes(phondata[0..4].try_into().unwrap());
+            if version != VERSION_PHDATA {
+                return Err(Error::VersionMismatch { got: version, expected: VERSION_PHDATA });
+            }
+            u32::from_le_bytes(phondata[4..8].try_into().unwrap())
+        };
 
         // Parse phontab
         let tables = parse_phontab(&phoneme_tab_data)?;
@@ -543,6 +557,29 @@ mod tests {
 
         // phondata version bytes check (already validated internally)
         assert!(d.phondata.len() > 8);
+    }
+
+    // Phonemization only needs the phoneme tables and index, not the waveform
+    // blob. Load a data dir with phondata removed and confirm IPA still works.
+    #[test]
+    fn load_and_phonemize_without_phondata() {
+        if !data_available() { return; }
+        let dir = std::env::temp_dir().join("espeak-ng-rs-no-phondata");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        for f in ["phontab", "phonindex", "intonations", "en_dict"] {
+            std::fs::copy(Path::new(DATA_DIR).join(f), dir.join(f)).unwrap();
+        }
+
+        let d = PhonemeData::load(&dir).expect("load without phondata");
+        assert!(d.phondata.is_empty());
+        assert_eq!(d.sample_rate, DEFAULT_SAMPLE_RATE);
+
+        let ipa = crate::Translator::new("en", Some(dir.as_path()))
+            .unwrap()
+            .text_to_ipa("hello")
+            .unwrap();
+        assert!(!ipa.is_empty(), "phonemizer produced no output without phondata");
     }
 
     #[test]
