@@ -171,6 +171,18 @@ impl TransposeConfig {
 
     /// Returns `true` when this config applies any script-specific compression.
     pub fn is_active(&self) -> bool { self.transpose_min > 0 }
+
+    /// Select the script configuration for a language code — the transpose half
+    /// of the per-script branch of `SelectTranslator()` (`tr_languages.c`), kept
+    /// in sync with `Dictionary::from_bytes`.
+    pub fn for_lang(lang: &str) -> Self {
+        match lang {
+            "ru" | "bg" | "tt" | "uk" | "be" => Self::CYRILLIC,
+            "ar" => Self::ARABIC,
+            "fa" => Self::PERSIAN,
+            _ => Self::LATIN,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

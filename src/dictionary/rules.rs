@@ -58,6 +58,9 @@ pub fn is_letter(letter_bits: &[u8; 256], c: u32, group: usize) -> bool {
     // passes `wc - letter_bits_offset` as the effective index via
     // `is_letter_with_offset`.
     if c > 0x7fff { return false; }
+    // Only 8 built-in letter groups exist (bits 0-7); a larger index means a
+    // malformed/misread rule byte — reject it rather than overflow the `u8` shift.
+    if group >= 8 { return false; }
     let idx = (c as usize) & 0xff;
     (letter_bits[idx] >> group) & 1 != 0
 }
@@ -76,6 +79,8 @@ pub fn is_letter_wc(letter_bits: &[u8; 256], wc: u32, letter_bits_offset: u32, g
         if wc >= 256 { return false; }
         wc as usize
     };
+    // Only 8 built-in letter groups exist (bits 0-7); guard the `u8` shift.
+    if group >= 8 { return false; }
     (letter_bits[idx] >> group) & 1 != 0
 }
 

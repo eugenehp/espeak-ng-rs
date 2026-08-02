@@ -92,6 +92,38 @@ fn text_to_pcm_de_guten_tag() {
 // ---------------------------------------------------------------------------
 
 #[test]
+fn klatt_path_renders_and_differs_from_harmonic() {
+    if !data_available() {
+        println!("[SKIP] no data");
+        return;
+    }
+    use std::path::Path;
+    use espeak_ng::phoneme::PhonemeData;
+    use espeak_ng::translate::Translator;
+
+    let mut phdata = PhonemeData::load(Path::new(ESPEAK_DATA_DIR)).expect("phdata");
+    phdata.select_table_by_name("en").expect("en table");
+    let translator = Translator::new_default("en").expect("translator");
+    let codes = translator.translate_to_codes("hello world").expect("codes");
+
+    // Default (harmonic) path.
+    let harmonic = Synthesizer::new(VoiceParams::default())
+        .synthesize_codes(&codes, &phdata)
+        .expect("harmonic");
+    // Opt-in Klatt path.
+    let mut vp = VoiceParams::default();
+    vp.klatt = true;
+    let klatt = Synthesizer::new(vp).synthesize_codes(&codes, &phdata).expect("klatt");
+
+    assert!(!klatt.is_empty(), "Klatt produced no audio");
+    assert!(has_audio(&klatt, 100), "Klatt output should be audible");
+    // A different synthesizer → different samples (proves the opt-in path ran).
+    assert_ne!(harmonic, klatt, "Klatt path did not change the output");
+    // Default path is unaffected.
+    assert!(!harmonic.is_empty());
+}
+
+#[test]
 fn synthesize_codes_via_translate_to_codes() {
     if !data_available() {
         println!("[SKIP] espeak-ng data not found at {ESPEAK_DATA_DIR}");

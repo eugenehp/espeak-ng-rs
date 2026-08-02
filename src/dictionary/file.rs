@@ -112,12 +112,15 @@ pub struct Dictionary {
     /// When non-zero, `groups3[wc - letter_bits_offset]` maps a Unicode
     /// codepoint to its rule chain.
     ///
-    /// | Language family | Value |
-    /// |-----------------|-------|
-    /// | Latin (default) | 0 |
-    /// | Cyrillic (ru, bg, tt, uk, be) | 0x420 |
-    /// | Arabic (ar) | 0x600 |
-    /// | Farsi/Persian (fa) | 0x600 |
+    /// | Script | Offset | Languages |
+    /// |--------|--------|-----------|
+    /// | Latin (default) | 0 | most |
+    /// | Cyrillic | 0x420 | ru, bg, tt, uk, be, mk, mn, kk, ky, ba, cv, tg, os, cu |
+    /// | Greek | 0x380 | el, grc |
+    /// | Armenian | 0x530 | hy, hyw |
+    /// | Georgian | 0x10A0 | ka |
+    /// | Indic (ISCII layout) | block start | Devanagari hi/mr/ne/sa/kok 0x900, Bengali bn/as 0x980, Gurmukhi pa 0xA00, Gujarati gu 0xA80, Oriya or 0xB00, Tamil ta 0xB80, Telugu te 0xC00, Kannada kn 0xC80, Malayalam ml 0xD00 |
+    /// | Arabic | 0x600 | ar, fa |
     pub letter_bits_offset: u32,
 
     /// Per-character letter-group bitmask table.
@@ -129,6 +132,11 @@ pub struct Dictionary {
     ///
     /// For Latin scripts, the table uses direct ASCII indices (offset=0).
     pub letter_bits: Box<[u8; 256]>,
+
+    /// Decoded `.replace` table (`from` → `to` character-sequence pairs),
+    /// applied to a word before dict/rule lookup.  Empty when the rules file
+    /// has no `.replace` section.  See [`Dictionary::apply_replacements`].
+    pub replace_pairs: Vec<(Vec<char>, String)>,
 }
 
 impl Dictionary {
@@ -193,19 +201,53 @@ impl Dictionary {
         // letter_bits_offset: base codepoint for groups3 rule indexing
         //
         // OFFSET_CYRILLIC = 0x420, OFFSET_ARABIC = 0x600 (from tr_languages.c)
-        let (transpose, letter_bits_offset) = match lang {
-            // Cyrillic-script languages: SetCyrillicLetters() → transpose_min=0x430,
-            // letter_bits_offset=0x420 (OFFSET_CYRILLIC)
-            "ru" | "bg" | "tt" | "uk" | "be" => (TransposeConfig::CYRILLIC, 0x420u32),
-            // Arabic script (ar): transpose_min=0x600, letter_bits_offset=0x600
-            "ar" => (TransposeConfig::ARABIC, 0x600u32),
-            // Farsi/Persian: letter_bits_offset=0x600 (OFFSET_ARABIC)
-            "fa" => (TransposeConfig::PERSIAN, 0x600u32),
-            // All other languages: default Latin-script compression, no offset
-            _ => (TransposeConfig::LATIN, 0u32),
+        // transpose (word hashing compression) is chosen by script; keep the
+        // offsets in sync with `TransposeConfig::for_lang`.
+        let transpose = TransposeConfig::for_lang(lang);
+        let letter_bits_offset = match lang {
+            // Cyrillic-script: OFFSET_CYRILLIC
+            "ru" | "bg" | "tt" | "uk" | "be" | "mk" | "mn" | "kk" | "ky"
+            | "ba" | "cv" | "tg" | "os" | "cu" => 0x420u32,
+            // Greek: OFFSET_GREEK
+            "el" | "grc" => 0x380u32,
+            // Armenian: OFFSET_ARMENIAN
+            "hy" | "hyw" => 0x530u32,
+            // Georgian: OFFSET_GEORGIAN
+            "ka" => 0x10A0u32,
+            // Indic scripts (block start = offset).  They share the ISCII-derived
+            // relative layout, so one letter-group classification serves all.
+            "hi" | "mr" | "ne" | "sa" | "kok" => 0x900u32, // Devanagari
+            "bn" | "as" | "bpy" => 0x980u32,               // Bengali/Assamese/Bishnupriya
+            "pa" => 0xA00u32,                              // Gurmukhi
+            "gu" => 0xA80u32,                              // Gujarati
+            "or" => 0xB00u32,                              // Oriya
+            "ta" => 0xB80u32,                              // Tamil
+            "te" => 0xC00u32,                              // Telugu
+            "kn" => 0xC80u32,                              // Kannada
+            "ml" => 0xD00u32,                              // Malayalam
+            // Sinhala — its own (non-ISCII) block; the si_rules carry the
+            // abugida handling via rule-file letter groups (.L01…) and virama
+            // (U+0DCA) context, so only the groups3 offset is needed here.
+            "si" => 0xD80u32,                              // Sinhala
+            // Arabic script: Arabic, Farsi/Persian, Urdu, Sindhi — key their
+            // rules on the U+0600 block, so index groups3 from there.  (Uyghur
+            // `ug` also uses Arabic script but resolves via groups2 and works
+            // without the offset, so it's intentionally left off.)
+            "ar" | "fa" | "ur" | "sd" => 0x600u32,
+            // Korean: the Hangul-syllable input is decomposed to conjoining jamo
+            // (U+1100 leading, U+1161 vowel, U+11A7 trailing) before lookup, and
+            // ko_rules keys its groups on those jamo — so index groups3 from the
+            // jamo block start.
+            "ko" => 0x1100u32,
+            // All other languages: no offset
+            _ => 0u32,
         };
 
         let letter_bits = build_letter_bits(lang);
+
+        let replace_pairs = groups.replace_chars
+            .map(|off| decode_replace_table(&data, off))
+            .unwrap_or_default();
 
         Ok(Dictionary {
             data,
@@ -216,13 +258,54 @@ impl Dictionary {
             transpose,
             letter_bits_offset,
             letter_bits,
+            replace_pairs,
         })
+    }
+
+    /// Apply the `.replace` table to `word`, returning the substituted string
+    /// (or `None` when nothing matched, so callers can avoid an allocation).
+    ///
+    /// Mirrors C's `SubstituteChar`/`FindReplacementChars`: scan left-to-right,
+    /// and at each position use the **first** table entry whose `from` sequence
+    /// matches the input there, emitting its (1–2 char) `to`.  Used e.g. by
+    /// Japanese to fold katakana→hiragana and decompose precomposed voiced kana
+    /// (`だ`→`た`+゙) into the form the pronunciation rules match.
+    pub fn apply_replacements(&self, word: &str) -> Option<String> {
+        if self.replace_pairs.is_empty() {
+            return None;
+        }
+        let chars: Vec<char> = word.chars().collect();
+        let mut out = String::with_capacity(word.len());
+        let mut i = 0;
+        let mut changed = false;
+        while i < chars.len() {
+            let mut matched = false;
+            for (from, to) in &self.replace_pairs {
+                if from.len() <= chars.len() - i && chars[i..i + from.len()] == from[..] {
+                    out.push_str(to);
+                    i += from.len();
+                    matched = true;
+                    changed = true;
+                    break;
+                }
+            }
+            if !matched {
+                out.push(chars[i]);
+                i += 1;
+            }
+        }
+        changed.then_some(out)
     }
 
     /// Return the slice containing all translation rules.
     #[inline]
     pub fn rules(&self) -> &[u8] {
         &self.data[self.rules_offset..]
+    }
+
+    #[cfg(test)]
+    pub fn replace_pairs_for_test(&self) -> &[(Vec<char>, String)] {
+        &self.replace_pairs
     }
 
     /// Return the translation rule chain for a single ASCII byte `c` (groups1),
@@ -268,6 +351,38 @@ impl Dictionary {
     }
 }
 
+/// Decode the `.replace` table at `offset` into `from`→`to` pairs.
+///
+/// Layout (from `compiledict.c`): a run of entries, each a NUL-terminated UTF-8
+/// `from` string followed by a NUL-terminated UTF-8 `to` string.  The table
+/// ends where the next four bytes are all NUL (C's `is_str_totally_null(p, 4)`),
+/// i.e. at an empty `from`.
+fn decode_replace_table(data: &[u8], offset: usize) -> Vec<(Vec<char>, String)> {
+    let read_cstr = |pos: &mut usize| -> &[u8] {
+        let start = *pos;
+        while *pos < data.len() && data[*pos] != 0 {
+            *pos += 1;
+        }
+        let s = &data[start..*pos];
+        if *pos < data.len() {
+            *pos += 1; // skip the terminating NUL
+        }
+        s
+    };
+
+    let mut pairs = Vec::new();
+    let mut pos = offset;
+    while pos + 4 <= data.len() && data[pos..pos + 4].iter().any(|&b| b != 0) {
+        let from = String::from_utf8_lossy(read_cstr(&mut pos)).into_owned();
+        let to = String::from_utf8_lossy(read_cstr(&mut pos)).into_owned();
+        if from.is_empty() {
+            break;
+        }
+        pairs.push((from.chars().collect(), to));
+    }
+    pairs
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // InitGroups — build the rule-group index
 // ─────────────────────────────────────────────────────────────────────────────
@@ -293,9 +408,12 @@ fn build_groups(data: &[u8], rules_offset: usize) -> Result<Groups, Error> {
 
         // Check for special group types
         if rules[pos] == RULE_REPLACEMENTS {
-            // Advance to next 4-byte-aligned position (relative to data start)
+            // The table starts at `(&RULE_REPLACEMENTS + 4) & ~3` — C rounds the
+            // (memory) address *down* to a 4-byte boundary (`((intptr_t)p+4) &
+            // ~3` in dictionary.c); `data` is itself 4-aligned, so the same
+            // arithmetic on the file offset gives the identical position.
             let abs = rules_offset + pos + 4;
-            let aligned = (abs + 3) & !3;
+            let aligned = abs & !3;
             // replace_chars table starts there
             g.replace_chars = Some(aligned);
             // skip forward until RULE_GROUP_END
@@ -391,7 +509,8 @@ fn build_letter_bits(lang: &str) -> Box<[u8; 256]> {
     let mut bits = Box::new([0u8; 256]);
 
     match lang {
-        "ru" | "bg" | "uk" | "be" | "tt" => {
+        "ru" | "bg" | "uk" | "be" | "tt" | "mk" | "mn" | "kk" | "ky"
+        | "ba" | "cv" | "tg" | "os" | "cu" => {
             // Cyrillic letter groups — `letter_bits_offset = OFFSET_CYRILLIC = 0x420`
             // Indices are (codepoint - 0x420); stored at that index in bits[].
 
@@ -433,6 +552,61 @@ fn build_letter_bits(lang: &str) -> Box<[u8; 256]> {
             set_bits(&mut bits, CYRL_VOICED,   5); // LETTERGP_G
             set_bits(&mut bits, CYRL_IVOWELS,  6); // LETTERGP_Y
             set_bits(&mut bits, RU_VOWELS,     7); // LETTERGP_VOWEL2
+        }
+        "el" | "grc" => {
+            // Greek letter groups — `letter_bits_offset = OFFSET_GREEK = 0x380`.
+            // Index = (codepoint - 0x380) & 0x7f.
+            let set = |bits: &mut [u8; 256], chars: &str, group: u8| {
+                for c in chars.chars() {
+                    let idx = ((c as u32).wrapping_sub(0x380) & 0x7f) as usize;
+                    bits[idx] |= 1 << group;
+                }
+            };
+            // Vowels (mono/dia-critics included), upper- and lowercase.
+            let vowels = "αεηιουωΑΕΗΙΟΥΩάέήίόύώϊϋΐΰ";
+            // All consonants.
+            let consonants = "βγδζθκλμνξπρσςτφχψΒΓΔΖΘΚΛΜΝΞΠΡΣΤΦΧΨ";
+            set(&mut bits, vowels, 0);     // LETTERGP_A
+            set(&mut bits, consonants, 2); // LETTERGP_C
+            set(&mut bits, vowels, 7);     // LETTERGP_VOWEL2
+        }
+        "hi" | "mr" | "ne" | "sa" | "kok" | "bn" | "as" | "bpy" | "pa" | "gu" | "or"
+        | "ta" | "te" | "kn" | "ml" => {
+            // Indic scripts share the ISCII-derived layout, so the built-in
+            // groups apply at the same *offset-relative* positions regardless of
+            // script.  Groups (from the espeak `*_rules`): A = vowel letters +
+            // signs, B = signs + virama, C = consonants, Y = vowels + signs.
+            // Group **B** is the key — a consonant followed by group B drops its
+            // inherent vowel, which makes conjuncts (`स्त`) collapse correctly.
+            // The table is indexed by `(codepoint - offset) & 0x7f`, and all
+            // Indic offsets are the block start, so index = position within block.
+            let set = |bits: &mut [u8; 256], lo: usize, hi: usize, group: u8| {
+                for i in lo..=hi { bits[i] |= 1 << group; }
+            };
+            set(&mut bits, 0x15, 0x39, 2); // consonants → C
+            set(&mut bits, 0x58, 0x5F, 2); // nukta consonant forms → C
+            set(&mut bits, 0x05, 0x14, 0); // independent vowels → A
+            set(&mut bits, 0x05, 0x14, 6); //                       + Y
+            set(&mut bits, 0x3E, 0x4C, 0); // dependent vowel signs → A
+            set(&mut bits, 0x3E, 0x4C, 1); //                        + B
+            set(&mut bits, 0x3E, 0x4C, 6); //                        + Y
+            bits[0x4D] |= 1 << 1;          // virama → B (suppresses inherent vowel)
+        }
+        "si" => {
+            // Sinhala (own block, offset 0x0D80).  Same abugida mechanism as the
+            // ISCII scripts — a consonant followed by group **B** (a dependent
+            // vowel sign or the virama/al-lakuna) drops its inherent vowel; the
+            // si_rules key the drop on group B (`ක (B → k`).  Layout differs
+            // from ISCII, so the positions are Sinhala-specific.
+            let set = |bits: &mut [u8; 256], lo: usize, hi: usize, group: u8| {
+                for i in lo..=hi { bits[i] |= 1 << group; }
+            };
+            set(&mut bits, 0x1A, 0x46, 2); // consonants ක–ෆ → C
+            set(&mut bits, 0x05, 0x16, 0); // independent vowels අ–ඖ → A
+            set(&mut bits, 0x4F, 0x5F, 1); // dependent vowel signs → B
+            set(&mut bits, 0x4F, 0x5F, 0); //                        + A
+            set(&mut bits, 0x72, 0x73, 1); // vocalic rr/ll signs → B
+            bits[0x4A] |= 1 << 1;          // virama (al-lakuna) → B
         }
         _ => {
             // Latin/default: use the English letter bits

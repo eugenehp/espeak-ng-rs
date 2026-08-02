@@ -33,6 +33,7 @@ pub mod rules;
 pub mod phonemes;
 pub mod stress;
 pub mod transpose;
+pub mod compile;
 
 pub use flags::{DictFlags1, DictFlags2};
 pub use file::Dictionary;

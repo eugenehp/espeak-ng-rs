@@ -15,6 +15,8 @@
 // Instruction opcode constants mirror synthesize.h and are used internally.
 #![allow(missing_docs)]
 
+use crate::phoneme::PhonemeTab;
+
 // ---------------------------------------------------------------------------
 // Instruction opcode constants (mirrors synthesize.h)
 // ---------------------------------------------------------------------------
@@ -111,6 +113,19 @@ pub struct PhonemeExtract {
     /// If the phoneme does an unconditional ChangePhoneme(code), the target code.
     /// The caller should look up this code's synthesis data as a fallback.
     pub change_phoneme_code: Option<u8>,
+
+    /// Vowel-transition data for coarticulation (GAPS §36, Stage 2).
+    /// `[0..2]` come from `i_VOWELIN`, `[2..4]` from `i_VOWELOUT`.  Consumed
+    /// by `FormantTransition2` (Stage 4).  Zero = no transition specified.
+    #[allow(dead_code)]
+    pub vowel_transition: [u32; 4],
+
+    /// `pd_FORNEXTPH`: the `vwlstart_addr` was produced by a `NextVowelStarts`
+    /// switch (`SwitchOnVowelType` instn_type 2), i.e. it is the onset glide the
+    /// consonant specifies *for the following vowel* — not the phoneme's own
+    /// onset.  Mirrors `phdata->pd_control & pd_FORNEXTPH` in synthdata.c and
+    /// gates onset selection in the vowel branch of synthesize.c.
+    pub pd_fornextph: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -129,6 +144,50 @@ pub struct PhonemeExtract {
 /// route (voiced for voiced consonants, etc.).
 ///
 /// Mirrors the core of `InterpretPhoneme()` in synthdata.c.
+/// Evaluate a consonant's `SwitchNextVowelType` table to pick the VowelStart
+/// (onset-transition) sequence for a following vowel of the given `start_type`.
+///
+/// Mirrors `SwitchOnVowelType(..., instn_type=2)` in synthdata.c: a JUMP with
+/// `type2 == 5` is followed by a 12-word table of six `VWLSTART` entries (one
+/// per vowel category `phonVOWELTYPES..+6`, i.e. `start_type` 28–33).  Returns
+/// the phondata address of the selected onset sequence, or `None`.
+pub fn select_vowel_start(program: u16, phonindex: &[u8], next_start_type: u8) -> Option<u32> {
+    const PHON_VOWEL_TYPES: i32 = 28;
+    if program == 0 {
+        return None;
+    }
+    let voweltype = next_start_type as i32 - PHON_VOWEL_TYPES;
+    if !(0..6).contains(&voweltype) {
+        return None;
+    }
+    let voweltype = voweltype as usize;
+    let max_words = phonindex.len() / 2;
+    let word = |i: usize| -> u16 {
+        u16::from_le_bytes([phonindex[i * 2], phonindex[i * 2 + 1]])
+    };
+    let mut pc = program as usize;
+    let scan_limit = pc + 128;
+    while pc < max_words && pc < scan_limit {
+        let instn = word(pc);
+        if instn == INSTN_RETURN {
+            break;
+        }
+        if instn >> 12 == 6 && ((instn & 0x0f00) >> 9) == 5 {
+            // SwitchNextVowelType: prog = pc + voweltype*2;
+            // addr = ((prog[1] & 0xf) << 16 + prog[2]) * 4
+            let base = pc + voweltype * 2;
+            if base + 2 < max_words {
+                let p1 = word(base + 1) as u32;
+                let p2 = word(base + 2) as u32;
+                return Some((((p1 & 0xf) << 16) + p2) * 4);
+            }
+            return None;
+        }
+        pc += num_instn_words(instn);
+    }
+    None
+}
+
 pub fn scan_phoneme(program: u16, phonindex: &[u8]) -> PhonemeExtract {
     let mut result = PhonemeExtract::default();
 
@@ -171,20 +230,20 @@ pub fn scan_phoneme(program: u16, phonindex: &[u8]) -> PhonemeExtract {
                     // The param is stored in bits 11-4 of the instruction, sign-extended.
                     result.fmt_param = ((instn >> 4) & 0xff) as i8;
                 }
-                // i_FMT implies RETURN (unless followed by i_WAVADD)
-                // Check if the next meaningful instruction is WAVADD; if not, stop.
+                // i_FMT implies RETURN unless immediately followed by i_WAVADD.
+                // (VWLSTART selection is handled separately by
+                // `select_vowel_start`, which does its own bounded scan.)
                 if pc + 2 < max_words {
                     let next2 = u16::from_le_bytes([
-                        phonindex[(pc+2)*2],
-                        phonindex[(pc+2)*2 + 1],
+                        phonindex[(pc + 2) * 2],
+                        phonindex[(pc + 2) * 2 + 1],
                     ]);
                     if next2 >> 12 == 0xf {
-                        // i_WAVADD follows: continue to capture wav_addr
                         pc += 2;
                         continue;
                     }
                 }
-                break; // i_FMT implies RETURN
+                break;
             }
             0xc => {
                 // i_WAV: sampled waveform
@@ -256,6 +315,11 @@ pub fn scan_phoneme(program: u16, phonindex: &[u8]) -> PhonemeExtract {
                         if result.wav_addr.is_none() { result.wav_addr = sub.wav_addr; result.wav_param = sub.wav_param; }
                         if result.vwlstart_addr.is_none() { result.vwlstart_addr = sub.vwlstart_addr; }
                         if result.vwlending_addr.is_none() { result.vwlending_addr = sub.vwlending_addr; }
+                        for k in 0..4 {
+                            if result.vowel_transition[k] == 0 {
+                                result.vowel_transition[k] = sub.vowel_transition[k];
+                            }
+                        }
                     }
                     // After CALLPH, a RETURN follows in the caller — stop scanning.
                 }
@@ -272,6 +336,32 @@ pub fn scan_phoneme(program: u16, phonindex: &[u8]) -> PhonemeExtract {
                 pc += num_instn_words(instn);
                 continue;
             }
+            0xa => {
+                // i_VOWELIN (0xa1) / i_VOWELOUT (0xa2): 4-word vowel-transition
+                // data. C (synthdata.c): vt[k]=((prog0&0xff)<<16)+prog1,
+                //                        vt[k+1]=(prog2<<16)+prog3.
+                if pc + 3 < max_words {
+                    let w = |o: usize| {
+                        u16::from_le_bytes([phonindex[(pc + o) * 2], phonindex[(pc + o) * 2 + 1]])
+                            as u32
+                    };
+                    let t0 = ((instn as u32 & 0xff) << 16) | w(1);
+                    let t1 = (w(2) << 16) | w(3);
+                    match (instn >> 8) & 0xf {
+                        1 => { // i_VOWELIN
+                            result.vowel_transition[0] = t0;
+                            result.vowel_transition[1] = t1;
+                        }
+                        2 => { // i_VOWELOUT
+                            result.vowel_transition[2] = t0;
+                            result.vowel_transition[3] = t1;
+                        }
+                        _ => {}
+                    }
+                }
+                pc += 4;
+                continue;
+            }
             _ => {
                 // All other instructions: advance by the correct number of words.
                 pc += num_instn_words(instn);
@@ -284,12 +374,631 @@ pub fn scan_phoneme(program: u16, phonindex: &[u8]) -> PhonemeExtract {
 }
 
 // ---------------------------------------------------------------------------
+// interpret_phoneme — context-aware interpreter (ports InterpretPhoneme)
+// ---------------------------------------------------------------------------
+//
+// `scan_phoneme` is a linear forward scanner that takes the FIRST occurrence of
+// each instruction — it ignores conditions.  For consonants whose program
+// selects the formant sequence with `IF prevPh(..)/nextPh(..)` branches (e.g.
+// `l`, which hides `FMT(l/l_)` inside an `IF nextPh(isNotVowel)` block before
+// the default `FMT(l/l)`), that picks the wrong FMT and the phoneme is
+// mis-rendered.  `interpret_phoneme` evaluates those conditions against the
+// surrounding phonemes, faithfully porting `InterpretPhoneme` +
+// `InterpretCondition` from synthdata.c (the synthesis-stage call:
+// `InterpretPhoneme(NULL, 0, ...)`, i.e. tr == NULL, control == 0).
+
+// Condition / instruction constants (mirror synthesize.h / phoneme.h).
+const COND_MARK:        u16 = 0x2000; // (instn & 0xe000) == 0x2000 → condition
+const COND_OR_FLAG:     u16 = 0x1000;
+const INSTN_NOT:        u16 = 0x0003;
+const JUMP_FALSE_MASK:  u16 = 0xf800;
+const JUMP_FALSE:       u16 = 0x6800;
+
+// CONDITION_IS_* categories (bits 5-7 in attribute mode).
+const COND_IS_TYPE:  u16 = 0x00;
+const COND_IS_PLACE: u16 = 0x20;
+const COND_IS_FLAG:  u16 = 0x40;
+const COND_IS_OTHER: u16 = 0x80;
+
+// "other" condition codes (attribute-mode data value, bits 0-4).
+const OTHER_IS_AFTER_STRESS: u16 = 9;
+const OTHER_IS_NOT_VOWEL:    u16 = 10;
+const OTHER_IS_FINAL_VOWEL:  u16 = 11;
+const OTHER_IS_VOICED:       u16 = 12;
+const OTHER_IS_FIRST_VOWEL:  u16 = 13;
+const OTHER_IS_SECOND_VOWEL: u16 = 14;
+const OTHER_IS_TRANSLATION:  u16 = 16;
+const OTHER_IS_BREAK:        u16 = 17;
+const OTHER_IS_WORD_START:   u16 = 18;
+const OTHER_IS_WORD_END:     u16 = 19;
+
+// Phoneme type / flag constants (mirror phoneme.h).
+const PH_PAUSE:  u8 = 0;
+const PH_VOWEL:  u8 = 2;
+const PH_LIQUID: u8 = 3;
+const PH_VOICED_FLAG: u32 = 1 << 4; // phFLAGBIT_VOICED
+
+const PHON_VOWEL_TYPES: i32 = 28; // start_type/end_type base for vowel categories
+
+/// Immediate neighbour window used to evaluate a phoneme's conditional program.
+///
+/// Codes are phoneme indices in the active table; `0` denotes a pause/boundary
+/// (rendered as a synthetic `phPAUSE` entry so `prevPh(isPause)` etc. behave as
+/// in C, where clause boundaries are real pause phonemes).  The `*_wordstart`
+/// flags mark `sourceix != 0` positions for the `*PhW` condition variants.
+#[derive(Debug, Clone, Default)]
+pub struct Neighbours {
+    pub prev: u8,
+    pub this: u8,
+    pub next: u8,
+    pub next2: u8,
+    /// Stress level (0-7) of this phoneme (best-effort for stress conditions).
+    pub stress: u8,
+    pub this_wordstart: bool,
+    pub prev_wordstart: bool,
+    pub next_wordstart: bool,
+    pub next2_wordstart: bool,
+}
+
+/// Read a little-endian u16 word at word-index `i` (0 if out of bounds).
+#[inline]
+fn word_at(phonindex: &[u8], i: usize) -> u16 {
+    let b = i * 2;
+    if b + 1 < phonindex.len() {
+        u16::from_le_bytes([phonindex[b], phonindex[b + 1]])
+    } else {
+        0
+    }
+}
+
+/// Interpret a phoneme's bytecode program with neighbour context, selecting the
+/// formant/wave sequence that its conditions actually reach.  Mirrors
+/// `InterpretPhoneme()` (synthesis stage) from synthdata.c.
+pub fn interpret_phoneme<F>(
+    program: u16,
+    phonindex: &[u8],
+    nb: &Neighbours,
+    lookup: F,
+) -> PhonemeExtract
+where
+    F: Fn(u8) -> Option<PhonemeTab>,
+{
+    let mut result = PhonemeExtract::default();
+    if program == 0 {
+        return result;
+    }
+    let max_words = phonindex.len() / 2;
+
+    // sound_addr / sound_param indices: 0=FMT 1=WAV 2=VWLSTART 3=VWLEND 4=ADDWAV
+    let mut sound_addr: [u32; 5] = [0; 5];
+    let mut sound_param: [i8; 5] = [0; 5];
+    let mut change_phoneme: Option<u8> = None;
+    let mut vowel_transition: [u32; 4] = [0; 4];
+
+    const N_RETURN: usize = 10;
+    let mut return_stack: [usize; N_RETURN] = [0; N_RETURN];
+    let mut n_return = 0usize;
+
+    let mut pc = program as usize;
+    let mut end_flag: i32 = 0;
+    let mut guard = 0usize;
+
+    while end_flag != 1 {
+        if pc >= max_words {
+            break;
+        }
+        guard += 1;
+        if guard > 8192 {
+            break; // runaway guard
+        }
+
+        let instn = word_at(phonindex, pc);
+        let hi4 = instn >> 12;
+        let instn2 = ((instn >> 8) & 0xf) as usize;
+
+        match hi4 {
+            0 => {
+                // Group 0: parameters / RETURN / IPA name.
+                let data = (instn & 0xff) as usize;
+                if instn2 == 0 {
+                    match data {
+                        0x0001 /* INSTN_RETURN */ => end_flag = 1,
+                        _ => {} // INSTN_CONTINUE and others: no-op
+                    }
+                    pc += 1;
+                } else if instn2 == I_IPA_NAME as usize {
+                    pc += 1 + (data + 1) / 2; // header + ceil(data/2) UTF-8 words
+                } else {
+                    if instn2 == I_CHANGE_PHONEME as usize {
+                        // control == 0 at synthesis: record but do not exit.
+                        change_phoneme = Some((instn & 0xff) as u8);
+                    }
+                    pc += 1;
+                }
+            }
+            1 => {
+                // ChangeIf: only meaningful with a Translator; ignored (tr==NULL).
+                pc += 1;
+            }
+            2 | 3 => {
+                // Condition sequence with a boolean accumulator.
+                let mut or_flag = false;
+                let mut truth = true;
+                let mut cinstn = instn;
+                while (cinstn & 0xe000) == COND_MARK {
+                    let mut t2 = interpret_condition(pc, phonindex, nb, &lookup);
+                    pc += num_instn_words(cinstn);
+                    if word_at(phonindex, pc) == INSTN_NOT {
+                        t2 = !t2;
+                        pc += 1;
+                    }
+                    truth = if or_flag { truth || t2 } else { truth && t2 };
+                    or_flag = (cinstn & COND_OR_FLAG) != 0;
+                    cinstn = word_at(phonindex, pc);
+                }
+                // `pc` now points at the instruction after the condition sequence.
+                if !truth {
+                    if (cinstn & JUMP_FALSE_MASK) == JUMP_FALSE {
+                        pc += (cinstn & 0xff) as usize;
+                    } else {
+                        pc += num_instn_words(cinstn);
+                        if (word_at(phonindex, pc) & 0xfe00) == 0x6000 {
+                            pc += 1; // skip trailing ELSE jump
+                        }
+                    }
+                }
+                // (No common increment: pc already at the next instruction.)
+            }
+            6 => {
+                // JUMP family.
+                match instn2 >> 1 {
+                    0 => {
+                        // Unconditional forward JUMP.
+                        pc = pc.wrapping_add((instn & 0xff) as usize);
+                    }
+                    5 => {
+                        // NextVowelStarts: pick VWLSTART by next vowel's start_type.
+                        // This is the onset glide specified "for the next
+                        // phoneme" → set pd_FORNEXTPH (C SwitchOnVowelType).
+                        result.pd_fornextph = true;
+                        if let Some((addr, param)) = switch_on_vowel_type(
+                            phonindex, pc, lookup(nb.next).map(|p| p.start_type),
+                        ) {
+                            sound_addr[2] = addr;
+                            sound_param[2] = param;
+                        }
+                        pc += 13; // JUMP word + 12 table words
+                    }
+                    6 => {
+                        // PrevVowelEndings: pick VWLEND by prev vowel's end_type.
+                        if let Some((addr, param)) = switch_on_vowel_type(
+                            phonindex, pc, lookup(nb.prev).map(|p| p.end_type),
+                        ) {
+                            sound_addr[3] = addr;
+                            sound_param[3] = param;
+                        }
+                        pc += 13;
+                    }
+                    _ => {
+                        // Conditional jumps: already handled in the condition case.
+                        pc += 1;
+                    }
+                }
+            }
+            9 => {
+                // CALLPH / PITCHENV / AMPENV: instruction + 1 data word.
+                let data = (((instn & 0xf) as usize) << 16) | word_at(phonindex, pc + 1) as usize;
+                match instn2 {
+                    1 => {
+                        // Call another phoneme/procedure.
+                        if n_return < N_RETURN && data > 0 && data < max_words {
+                            return_stack[n_return] = pc + 2;
+                            n_return += 1;
+                            pc = data;
+                        } else {
+                            pc += 2;
+                        }
+                    }
+                    _ => {
+                        // PITCHENV (2) / AMPENV (3): not needed for FMT selection.
+                        pc += 2;
+                    }
+                }
+            }
+            0xa => {
+                // VOWELIN (0xa1) / VOWELOUT (0xa2): 4-word transition data.
+                let w = |o: usize| word_at(phonindex, pc + o) as u32;
+                let t0 = ((instn as u32 & 0xff) << 16) | w(1);
+                let t1 = (w(2) << 16) | w(3);
+                match instn2 {
+                    1 => {
+                        vowel_transition[0] = t0;
+                        vowel_transition[1] = t1;
+                    }
+                    2 => {
+                        vowel_transition[2] = t0;
+                        vowel_transition[3] = t1;
+                    }
+                    _ => {}
+                }
+                pc += 4;
+            }
+            0xb | 0xc | 0xd | 0xe | 0xf => {
+                // FMT / WAV / VWLSTART / VWLEND / ADDWAV.
+                let idx = (hi4 - 0xb) as usize; // 0..4
+                let addr = ((instn & 0xf) as u32) << 18 | ((word_at(phonindex, pc + 1) as u32) << 2);
+                sound_addr[idx] = addr;
+                sound_param[idx] = ((instn >> 4) & 0xff) as i8; // signed char
+                let after = word_at(phonindex, pc + 2);
+                if after != INSTN_CONTINUE {
+                    if idx < 2 {
+                        // FMT() and WAV() imply Return.
+                        end_flag = 1;
+                        if (after >> 12) == 0xf {
+                            end_flag = 2; // Return after the following addWav()
+                        }
+                    } else if idx == 4 {
+                        // addWav(): return if the previous instruction was FMT/WAV.
+                        end_flag -= 1;
+                    }
+                }
+                pc += 2;
+            }
+            _ => {
+                pc += num_instn_words(instn).max(1);
+            }
+        }
+
+        // Return from a called procedure/phoneme (mirrors the loop-bottom pop).
+        if end_flag == 1 && n_return > 0 {
+            end_flag = 0;
+            n_return -= 1;
+            pc = return_stack[n_return];
+        }
+    }
+
+    if sound_addr[0] != 0 {
+        result.fmt_addr = Some(sound_addr[0]);
+        result.fmt_param = sound_param[0];
+    }
+    if sound_addr[1] != 0 {
+        result.wav_addr = Some(sound_addr[1]);
+        result.wav_param = sound_param[1];
+    } else if sound_addr[4] != 0 {
+        // addWav with no separate WAV: treat as the mixed-in sample (parity with
+        // scan_phoneme's WAVADD handling).
+        result.wav_addr = Some(sound_addr[4]);
+        result.wav_param = sound_param[4];
+    }
+    if sound_addr[2] != 0 {
+        result.vwlstart_addr = Some(sound_addr[2]);
+    }
+    if sound_addr[3] != 0 {
+        result.vwlending_addr = Some(sound_addr[3]);
+    }
+    result.change_phoneme_code = change_phoneme;
+    result.vowel_transition = vowel_transition;
+    result
+}
+
+/// Evaluate the `SwitchOnVowelType` table at `pc` (a type-5/6 JUMP) for a given
+/// neighbour vowel category (`start_type` for NextVowelStarts, `end_type` for
+/// PrevVowelEndings).  Returns `(byte_addr, param)` or `None` if the neighbour
+/// is not a vowel category or is from another table.  Mirrors
+/// `SwitchOnVowelType()` in synthdata.c.
+fn switch_on_vowel_type(
+    phonindex: &[u8],
+    pc: usize,
+    voweltype_raw: Option<u8>,
+) -> Option<(u32, i8)> {
+    let vt = voweltype_raw? as i32 - PHON_VOWEL_TYPES;
+    if !(0..6).contains(&vt) {
+        return None;
+    }
+    let base = pc + (vt as usize) * 2;
+    let p1 = word_at(phonindex, base + 1) as u32;
+    let p2 = word_at(phonindex, base + 2) as u32;
+    let addr = (((p1 & 0xf) << 16) + p2) * 4;
+    let param = ((p1 >> 4) & 0xff) as i8;
+    Some((addr, param))
+}
+
+/// Evaluate a single condition instruction at word-index `pc`.  Mirrors
+/// `InterpretCondition()` (synthesis stage) from synthdata.c.
+fn interpret_condition<F>(
+    pc: usize,
+    phonindex: &[u8],
+    nb: &Neighbours,
+    lookup: &F,
+) -> bool
+where
+    F: Fn(u8) -> Option<PhonemeTab>,
+{
+    // Resolve a phoneme code to its table entry; code 0 → synthetic pause.
+    let resolve = |code: u8| -> PhonemeTab {
+        if code == 0 {
+            PhonemeTab::default() // type 0 == phPAUSE, mnemonic 0
+        } else {
+            lookup(code).unwrap_or_default()
+        }
+    };
+
+    let instn = word_at(phonindex, pc) & 0xfff;
+    let mut data = instn & 0xff;
+    let instn2 = (instn >> 8) as usize; // 0..15
+
+    if instn2 >= 14 {
+        // Other conditions (PreVoicing / Klatt / Mbrola): false at synthesis.
+        return false;
+    }
+
+    let mut which = instn2 % 7;
+    if which == 6 {
+        // Extended 'which' in the following word (nextVowel/prevVowel/…).
+        which = word_at(phonindex, pc + 1) as usize;
+    }
+
+    // Word-boundary guards for the *PhW variants (C `sourceix` checks).
+    let mut check_endtype = false;
+    let code: u8 = match which {
+        0 => {
+            check_endtype = true;
+            nb.prev
+        }
+        5 => {
+            if nb.this_wordstart {
+                return false; // prevPhW across a word boundary
+            }
+            check_endtype = true;
+            nb.prev
+        }
+        1 => nb.this,
+        2 => nb.next,
+        4 => {
+            if nb.next_wordstart {
+                return false; // nextPhW across a word boundary
+            }
+            nb.next
+        }
+        3 => nb.next2,
+        6 => {
+            if nb.next_wordstart || nb.next2_wordstart {
+                return false; // next2PhW across a word boundary
+            }
+            nb.next2
+        }
+        7 => {
+            // nextVowel (not across a word boundary), within our window.
+            if nb.next_wordstart {
+                return false;
+            }
+            if resolve(nb.next).typ == PH_VOWEL {
+                nb.next
+            } else {
+                if nb.next2_wordstart {
+                    return false;
+                }
+                if resolve(nb.next2).typ == PH_VOWEL {
+                    nb.next2
+                } else {
+                    return false; // no vowel within window
+                }
+            }
+        }
+        8 => {
+            // prevVowel in this word — approximate with prev if it is a vowel.
+            if resolve(nb.prev).typ == PH_VOWEL {
+                check_endtype = true;
+                nb.prev
+            } else {
+                return false;
+            }
+        }
+        // next3PhW (9) / prev2PhW (10): outside our window → conservative false.
+        _ => return false,
+    };
+
+    let ph = resolve(code);
+
+    if instn2 < 7 {
+        // 'data' is a phoneme number (or a vowel-type value).
+        if let Some(target) = lookup(data as u8) {
+            if target.mnemonic != 0 && target.mnemonic == ph.mnemonic {
+                return true;
+            }
+        }
+        if check_endtype && ph.typ == PH_VOWEL {
+            return data as u8 == ph.end_type; // prevPh() match on end_type
+        }
+        return data as u8 == ph.start_type; // thisPh()/nextPh() match on start_type
+    }
+
+    // Attribute conditions.
+    data = instn & 0x1f;
+    match instn & 0xe0 {
+        COND_IS_TYPE => ph.typ as u16 == data,
+        COND_IS_PLACE => ((ph.phflags >> 16) & 0xf) as u16 == data,
+        COND_IS_FLAG => (ph.phflags & (1u32 << data)) != 0,
+        COND_IS_OTHER => match data {
+            0..=4 => stress_condition(nb.stress, data),
+            OTHER_IS_AFTER_STRESS => false, // needs history outside our window
+            OTHER_IS_NOT_VOWEL => ph.typ != PH_VOWEL,
+            OTHER_IS_FINAL_VOWEL => {
+                // No further vowel within the window ⇒ treat as final.
+                let n = resolve(nb.next);
+                let n2 = resolve(nb.next2);
+                !(n.typ == PH_VOWEL || n2.typ == PH_VOWEL)
+            }
+            OTHER_IS_VOICED => {
+                ph.typ == PH_VOWEL || ph.typ == PH_LIQUID || (ph.phflags & PH_VOICED_FLAG) != 0
+            }
+            OTHER_IS_BREAK => ph.typ == PH_PAUSE,
+            OTHER_IS_WORD_START => match which {
+                0 | 5 => nb.prev_wordstart,
+                1 => nb.this_wordstart,
+                2 | 4 => nb.next_wordstart,
+                3 | 6 => nb.next2_wordstart,
+                _ => false,
+            },
+            OTHER_IS_WORD_END => {
+                // The phoneme after the moved position starts a new word / pause.
+                match which {
+                    1 => nb.next == 0 || nb.next_wordstart || resolve(nb.next).typ == PH_PAUSE,
+                    0 | 5 => nb.this_wordstart,
+                    _ => false,
+                }
+            }
+            OTHER_IS_FIRST_VOWEL | OTHER_IS_SECOND_VOWEL | OTHER_IS_TRANSLATION => false,
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+/// Simplified `StressCondition`: compares this phoneme's stress level to the
+/// requested threshold.  The full C version consults the following vowel and the
+/// word's stress; here we use the phoneme's own stress level (0-7), which is the
+/// common case for the conditions that gate synthesis-time FMT selection.
+fn stress_condition(stress: u8, condition: u16) -> bool {
+    const CONDITION_LEVEL: [u16; 4] = [1, 2, 4, 15];
+    let level = (stress as u16) & 0xf;
+    match condition {
+        4 /* STRESS_IS_PRIMARY */ => level >= 4,
+        3 /* STRESS_IS_SECONDARY */ => level > 3,
+        c => level < CONDITION_LEVEL[c as usize],
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+/// A phoneme-program instruction for the program compiler — the phoneme-bytecode
+/// half of `compiledata.c`, and the inverse of `scan_phoneme`/`InterpretPhoneme`.
+#[derive(Debug, Clone, Copy)]
+pub enum ProgInstn {
+    /// `i_FMT`: a formant-frame-sequence address in `phondata` + a length param.
+    Fmt { addr: u32, param: i8 },
+    /// `i_WAV`: a WAV-sample address in `phondata`.
+    Wav { addr: u32 },
+    /// `i_VWLSTART`: the vowel-onset transition frame-sequence address.
+    VwlStart { addr: u32 },
+    /// `i_VWLENDING`: the vowel-exit transition frame-sequence address.
+    VwlEnding { addr: u32 },
+    /// `i_CALLPH`: call another phoneme program by index (its FMT/WAV/… are
+    /// merged into the caller by `scan_phoneme`).
+    CallPh { program: u16 },
+    /// `INSTN_CONTINUE`: fall through to the next instruction.
+    Continue,
+    /// A raw instruction word (for opcodes not modelled here).
+    Raw(u16),
+    /// `RETURN`.
+    Return,
+}
+
+/// Compile a phoneme program to `phonindex` bytecode (little-endian `u16`
+/// words) — the inverse of the `InterpretPhoneme`/`scan_phoneme` reader.
+///
+/// Address encoding matches the reader: `i_FMT`/`i_WAV` store `param` in bits
+/// 11-4, the address high bits (`>>18`) in bits 3-0, and `(addr>>2)&0xffff` in
+/// the following word.  Minimal opcode set; conditions/jumps/CALLPH/IPA-name are
+/// not yet modelled (emit them via [`ProgInstn::Raw`]).
+pub fn compile_program(instns: &[ProgInstn]) -> Vec<u8> {
+    let mut out = Vec::new();
+    for instn in instns {
+        match *instn {
+            ProgInstn::Fmt { addr, param } => {
+                let word = I_FMT
+                    | (((param as u8) as u16) << 4)
+                    | (((addr >> 18) & 0xf) as u16);
+                out.extend_from_slice(&word.to_le_bytes());
+                out.extend_from_slice(&(((addr >> 2) & 0xffff) as u16).to_le_bytes());
+            }
+            ProgInstn::Wav { addr } => {
+                out.extend_from_slice(&(I_WAV | (((addr >> 18) & 0xf) as u16)).to_le_bytes());
+                out.extend_from_slice(&(((addr >> 2) & 0xffff) as u16).to_le_bytes());
+            }
+            ProgInstn::VwlStart { addr } => {
+                out.extend_from_slice(&(I_VWLSTART | (((addr >> 18) & 0xf) as u16)).to_le_bytes());
+                out.extend_from_slice(&(((addr >> 2) & 0xffff) as u16).to_le_bytes());
+            }
+            ProgInstn::VwlEnding { addr } => {
+                out.extend_from_slice(&(I_VWLENDING | (((addr >> 18) & 0xf) as u16)).to_le_bytes());
+                out.extend_from_slice(&(((addr >> 2) & 0xffff) as u16).to_le_bytes());
+            }
+            ProgInstn::CallPh { program } => {
+                // `i_CALLPH` (0x9100) then the callee's program index; the reader
+                // recovers it as `((instn & 0xf) << 16) | next`, so a `u16` index
+                // fits entirely in the following word.
+                out.extend_from_slice(&I_CALLPH.to_le_bytes());
+                out.extend_from_slice(&program.to_le_bytes());
+            }
+            ProgInstn::Continue => out.extend_from_slice(&INSTN_CONTINUE.to_le_bytes()),
+            ProgInstn::Raw(w) => out.extend_from_slice(&w.to_le_bytes()),
+            ProgInstn::Return => out.extend_from_slice(&INSTN_RETURN.to_le_bytes()),
+        }
+    }
+    out
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compile_program_round_trip() {
+        // Compile [i_FMT(addr, param), RETURN], place at program=1, scan it back.
+        let addr = 0x1234u32 * 4; // word-aligned phondata address
+        let param = 42i8;
+        let bytecode = compile_program(&[ProgInstn::Fmt { addr, param }, ProgInstn::Return]);
+        let phonindex = pad(&bytecode);
+        let r = scan_phoneme(PROG, &phonindex);
+        assert_eq!(r.fmt_addr, Some(addr), "FMT address did not round-trip");
+        assert_eq!(r.fmt_param, param, "FMT param did not round-trip");
+        assert!(r.wav_addr.is_none());
+    }
+
+    #[test]
+    fn compile_program_vwl_and_continue_round_trip() {
+        // [VWLSTART, VWLENDING, CONTINUE, FMT, RETURN] — the VWL addresses read
+        // back, and CONTINUE must not halt the scan (FMT after it is still found).
+        let vs = 0x1000u32;
+        let ve = 0x2000u32;
+        let fmt = 0x3000u32;
+        let bytecode = compile_program(&[
+            ProgInstn::VwlStart { addr: vs },
+            ProgInstn::VwlEnding { addr: ve },
+            ProgInstn::Continue,
+            ProgInstn::Fmt { addr: fmt, param: 7 },
+            ProgInstn::Return,
+        ]);
+        let phonindex = pad(&bytecode);
+        let r = scan_phoneme(PROG, &phonindex);
+        assert_eq!(r.vwlstart_addr, Some(vs), "VWLSTART did not round-trip");
+        assert_eq!(r.vwlending_addr, Some(ve), "VWLENDING did not round-trip");
+        assert_eq!(r.fmt_addr, Some(fmt), "FMT after CONTINUE was not reached");
+        assert_eq!(r.fmt_param, 7);
+    }
+
+    #[test]
+    fn compile_program_callph_round_trip() {
+        // main = [CALLPH sub, RETURN]; sub = [FMT, RETURN].  scan_phoneme(main)
+        // must follow the call and surface the called program's FMT.
+        // Layout: pad(word 0) + main(words 1–3) + sub(words 4–6) → sub at word 4.
+        let sub_off = 4u16;
+        let addr = 0x2000u32;
+        let main = compile_program(&[ProgInstn::CallPh { program: sub_off }, ProgInstn::Return]);
+        assert_eq!(main.len(), 6, "CALLPH+RETURN should be 3 words"); // sub_off assumption
+        let sub = compile_program(&[ProgInstn::Fmt { addr, param: 9 }, ProgInstn::Return]);
+
+        let mut bytes = main;
+        bytes.extend_from_slice(&sub);
+        let phonindex = pad(&bytes);
+
+        let r = scan_phoneme(PROG, &phonindex);
+        assert_eq!(r.fmt_addr, Some(addr), "CALLPH did not resolve the callee's FMT");
+        assert_eq!(r.fmt_param, 9);
+    }
 
     // All test phonindices start with one padding word (2 bytes) so that
     // program=1 points to the first instruction.  (Program 0 is reserved as
@@ -334,6 +1043,23 @@ mod tests {
         let result = scan_phoneme(PROG, &phonindex);
         assert_eq!(result.fmt_addr, Some(addr));
         assert!(result.wav_addr.is_none());
+    }
+
+    #[test]
+    fn scan_extracts_vowel_transition() {
+        // i_VOWELIN (0xa1) with high byte 0x0a, then 3 data words, then RETURN.
+        // C: vt[0] = ((prog0 & 0xff) << 16) + prog1 = 0x0a1234
+        //    vt[1] = (prog2 << 16) + prog3          = 0x12345678
+        let words: [u16; 5] = [0xa10a, 0x1234, 0x1234, 0x5678, INSTN_RETURN];
+        let mut insns = Vec::new();
+        for w in &words {
+            insns.extend_from_slice(&w.to_le_bytes());
+        }
+        let r = scan_phoneme(PROG, &pad(&insns));
+        assert_eq!(r.vowel_transition[0], 0x0a_1234);
+        assert_eq!(r.vowel_transition[1], 0x1234_5678);
+        assert_eq!(r.vowel_transition[2], 0); // no VOWELOUT
+        assert_eq!(r.vowel_transition[3], 0);
     }
 
     #[test]
@@ -424,5 +1150,128 @@ mod tests {
         let result = scan_phoneme(PROG, &pad(&insns));
         assert_eq!(result.fmt_addr, Some(fmt_a));
         assert_eq!(result.wav_addr, Some(wav_a));
+    }
+
+    // ── interpret_phoneme (context-aware) ─────────────────────────────────
+
+    fn mk_ph(typ: u8, mnem: &str) -> PhonemeTab {
+        PhonemeTab {
+            typ,
+            mnemonic: PhonemeTab::pack_mnemonic(mnem),
+            ..Default::default()
+        }
+    }
+
+    fn words_bytes(words: &[u16]) -> Vec<u8> {
+        let mut v = vec![0u8, 0u8]; // pad word 0
+        for w in words {
+            v.extend_from_slice(&w.to_le_bytes());
+        }
+        v
+    }
+
+    #[test]
+    fn interpret_matches_scan_for_plain_fmt() {
+        let addr = 0x1234u32 * 4;
+        let phonindex = make_fmt_phonindex(addr);
+        let nb = Neighbours::default();
+        let r = interpret_phoneme(PROG, &phonindex, &nb, |_| None);
+        assert_eq!(r.fmt_addr, Some(addr));
+    }
+
+    #[test]
+    fn interpret_picks_branch_by_next_vowel() {
+        // Mirrors the `l` pattern:
+        //   IF nextPh(isNotVowel) THEN FMT(A) RETURN ENDIF
+        //   FMT(B)
+        // A linear scanner grabs FMT(A); the interpreter must pick FMT(B) when
+        // the next phoneme is a vowel.
+        let a = 0x1000u32 * 4;
+        let b = 0x2000u32 * 4;
+        let cond = 0x298a; // condition: nextPh(isNotVowel)
+        let jf = JUMP_FALSE | 3; // if false, skip 3 words → FMT(B)
+        let fmt_a_i = 0xb000 | (((a >> 18) & 0xf) as u16);
+        let fmt_a_n = ((a >> 2) & 0xffff) as u16;
+        let fmt_b_i = 0xb000 | (((b >> 18) & 0xf) as u16);
+        let fmt_b_n = ((b >> 2) & 0xffff) as u16;
+        let phonindex = words_bytes(&[cond, jf, fmt_a_i, fmt_a_n, fmt_b_i, fmt_b_n]);
+
+        let lookup = |c: u8| -> Option<PhonemeTab> {
+            match c {
+                20 => Some(mk_ph(PH_VOWEL, "a")),
+                30 => Some(mk_ph(4, "t")), // voiceless stop
+                _ => None,
+            }
+        };
+
+        // next = vowel → condition false → default FMT(B)
+        let nb_v = Neighbours { this: 10, next: 20, ..Default::default() };
+        let r = interpret_phoneme(PROG, &phonindex, &nb_v, &lookup);
+        assert_eq!(r.fmt_addr, Some(b), "next=vowel should reach default FMT(B)");
+
+        // next = consonant → condition true → FMT(A)
+        let nb_c = Neighbours { this: 10, next: 30, ..Default::default() };
+        let r = interpret_phoneme(PROG, &phonindex, &nb_c, &lookup);
+        assert_eq!(r.fmt_addr, Some(a), "next=consonant should reach FMT(A)");
+    }
+
+    #[test]
+    fn interpret_prevph_code_match() {
+        // IF prevPh(t) THEN FMT(A) RETURN ENDIF ; FMT(B)
+        // prevPh phoneme-code match: which=0 (prevPh), phoneme-code mode.
+        // instn2 = 0, code byte = phoneme code of 't' (= 30 here).
+        let a = 0x1000u32 * 4;
+        let b = 0x2000u32 * 4;
+        let cond = 0x2000 | 30; // prevPh(code 30)
+        let jf = JUMP_FALSE | 3;
+        let fmt_a_i = 0xb000 | (((a >> 18) & 0xf) as u16);
+        let fmt_a_n = ((a >> 2) & 0xffff) as u16;
+        let fmt_b_i = 0xb000 | (((b >> 18) & 0xf) as u16);
+        let fmt_b_n = ((b >> 2) & 0xffff) as u16;
+        let phonindex = words_bytes(&[cond, jf, fmt_a_i, fmt_a_n, fmt_b_i, fmt_b_n]);
+
+        let lookup = |c: u8| -> Option<PhonemeTab> {
+            match c {
+                30 => Some(mk_ph(4, "t")),
+                31 => Some(mk_ph(4, "p")),
+                _ => None,
+            }
+        };
+
+        // prev = t → FMT(A)
+        let nb_t = Neighbours { this: 10, prev: 30, ..Default::default() };
+        let r = interpret_phoneme(PROG, &phonindex, &nb_t, &lookup);
+        assert_eq!(r.fmt_addr, Some(a), "prev=t should reach FMT(A)");
+
+        // prev = p → FMT(B)
+        let nb_p = Neighbours { this: 10, prev: 31, ..Default::default() };
+        let r = interpret_phoneme(PROG, &phonindex, &nb_p, &lookup);
+        assert_eq!(r.fmt_addr, Some(b), "prev=p should reach default FMT(B)");
+    }
+
+    #[test]
+    fn interpret_callph_returns_and_continues() {
+        // CALLPH(sub) then FMT(main). The called sub does FMT(SUB); RETURN.
+        // After the call returns, the main FMT must win (last FMT set).
+        let main_addr = 0x3000u32 * 4;
+        let sub_addr = 0x4000u32 * 4;
+        // Layout (word indices, pad at 0):
+        //  1: CALLPH hi          2: CALLPH data(=6, the sub program index)
+        //  3: FMT(main) instn    4: FMT(main) addr
+        //  5: RETURN
+        //  6: FMT(sub) instn     7: FMT(sub) addr   (the called procedure)
+        let callph_i = 0x9100u16; // CALLPH, data hi nibble = 0
+        let callph_d = 6u16; // sub program word index
+        let fmt_m_i = 0xb000 | (((main_addr >> 18) & 0xf) as u16);
+        let fmt_m_n = ((main_addr >> 2) & 0xffff) as u16;
+        let fmt_s_i = 0xb000 | (((sub_addr >> 18) & 0xf) as u16);
+        let fmt_s_n = ((sub_addr >> 2) & 0xffff) as u16;
+        let phonindex = words_bytes(&[
+            callph_i, callph_d, fmt_m_i, fmt_m_n, INSTN_RETURN, fmt_s_i, fmt_s_n,
+        ]);
+        let nb = Neighbours { this: 10, ..Default::default() };
+        let r = interpret_phoneme(PROG, &phonindex, &nb, |_| None);
+        // The sub sets FMT(sub); after RETURN the main FMT overwrites it.
+        assert_eq!(r.fmt_addr, Some(main_addr), "main FMT should win after CALLPH");
     }
 }

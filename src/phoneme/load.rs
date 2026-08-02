@@ -468,7 +468,9 @@ impl PhonemeData {
 // phontab parser
 // ---------------------------------------------------------------------------
 
-fn parse_phontab(data: &[u8]) -> Result<Vec<PhonemeTabList>> {
+/// Parse the binary `phontab` format into phoneme tables — the inverse of
+/// [`compile_phontab`](super::table::compile_phontab).
+pub fn parse_phontab(data: &[u8]) -> Result<Vec<PhonemeTabList>> {
     if data.is_empty() {
         return Err(Error::InvalidData("phontab is empty".into()));
     }
@@ -539,6 +541,50 @@ mod tests {
 
     fn data_available() -> bool {
         Path::new(DATA_DIR).join("phontab").exists()
+    }
+
+    #[test]
+    fn phontab_compile_round_trip() {
+        use crate::phoneme::table::{compile_phontab, PhonemeTab, PhonemeTabList};
+        let ph = |mnem: &str, code: u8| PhonemeTab {
+            mnemonic: PhonemeTab::pack_mnemonic(mnem),
+            phflags: 0x1234_5678,
+            program: 4242,
+            code,
+            typ: 2,
+            start_type: 1,
+            end_type: 3,
+            std_length: 120,
+            length_mod: 5,
+        };
+        let tables = vec![
+            PhonemeTabList {
+                name: "base".into(),
+                phonemes: vec![ph("a", 10), ph("b", 11)],
+                n_phonemes: 2,
+                includes: 0,
+            },
+            PhonemeTabList {
+                name: "en".into(),
+                phonemes: vec![ph("k", 20)],
+                n_phonemes: 1,
+                includes: 1,
+            },
+        ];
+        let bytes = compile_phontab(&tables);
+        let parsed = parse_phontab(&bytes).expect("parse compiled phontab");
+
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].name, "base");
+        assert_eq!(parsed[0].includes, 0);
+        assert_eq!(parsed[0].phonemes.len(), 2);
+        assert_eq!(parsed[0].phonemes[0].mnemonic_str(), "a");
+        assert_eq!(parsed[0].phonemes[0].code, 10);
+        assert_eq!(parsed[1].name, "en");
+        assert_eq!(parsed[1].includes, 1);
+        assert_eq!(parsed[1].phonemes[0].mnemonic_str(), "k");
+        // Full 16-byte field-level round-trip.
+        assert_eq!(parsed[0].phonemes[0].to_bytes(), tables[0].phonemes[0].to_bytes());
     }
 
     #[test]

@@ -120,6 +120,14 @@ pub struct StressOpts {
     /// "stressed" vowel form.  Mirrors `ApplySpecialAttribute2()` in
     /// translateword.c.  Used by Turkish (e→E, o→O under primary stress).
     pub alt_stress_upgrade: bool,
+    /// `LOPT_CAPS_IN_WORD` — the language marks the stressed syllable with an
+    /// explicit stress notation (Lojban's capital letters → a `ˈ` in the text).
+    /// When set, an explicit primary-stress marker already present in the
+    /// phonemes fixes the stressed syllable, so the language's default
+    /// placement rule is skipped (no second stress).  Kept language-scoped
+    /// because the port's number *composition* can bake citation stresses into
+    /// composed words, where the default rule must still re-stress the whole.
+    pub caps_mark_stress: bool,
 }
 
 impl Default for StressOpts {
@@ -134,6 +142,7 @@ impl Default for StressOpts {
             opt_length:      0,
             word_final_devoicing: false,
             alt_stress_upgrade: false,
+            caps_mark_stress: false,
         }
     }
 }
@@ -220,6 +229,9 @@ impl StressOpts {
                 opts.stress_flags = 0;
             }
         }
+        // Lojban writes stress with capitals (LOPT_CAPS_IN_WORD): trust an
+        // explicit stress mark in the phonemes over the default rule.
+        opts.caps_mark_stress = primary == "jbo";
         opts
     }
 }
@@ -509,12 +521,23 @@ pub fn set_word_stress(
     if phonetic.last() != Some(&0) { phonetic.push(0); }
 
     let mut vowel_stress = [0i8; 100];
-    let (mut max_stress, vowel_count, _primary_posn) = get_vowel_stress(
+    let (mut max_stress, vowel_count, detected_primary) = get_vowel_stress(
         &mut phonetic,
         phdata,
         &mut vowel_stress,
         1,  // control=1: mark phUNSTRESSED vowels
     );
+    // An explicit primary-stress marker already in the phonemes (e.g. a `ˈ` from
+    // Lojban's capital-stress notation) fixes the stressed syllable.  C's
+    // `GetVowelStress` returns that position in `*stressed_syllable`, so the
+    // language's default placement rule (gated on `stressed_syllable == 0`
+    // below) is skipped and no second stress is added.  Scoped to
+    // `caps_mark_stress` languages: elsewhere the port's number composition can
+    // bake a citation stress into a composed word, where the default rule must
+    // still re-stress the whole (e.g. Turkish "on"+"bir" → final stress).
+    if opts.caps_mark_stress && stressed_syllable == 0 && detected_primary > 0 {
+        stressed_syllable = detected_primary;
+    }
     // After get_vowel_stress, stressed_syllable is set via primary_posn,
     // but here we override from dflags
     // Re-apply dict-specified stressed syllable

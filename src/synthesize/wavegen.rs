@@ -138,6 +138,34 @@ struct Peak {
     right:  i64,  // right bandwidth (= left for f3-f5)
 }
 
+/// Apply a `+variant`'s per-formant frequency/height/width scaling
+/// (`voice.freq[i]` / `voice.height[i]` / `voice.width[i]`, percent) to a frame.
+/// Returns a scaled clone; F0–F6 only (the fixed high peaks F7/F8 are added later
+/// in `frame_to_peaks`).  A scale of 100 is exact integer identity, so the
+/// default path can skip this call entirely.
+fn scale_frame_formants(fr: &SpectFrame, voice: &VoiceParams) -> SpectFrame {
+    let scale_u8 = |v: u8, pct: i32| (v as i32 * pct / 100).clamp(0, u8::MAX as i32) as u8;
+    let mut out = fr.clone();
+    // Frequency (ffreq[0..7]).
+    for i in 0..7 {
+        out.ffreq[i] = (fr.ffreq[i] as i32 * voice.formant_freq_pct[i] / 100)
+            .clamp(0, i16::MAX as i32) as i16;
+    }
+    // Height / amplitude (fheight[0..8]; F7 has no variant entry → unity).
+    for i in 0..8 {
+        let pct = voice.formant_height_pct.get(i).copied().unwrap_or(100);
+        out.fheight[i] = scale_u8(fr.fheight[i], pct);
+    }
+    // Width / bandwidth (fwidth[0..6], fright[0..3]).
+    for i in 0..6 {
+        out.fwidth[i] = scale_u8(fr.fwidth[i], voice.formant_width_pct[i]);
+    }
+    for i in 0..3 {
+        out.fright[i] = scale_u8(fr.fright[i], voice.formant_width_pct[i]);
+    }
+    out
+}
+
 /// Convert a `SpectFrame` to a peak array using the default voice scaling.
 ///
 /// Mirrors the `SetSynth()` initialisation in wavegen.c.
@@ -556,6 +584,9 @@ pub fn synthesize_frames(
     let f0_hz = voice.pitch_hz.max(25) as f64;
     let global_amp = voice.amplitude.clamp(0, 100) as f64 / 100.0;
 
+    // Per-formant `+variant` scaling; the all-100 default leaves this unchanged.
+    let fscale = voice.formant_scaling_active();
+
     let mut output = Vec::new();
 
     let n = seq.frames.len();
@@ -578,8 +609,8 @@ pub fn synthesize_frames(
         };
 
         let seg = SynthSegment {
-            fr1: fr1.clone(),
-            fr2: fr2.clone(),
+            fr1: if fscale { scale_frame_formants(fr1, voice) } else { fr1.clone() },
+            fr2: if fscale { scale_frame_formants(fr2, voice) } else { fr2.clone() },
             n_samples,
             voiced,
             noise_frac,
@@ -590,6 +621,63 @@ pub fn synthesize_frames(
         output.extend_from_slice(&samples);
     }
 
+    output
+}
+
+/// Synthesize a *run* of formant frames spanning one or more phonemes, with a
+/// per-frame amplitude factor and per-frame pitch (Hz).  Because the whole run
+/// is one sequence, consecutive frames across phoneme boundaries interpolate
+/// continuously (the cross-phoneme continuity the per-phoneme path lacks).
+///
+/// `amps` and `pitches_hz` are parallel to `frames`.  `voice.speed_percent`
+/// still governs the per-frame sample count (frame lengths already encode the
+/// duration model).  Returns unnormalised i32 samples.
+pub fn synthesize_frames_seq(
+    frames: &[super::phondata::SpectFrame],
+    amps: &[f64],
+    pitches_hz: &[f64],
+    voice: &VoiceParams,
+    wavephase: &mut i32,
+) -> Vec<i32> {
+    if frames.is_empty() {
+        return Vec::new();
+    }
+    let speed_factor = 100.0 / voice.speed_percent.max(1) as f64;
+    let global_amp = voice.amplitude.clamp(0, 100) as f64 / 100.0;
+
+    // Pre-scale formants for a `+variant` (`voice.freq/height/width[i]`); the
+    // all-100 default skips this so the standard path is byte-for-byte unchanged.
+    let fscale = voice.formant_scaling_active();
+
+    let mut output = Vec::new();
+    let n = frames.len();
+    for i in 0..n {
+        let fr1 = &frames[i];
+        let fr2 = if i + 1 < n { &frames[i + 1] } else { fr1 };
+        let n_samples = fr1.dur_samples(speed_factor);
+
+        // Voiced/noise character (en voices are non-Klatt, so Fric = 0).
+        let av = fr1.klattp[0];
+        let (voiced, noise_frac) = if av > 0 && fr1.ffreq[1] > 0 {
+            (true, 0.0)
+        } else if fr1.ffreq[1] == 0 && av == 0 {
+            (false, 0.5)
+        } else {
+            (av > 0, 0.0)
+        };
+
+        let seg = SynthSegment {
+            fr1: if fscale { scale_frame_formants(fr1, voice) } else { fr1.clone() },
+            fr2: if fscale { scale_frame_formants(fr2, voice) } else { fr2.clone() },
+            n_samples,
+            voiced,
+            noise_frac,
+            amp_factor: amps.get(i).copied().unwrap_or(1.0),
+        };
+        let f0 = pitches_hz.get(i).copied().unwrap_or(120.0).max(25.0);
+        let samples = wavegen_segment(&seg, f0, global_amp, wavephase);
+        output.extend_from_slice(&samples);
+    }
     output
 }
 
@@ -639,6 +727,119 @@ mod tests {
     }
 
     fn default_voice() -> VoiceParams { VoiceParams::default() }
+
+    #[test]
+    fn scale_frame_formants_scales_freqs() {
+        let mut fr = voiced_frame(500, 1500, 2500, 4);
+        fr.fheight = [10, 20, 40, 60, 80, 100, 120, 0];
+        fr.fwidth = [10, 20, 30, 40, 50, 60];
+        // +50 % frequency, +50 % height, −50 % width — each scales exactly.
+        let v = VoiceParams {
+            formant_freq_pct:   [150; 7],
+            formant_height_pct: [150; 7],
+            formant_width_pct:  [50; 7],
+            ..VoiceParams::default()
+        };
+        let up = scale_frame_formants(&fr, &v);
+        assert_eq!(up.ffreq[2], 2250);
+        assert_eq!(up.fheight[2], 60); // 40 × 1.5
+        assert_eq!(up.fwidth[2], 15);  // 30 × 0.5
+        // All 100 % is exact identity.
+        let same = scale_frame_formants(&fr, &VoiceParams::default());
+        assert_eq!(same.ffreq, fr.ffreq);
+        assert_eq!(same.fheight, fr.fheight);
+        assert_eq!(same.fwidth, fr.fwidth);
+    }
+
+    /// Goertzel power at a single frequency (FFT-free single-bin DFT).
+    fn goertzel_power(s: &[i32], f_hz: f64, sr: f64) -> f64 {
+        let w = 2.0 * std::f64::consts::PI * f_hz / sr;
+        let coeff = 2.0 * w.cos();
+        let (mut s1, mut s2) = (0.0f64, 0.0f64);
+        for &x in s {
+            let s0 = x as f64 + coeff * s1 - s2;
+            s2 = s1;
+            s1 = s0;
+        }
+        (s1 * s1 + s2 * s2 - coeff * s1 * s2).max(0.0)
+    }
+
+    /// A fully-populated voiced frame (all of F1–F5 present, with widths and
+    /// heights) so the synthesizer's `hmax` — derived from the F5 peak — is
+    /// non-zero and the mid formants actually reach the output.
+    fn full_voiced_frame(f1: i16, f2: i16, f3: i16) -> SpectFrame {
+        let mut f = SpectFrame::default();
+        f.ffreq = [0, f1, f2, f3, 3300, 4300, 5300];
+        f.fheight = [0, 100, 80, 60, 45, 30, 15, 0];
+        f.fwidth = [40, 55, 70, 90, 110, 130];
+        f.fright = [40, 55, 70];
+        f.rms = 50;
+        f.klattp[0] = 50; // AV = 50 (voiced)
+        f.length = 40;
+        f
+    }
+
+    #[test]
+    fn formant_scaling_shifts_energy_upward() {
+        // Same voiced frames + pitch; only the per-formant scale differs.  Raising
+        // the formants by 60 % moves F2 from 1400 Hz to ~2240 Hz, so the spectral
+        // energy *at 2240 Hz* (normalised by total energy) must grow markedly.
+        let frames: Vec<SpectFrame> = (0..8).map(|_| full_voiced_frame(400, 1400, 2400)).collect();
+        let amps = vec![1.0; frames.len()];
+        let pitch = vec![120.0; frames.len()];
+        const SR: f64 = 22050.0;
+
+        let probe_energy = |pct: [i32; 7], f_hz: f64| -> f64 {
+            let voice = VoiceParams { formant_freq_pct: pct, ..VoiceParams::default() };
+            let mut phase = i32::MAX;
+            let s = synthesize_frames_seq(&frames, &amps, &pitch, &voice, &mut phase);
+            let total: f64 = s.iter().map(|&x| (x as f64).powi(2)).sum::<f64>().max(1.0);
+            goertzel_power(&s, f_hz, SR) / total
+        };
+
+        // Probe at the *raised* F2 location (1400 × 1.6 ≈ 2240 Hz).
+        let base = probe_energy([100; 7], 2240.0);
+        let raised = probe_energy([160; 7], 2240.0);
+        assert!(
+            raised > base * 2.0,
+            "raising formants should push energy to the higher band: base {base:.3e} vs raised {raised:.3e}"
+        );
+    }
+
+    #[test]
+    fn formant_height_scaling_boosts_its_band() {
+        // Doubling F2's height (freq unchanged) must raise the raw spectral power
+        // at the F2 frequency (1400 Hz).
+        let frames: Vec<SpectFrame> = (0..8).map(|_| full_voiced_frame(400, 1400, 2400)).collect();
+        let amps = vec![1.0; frames.len()];
+        let pitch = vec![120.0; frames.len()];
+        const SR: f64 = 22050.0;
+
+        let power = |height: [i32; 7]| -> f64 {
+            let voice = VoiceParams { formant_height_pct: height, ..VoiceParams::default() };
+            let mut phase = i32::MAX;
+            let s = synthesize_frames_seq(&frames, &amps, &pitch, &voice, &mut phase);
+            goertzel_power(&s, 1400.0, SR)
+        };
+
+        let base = power([100; 7]);
+        let boosted = power([100, 100, 220, 100, 100, 100, 100]); // F2 × 2.2
+        assert!(
+            boosted > base * 1.5,
+            "boosting F2 height should raise its band's power: base {base:.3e} vs boosted {boosted:.3e}"
+        );
+    }
+
+    #[test]
+    fn formant_scaling_active_flag() {
+        assert!(!VoiceParams::default().formant_scaling_active());
+        let freq = VoiceParams { formant_freq_pct: [100, 100, 130, 100, 100, 100, 100], ..VoiceParams::default() };
+        assert!(freq.formant_scaling_active());
+        let height = VoiceParams { formant_height_pct: [80, 100, 100, 100, 100, 100, 100], ..VoiceParams::default() };
+        assert!(height.formant_scaling_active(), "height scale must count as active");
+        let width = VoiceParams { formant_width_pct: [100, 100, 100, 100, 100, 100, 150], ..VoiceParams::default() };
+        assert!(width.formant_scaling_active(), "width scale must count as active");
+    }
 
     #[test]
     fn peaks_to_harmspect_nonzero() {

@@ -79,6 +79,10 @@ pub mod phoneme;
 pub mod dictionary;
 pub mod translate;
 pub mod synthesize;
+pub mod soundicon;
+pub mod voices;
+pub mod async_synth;
+pub mod mbrola;
 pub mod error;
 pub mod engine;
 
@@ -91,6 +95,16 @@ pub use translate::ipa_table;
 /// alongside equivalent Rust implementations for A/B comparison.
 #[cfg(feature = "c-oracle")]
 pub mod oracle;
+
+/// Basic PCM/WAV analysis for verifying synthesis output.
+///
+/// Only compiled when the `wav-analysis` feature is active.  Provides WAV I/O
+/// plus duration, energy-envelope, and pitch-contour extraction and a
+/// [`compare`](analysis::compare) helper for checking synthesized audio against
+/// a reference WAV (prosody, durations, sound icons) without needing bit-exact
+/// PCM.
+#[cfg(feature = "wav-analysis")]
+pub mod analysis;
 
 // ---------------------------------------------------------------------------
 // Bundled data  (feature = "bundled-data")
@@ -170,11 +184,13 @@ pub use translate::{Translator, PhonemeCode};
 /// Re-exported from [`synthesize`] for convenience.
 pub use synthesize::{Synthesizer, VoiceParams, PcmBuffer};
 
+pub use soundicon::{SoundIcon, SoundIconTable};
+
 /// Main TTS engine — drop-in replacement for the C library session.
 ///
 /// Re-exported from [`engine`] for convenience.
 pub use engine::{EspeakNg, Builder, Parameter, VoiceSpec, VoiceSpecBuilder, Gender,
-                 SynthEvent, EventKind, OutputMode};
+                 SynthEvent, EventKind, OutputMode, TextToPhonemesOptions};
 
 // ---------------------------------------------------------------------------
 // Convenience functions

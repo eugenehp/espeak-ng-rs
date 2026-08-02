@@ -20,8 +20,12 @@ pub const N_SEQ_FRAMES: usize = 25;
 pub const FRFLAG_KLATT: u16 = 0x01;
 /// FRFLAG_VOWEL_CENTRE: marks the centre point of a vowel
 pub const FRFLAG_VOWEL_CENTRE: u16 = 0x02;
+/// FRFLAG_BREAK_LF: break, but keep F3 and above continuous
+pub const FRFLAG_BREAK_LF: u16 = 0x08;
 /// FRFLAG_BREAK: don't merge with next frame
 pub const FRFLAG_BREAK: u16 = 0x10;
+/// FRFLAG_FORMANT_RATE: allow an increased rate of formant-frequency change
+pub const FRFLAG_FORMANT_RATE: u16 = 0x20;
 
 /// Size of the non-Klatt frame_t2 struct in C (bytes)
 pub const FRAME_T2_SIZE: usize = 44;
@@ -89,6 +93,38 @@ impl SpectFrame {
         Some(f)
     }
 
+    /// Serialize a non-Klatt `frame_t2` to 44 bytes — the inverse of
+    /// [`from_bytes_t2`](Self::from_bytes_t2).  Part of the `phondata`
+    /// acoustic-data compiler (§1.6).
+    pub fn to_bytes_t2(&self) -> [u8; FRAME_T2_SIZE] {
+        let mut d = [0u8; FRAME_T2_SIZE];
+        d[0..2].copy_from_slice(&self.frflags.to_le_bytes());
+        for i in 0..7 {
+            d[2 + i * 2..4 + i * 2].copy_from_slice(&self.ffreq[i].to_le_bytes());
+        }
+        d[16] = self.length;
+        d[17] = self.rms;
+        d[18..26].copy_from_slice(&self.fheight);
+        d[26..32].copy_from_slice(&self.fwidth);
+        d[32..35].copy_from_slice(&self.fright);
+        d[35..39].copy_from_slice(&self.bw);
+        d[39..44].copy_from_slice(&self.klattp);
+        d
+    }
+
+    /// Serialize a Klatt `frame_t` to 64 bytes — the inverse of
+    /// [`from_bytes_t`](Self::from_bytes_t).  The first 44 bytes match
+    /// [`to_bytes_t2`](Self::to_bytes_t2); the tail adds the Klatt parameters.
+    pub fn to_bytes_t(&self) -> [u8; FRAME_T_SIZE] {
+        let mut d = [0u8; FRAME_T_SIZE];
+        d[..FRAME_T2_SIZE].copy_from_slice(&self.to_bytes_t2());
+        d[44..49].copy_from_slice(&self.klattp2);
+        d[49..56].copy_from_slice(&self.klatt_ap);
+        d[56..63].copy_from_slice(&self.klatt_bp);
+        // d[63] = spare (0)
+        d
+    }
+
     /// Parse a Klatt frame_t from 64 bytes.
     pub fn from_bytes_t(data: &[u8]) -> Option<Self> {
         if data.len() < FRAME_T_SIZE { return None; }
@@ -129,6 +165,30 @@ impl SpectFrame {
         let base = (self.length as usize) * 64;
         ((base as f64 * speed_factor) as usize).max(1)
     }
+}
+
+/// Compile a non-Klatt `SPECT_SEQ` to `phondata` bytes — the inverse of
+/// [`SpectSeq::parse`], and the acoustic-data half of the phoneme compiler
+/// (`compiledata.c`, §1.6).  Header = `length_total(i16)` (sum of frame lengths)
+/// + `n_frames(u8)` + `sqflags(u8)`, followed by the 44-byte `frame_t2` entries.
+pub fn compile_spect_seq(frames: &[SpectFrame]) -> Vec<u8> {
+    // Klatt vs non-Klatt is chosen (and detected on read) from the first frame's
+    // FRFLAG_KLATT bit, matching `SpectSeq::parse`.
+    let is_klatt = frames.first().is_some_and(|f| f.frflags & FRFLAG_KLATT != 0);
+    let frame_size = if is_klatt { FRAME_T_SIZE } else { FRAME_T2_SIZE };
+    let length_total: i16 = frames.iter().map(|f| f.length as i16).sum();
+    let mut out = Vec::with_capacity(4 + frames.len() * frame_size);
+    out.extend_from_slice(&length_total.to_le_bytes());
+    out.push(frames.len() as u8);
+    out.push(0); // sqflags
+    for f in frames {
+        if is_klatt {
+            out.extend_from_slice(&f.to_bytes_t());
+        } else {
+            out.extend_from_slice(&f.to_bytes_t2());
+        }
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -198,6 +258,57 @@ impl SpectSeq {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn spect_seq_compile_round_trip() {
+        let mut f1 = SpectFrame::default();
+        f1.frflags = 0x0002; // not FRFLAG_KLATT → frame_t2
+        f1.ffreq = [120, 730, 1090, 2440, 3400, 4000, 4500];
+        f1.length = 20;
+        f1.rms = 40;
+        f1.fheight = [1, 2, 3, 4, 5, 6, 7, 8];
+        f1.fwidth = [9, 10, 11, 12, 13, 14];
+        f1.fright = [1, 2, 3];
+        f1.bw = [4, 5, 6, 7];
+        f1.klattp = [50, 1, 2, 3, 4];
+        let mut f2 = f1.clone();
+        f2.ffreq[1] = 700;
+        f2.length = 25;
+
+        let frames = vec![f1.clone(), f2.clone()];
+        let bytes = compile_spect_seq(&frames);
+        let seq = SpectSeq::parse(&bytes, 0).expect("parse compiled SPECT_SEQ");
+
+        assert!(!seq.is_klatt);
+        assert_eq!(seq.frames.len(), 2);
+        // Full byte-level round-trip of each frame.
+        assert_eq!(seq.frames[0].to_bytes_t2(), f1.to_bytes_t2());
+        assert_eq!(seq.frames[1].to_bytes_t2(), f2.to_bytes_t2());
+        assert_eq!(seq.frames[0].length, 20);
+        assert_eq!(seq.frames[1].ffreq[1], 700);
+    }
+
+    #[test]
+    fn spect_seqk_klatt_compile_round_trip() {
+        // A Klatt sequence (first frame carries FRFLAG_KLATT → 64-byte frame_t).
+        let mut f = SpectFrame::default();
+        f.frflags = FRFLAG_KLATT;
+        f.ffreq = [130, 700, 1200, 2500, 3300, 3900, 4400];
+        f.length = 18;
+        f.rms = 45;
+        f.klattp = [50, 1, 2, 3, 4];
+        f.klattp2 = [5, 6, 7, 8, 9];
+        f.klatt_ap = [1, 2, 3, 4, 5, 6, 7];
+        f.klatt_bp = [8, 9, 10, 11, 12, 13, 14];
+
+        let frames = vec![f.clone(), f.clone()];
+        let bytes = compile_spect_seq(&frames);
+        let seq = SpectSeq::parse(&bytes, 0).expect("parse compiled SPECT_SEQK");
+        assert!(seq.is_klatt, "should be detected as a Klatt sequence");
+        assert_eq!(seq.frames.len(), 2);
+        assert_eq!(seq.frames[0].to_bytes_t(), f.to_bytes_t());
+        assert_eq!(seq.frames[0].klatt_bp, [8, 9, 10, 11, 12, 13, 14]);
+    }
 
     // Minimal valid SPECT_SEQ (non-Klatt, 1 frame):
     // Header: length_total=0 (i16 LE), n_frames=1, sqflags=0

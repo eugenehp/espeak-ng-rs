@@ -97,6 +97,36 @@ impl PhonemeTab {
     }
 }
 
+/// Compile a list of phoneme tables into the binary `phontab` format — the
+/// inverse of `parse_phontab`, and the table-writing half of the phoneme
+/// compiler (`compiledata.c`, §1.6).
+///
+/// Layout: `[n_tables, 0, 0, 0]`, then for each table a 4-byte header
+/// `[n_phonemes, includes, 0, 0]`, a 32-byte null-padded name, and the
+/// `n_phonemes` × 16-byte entries.
+pub fn compile_phontab(tables: &[PhonemeTabList]) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.push(tables.len() as u8);
+    out.extend_from_slice(&[0, 0, 0]); // header padding
+
+    for t in tables {
+        out.push(t.phonemes.len() as u8);
+        out.push(t.includes);
+        out.extend_from_slice(&[0, 0]); // table-header padding
+
+        let mut name = [0u8; N_PHONEME_TAB_NAME];
+        let nb = t.name.as_bytes();
+        let n = nb.len().min(N_PHONEME_TAB_NAME);
+        name[..n].copy_from_slice(&nb[..n]);
+        out.extend_from_slice(&name);
+
+        for ph in &t.phonemes {
+            out.extend_from_slice(&ph.to_bytes());
+        }
+    }
+    out
+}
+
 // ---------------------------------------------------------------------------
 // PhonemeTabList — mirrors PHONEME_TAB_LIST
 // ---------------------------------------------------------------------------

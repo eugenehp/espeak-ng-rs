@@ -20,10 +20,12 @@
 
 pub mod feature;
 pub mod load;
+pub mod source;
 pub mod table;
 
 pub use feature::PhonemeFeature;
 pub use load::PhonemeData;
+pub use source::parse_phoneme_dsl;
 pub use table::{PhonemeTab, PhonemeTabList, ReplacePhoneme};
 
 // ---------------------------------------------------------------------------

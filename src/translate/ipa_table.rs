@@ -101,6 +101,12 @@ pub fn mnemonic_to_ipa(mnemonic: u32, is_vowel: bool) -> String {
         if c == 0 { break; }
         if c == b'/' { break; } // variant indicator
         if c == b'#' && is_vowel { break; } // subscript-h for consonants only
+        if c == b'-' && is_vowel {
+            // A '-' in a *vowel* mnemonic is a variant marker, not IPA — e.g.
+            // French "@-" (the reducible "e caduc" schwa) must render "ə", not
+            // "ə-".  ('-' on a consonant means syllabic, handled elsewhere.)
+            continue;
+        }
         if !first && c.is_ascii_digit() {
             // ignore digits after first char (they encode variants, not IPA)
             continue;
@@ -135,6 +141,10 @@ pub static EN_IPA_OVERRIDES: &[(u8, &str)] = &[
     (144, "\u{0259}\u{028a}"), // oU → əʊ (ipa1 gives oʊ)
     (145, "\u{0259}\u{028a}"), // oU# → əʊ
     // Rhotic vowels
+    (154, "a\u{026a}\u{0259}"), // aI3 → aɪə  (fire/hire/wire; mnemonic drops the
+                                // "3", giving a bare "aɪ" — the non-rhotic
+                                // offglide is restored, and the word-medial
+                                // linking-ɹ is added by the rhotic pass)
     (156, "\u{0259}\u{0279}"), // IR  → əɹ
     (157, "\u{028c}\u{0279}"), // VR  → ʌɹ
 ];

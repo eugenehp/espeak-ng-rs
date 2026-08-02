@@ -18,6 +18,7 @@ struct Cli {
     quiet:         bool,
     ipa:           bool,
     x_mnem:        bool,
+    markup:        bool,
     path_override: Option<PathBuf>,
     phonout:       Option<PathBuf>,
     sep:           Option<char>,
@@ -29,8 +30,25 @@ struct Cli {
     pitch:         Option<u32>,
     range:         Option<u32>,
     amplitude:     Option<u32>,
+    capitals:      Option<u32>,
+    word_gap:      Option<u32>,
     file_input:    Option<PathBuf>,
     stdin_all:     bool,
+    list_voices:   bool,
+    voices_filter: Option<String>,
+    /// `--punct` (announce all punctuation) / `--punct="chars"` (only those).
+    punct:         Option<Vec<char>>,
+    /// `-z`: no final sentence pause (suppress end-of-utterance silence).
+    no_final_pause: bool,
+    /// `-b <n>`: input text encoding for `-f`/`--stdin` (1=UTF-8, 2=8-bit, 4=16-bit).
+    input_encoding: Option<u32>,
+    /// `--compile[=<lang>]` / `--compile-debug[=<lang>]`: compile `<lang>`'s
+    /// dictsource (`<data>/<lang>_list`+`_rules`) into the binary `<lang>_dict`.
+    /// `Some("")` = compile the `-v` voice's language.
+    compile: Option<String>,
+    /// `--compile-phonemes[=<source>]`: compile a phoneme-table source file into
+    /// the binary `phontab`.  `Some("")` = the data dir's `phonemes` file.
+    compile_phonemes: Option<String>,
     positionals:   Vec<OsString>,
     had_unknown:   Option<String>,
 }
@@ -52,7 +70,7 @@ fn main() {
 }
 
 fn run() -> std::io::Result<()> {
-    let cli = parse_args(std::env::args_os().skip(1).collect());
+    let mut cli = parse_args(std::env::args_os().skip(1).collect());
     if let Some(flag) = cli.had_unknown.clone() {
         eprintln!("{}: unrecognized option '{flag}'", argv0_display());
         return Ok(());
@@ -70,6 +88,30 @@ fn run() -> std::io::Result<()> {
             data.display()
         );
         return Ok(());
+    }
+    if cli.list_voices {
+        print_voices(&cli);
+        return Ok(());
+    }
+    if let Some(lang_arg) = cli.compile.clone() {
+        return run_compile(&lang_arg, &cli);
+    }
+    if let Some(src_arg) = cli.compile_phonemes.clone() {
+        return run_compile_phonemes(&src_arg, &cli);
+    }
+    // Resolve a voice *name* (e.g. "French (France)") to a language tag; a plain
+    // language tag is left unchanged.
+    {
+        let data = resolved_data_dir(cli.path_override.as_deref());
+        cli.voice = resolve_voice(&cli.voice, &data);
+    }
+    // Warn (but continue on the base voice) if a `+variant` was requested whose
+    // file is missing — the variant is acoustic-only, so the base still speaks.
+    if let (_, Some(var)) = espeak_ng::translate::split_voice_variant(&cli.voice) {
+        let data = resolved_data_dir(cli.path_override.as_deref());
+        if espeak_ng::voices::load_variant(&data, var).is_none() {
+            eprintln!("{}: voice variant '{var}' not found in voices/!v/", argv0_display());
+        }
     }
 
     let text = gather_text(&cli)?;
@@ -101,6 +143,14 @@ fn run() -> std::io::Result<()> {
         std::io::Error::new(std::io::ErrorKind::Other, format!("{e}"))
     })?;
     apply_runtime_params(&mut engine, &cli);
+    // A document-level `<prosody>` (wrapping the whole utterance) sets the
+    // global rate/pitch/volume for the audio.  Scoped prosody is left to the
+    // (unaffected) phoneme output.
+    if cli.markup {
+        if let Some(p) = espeak_ng::translate::ssml::document_prosody(&text) {
+            apply_prosody(&mut engine, p);
+        }
+    }
 
     let (pcm, rate) = engine.synth(&text).map_err(|e| {
         std::io::Error::new(std::io::ErrorKind::Other, format!("{e}"))
@@ -125,6 +175,169 @@ fn run() -> std::io::Result<()> {
     Ok(())
 }
 
+/// Resolve a `-v` value to a language tag.  A value that already resolves as a
+/// language (its `<stem>_dict` exists) is kept as-is; otherwise it is matched
+/// against the installed voices by name (`-v "French (France)"` → `fr-fr`),
+/// falling back to the original string if nothing matches.
+fn resolve_voice(value: &str, data_dir: &Path) -> String {
+    if espeak_ng::translate::resolve_dict_stem(data_dir, value).is_some() {
+        return value.to_string();
+    }
+    let voices = espeak_ng::voices::list_voices(data_dir);
+    let query = espeak_ng::voices::VoiceQuery { name: Some(value.to_string()), ..Default::default() };
+    match espeak_ng::voices::find_voice(&voices, &query) {
+        // Resolve to the language that actually has data — the voice's primary
+        // code may be a locale (`fr-fr`) whose phoneme table is the base (`fr`).
+        Some(v) => espeak_ng::translate::resolve_dict_stem(data_dir, &v.language)
+            .unwrap_or_else(|| v.language.clone()),
+        None => value.to_string(),
+    }
+}
+
+/// `--compile[=<lang>]`: compile `<lang>`'s dictsource (`<data>/<lang>_list` +
+/// `<lang>_rules`) into the binary `<data>/<lang>_dict` — the `espeak-ng.c`
+/// `--compile` path via `espeak_ng_CompileDictionary`.  `lang_arg` empty → the
+/// `-v` voice's base language.  Phoneme mnemonics are resolved against that
+/// language's phoneme table (falling back to `en`).
+fn run_compile(lang_arg: &str, cli: &Cli) -> std::io::Result<()> {
+    use espeak_ng::dictionary::compile::compile_dictionary;
+    use espeak_ng::dictionary::transpose::TransposeConfig;
+
+    let data_dir = resolved_data_dir(cli.path_override.as_deref());
+    // Default to the -v voice's *base* language (strip any `+variant`).
+    let lang = if !lang_arg.is_empty() {
+        lang_arg.to_string()
+    } else {
+        cli.voice.split('+').next().unwrap_or("en").to_string()
+    };
+
+    // Refuse to silently write an empty dict when no dictsource exists (the
+    // library layer is lenient about missing files; the CLI should not be).
+    let list = data_dir.join(format!("{lang}_list"));
+    let rules = data_dir.join(format!("{lang}_rules"));
+    if !list.exists() && !rules.exists() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!(
+                "no dictsource for '{lang}' in {} (expected {lang}_list / {lang}_rules)",
+                data_dir.display()
+            ),
+        ));
+    }
+
+    let mut phdata = PhonemeData::load(&data_dir).map_err(|e| {
+        std::io::Error::new(std::io::ErrorKind::Other, format!("cannot load phoneme data: {e}"))
+    })?;
+    // Resolve mnemonics against the voice's phoneme table — honour a `phonemes
+    // <name>` voice directive (e.g. bs→hr, nb→no) so a shared-table language
+    // doesn't silently fall back to en and mis-resolve every mnemonic (`U:`→ts).
+    let table = espeak_ng::translate::resolve_phoneme_table(&data_dir, &lang);
+    if phdata.select_table_by_name(&table).is_err()
+        && phdata.select_table_by_name(&lang).is_err()
+    {
+        phdata.select_table_by_name("en").map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("no phoneme table for '{lang}' (voice table '{table}') or en: {e}"),
+            )
+        })?;
+    }
+
+    let transpose = TransposeConfig::for_lang(&lang);
+    let bytes = compile_dictionary(&data_dir, &lang, &phdata, &transpose).map_err(|e| {
+        std::io::Error::new(std::io::ErrorKind::Other, format!("compiling {lang}_dict: {e}"))
+    })?;
+
+    let out = data_dir.join(format!("{lang}_dict"));
+    std::fs::write(&out, &bytes)?;
+    eprintln!("Compiled {} → {} ({} bytes)", lang, out.display(), bytes.len());
+    Ok(())
+}
+
+/// `--compile-phonemes[=<source>]`: parse a phoneme-table source file
+/// (`phonemetable`/`phoneme … endphoneme` blocks) and write the binary `phontab`
+/// — the table half of `espeak-ng.c`'s `--compile-phonemes` via
+/// `parse_phoneme_dsl` + `compile_phontab`.  `src_arg` empty → the data dir's
+/// `phonemes` file.  Only the phoneme *table* is produced (the `phonindex` /
+/// `phondata` program+acoustic data are compiled separately and not regenerated).
+fn run_compile_phonemes(src_arg: &str, cli: &Cli) -> std::io::Result<()> {
+    use espeak_ng::phoneme::parse_phoneme_dsl;
+    use espeak_ng::phoneme::table::compile_phontab;
+
+    let data_dir = resolved_data_dir(cli.path_override.as_deref());
+    let src_path = if src_arg.is_empty() {
+        data_dir.join("phonemes")
+    } else {
+        PathBuf::from(src_arg)
+    };
+    if !src_path.exists() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("phoneme source not found: {}", src_path.display()),
+        ));
+    }
+
+    let source = std::fs::read_to_string(&src_path)?;
+    let tables = parse_phoneme_dsl(&source);
+    if tables.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("no phoneme tables parsed from {}", src_path.display()),
+        ));
+    }
+
+    let bytes = compile_phontab(&tables);
+    let out = data_dir.join("phontab");
+    std::fs::write(&out, &bytes)?;
+    let n_ph: usize = tables.iter().map(|t| t.phonemes.len()).sum();
+    eprintln!(
+        "Compiled {} phoneme table(s), {} phonemes → {} ({} bytes)",
+        tables.len(), n_ph, out.display(), bytes.len()
+    );
+    eprintln!("Note: phoneme table only — phonindex/phondata are not regenerated.");
+    Ok(())
+}
+
+/// `--voices` / `--voices=<lang>`: print the available voices as a table,
+/// optionally filtered to those whose language code starts with the argument.
+fn print_voices(cli: &Cli) {
+    let data = resolved_data_dir(cli.path_override.as_deref());
+    let voices = espeak_ng::voices::list_voices(&data);
+    let filter = cli.voices_filter.as_deref().map(str::to_ascii_lowercase);
+
+    println!("Pty Language       Age/Gender VoiceName            File");
+    for v in &voices {
+        if let Some(ref f) = filter {
+            let hit = std::iter::once(&v.language)
+                .chain(v.other_languages.iter())
+                .any(|l| l.to_ascii_lowercase().starts_with(f.as_str()));
+            if !hit {
+                continue;
+            }
+        }
+        let age = if v.age == 0 { "--".to_string() } else { format!("{:>2}", v.age) };
+        println!(
+            "{:>2}  {:<15}{}/{}       {:<20} {}",
+            v.priority, v.language, age, v.gender, v.name, v.file
+        );
+    }
+}
+
+/// Apply document-level `<prosody>` multipliers to the engine's rate/pitch/
+/// volume (each scaled from its current value; `set_parameter` clamps).
+fn apply_prosody(engine: &mut EspeakNg, p: espeak_ng::translate::ssml::Prosody) {
+    let scale = |cur: i32, m: Option<f32>| m.map(|m| (cur as f32 * m).round() as i32);
+    if let Some(r) = scale(engine.get_parameter(Parameter::Rate), p.rate) {
+        engine.set_parameter(Parameter::Rate, r);
+    }
+    if let Some(v) = scale(engine.get_parameter(Parameter::Pitch), p.pitch) {
+        engine.set_parameter(Parameter::Pitch, v);
+    }
+    if let Some(v) = scale(engine.get_parameter(Parameter::Volume), p.volume) {
+        engine.set_parameter(Parameter::Volume, v);
+    }
+}
+
 fn apply_runtime_params(engine: &mut EspeakNg, cli: &Cli) {
     if let Some(r) = cli.rate {
         engine.set_parameter(Parameter::Rate, r as i32);
@@ -138,21 +351,60 @@ fn apply_runtime_params(engine: &mut EspeakNg, cli: &Cli) {
     if let Some(g) = cli.range {
         engine.set_parameter(Parameter::Range, g as i32);
     }
+    // Runtime text options that must also reach the audio path (previously only
+    // wired into `-x`/`--ipa`).
+    if let Some(g) = cli.word_gap {
+        engine.set_parameter(Parameter::WordGap, g as i32);
+    }
+    if let Some(k) = cli.capitals {
+        engine.set_parameter(Parameter::Capitals, k as i32);
+    }
+    if let Some(ref p) = cli.punct {
+        engine.set_punctuation_list(Some(p.clone()));
+    }
+    if cli.no_final_pause {
+        engine.set_no_final_pause(true);
+    }
+    // `-m` / `--markup`: interpret SSML in synthesis (currently the `<audio>`
+    // sound-icon tag).
+    engine.set_markup(cli.markup);
 }
 
 fn phoneme_output(cli: &Cli, text: &str) -> std::io::Result<()> {
     let data_dir = resolved_data_dir(cli.path_override.as_deref());
-    let translator = Translator::new(&cli.voice, Some(&data_dir)).map_err(|e| {
+    let mut translator = Translator::new(&cli.voice, Some(&data_dir)).map_err(|e| {
         std::io::Error::new(std::io::ErrorKind::Other, format!("{e}"))
     })?;
+    if let Some(k) = cli.capitals {
+        translator.options.capitals = k as u8;
+    }
+    if let Some(g) = cli.word_gap {
+        translator.options.word_gap = g as i32;
+    }
+    if let Some(ref p) = cli.punct {
+        translator.options.punct = Some(p.clone());
+    }
 
     let line = if cli.ipa {
-        let ipa = translator.text_to_ipa(text).map_err(|e| {
+        let ipa = if cli.markup {
+            translator.text_to_ipa_ssml(text)
+        } else {
+            translator.text_to_ipa(text)
+        }
+        .map_err(|e| {
             std::io::Error::new(std::io::ErrorKind::Other, format!("{e}"))
         })?;
         apply_ipa_sep(&ipa, cli.sep)
     } else {
-        let codes = translator.translate_to_codes(text).map_err(|e| {
+        // `-x` with `-m`: the codes path takes plain text, so process SSML first
+        // (strip tags, decode entities, apply say-as) — matching `--ipa -m`.
+        // (Cross-`<voice>` language switching in `-x` is not yet wired.)
+        let src = if cli.markup {
+            espeak_ng::translate::ssml_to_speech_text(text, translator.options.lang.as_str())
+        } else {
+            text.to_string()
+        };
+        let codes = translator.translate_to_codes(&src).map_err(|e| {
             std::io::Error::new(std::io::ErrorKind::Other, format!("{e}"))
         })?;
         let mut phdata = PhonemeData::load(&data_dir).map_err(|e| {
@@ -304,14 +556,42 @@ fn format_x(codes: &[PhonemeCode], phdata: &PhonemeData, sep: Option<char>) -> S
     out.trim_end().to_string()
 }
 
+/// Map the `-b` value to an [`Encoding`].  1/unset = UTF-8, 2 = ISO-8859-1
+/// (Latin-1, the common 8-bit default), 4 = UCS-2 (16-bit little-endian).
+fn input_encoding(b: Option<u32>) -> espeak_ng::Encoding {
+    use espeak_ng::Encoding;
+    match b {
+        Some(2) => Encoding::Iso8859_1,
+        Some(4) => Encoding::Ucs2,
+        _ => Encoding::Utf8,
+    }
+}
+
 fn gather_text(cli: &Cli) -> std::io::Result<String> {
+    let enc = input_encoding(cli.input_encoding);
+    // Decode raw input bytes with the `-b` encoding.  UTF-8 keeps the strict
+    // read_to_string path; other encodings decode byte-by-byte.
+    let decode = |bytes: Vec<u8>| -> String {
+        espeak_ng::encoding::decode_to_string(&bytes, enc)
+            .unwrap_or_else(|_| String::from_utf8_lossy(&bytes).into_owned())
+    };
+    let is_utf8 = matches!(enc, espeak_ng::Encoding::Utf8);
+
     if let Some(ref path) = cli.file_input {
-        return std::fs::read_to_string(path);
+        if is_utf8 {
+            return std::fs::read_to_string(path);
+        }
+        return Ok(decode(std::fs::read(path)?));
     }
     if cli.stdin_all || (cli.positionals.is_empty() && !std::io::stdin().is_terminal()) {
-        let mut buf = String::new();
-        std::io::stdin().read_to_string(&mut buf)?;
-        return Ok(buf);
+        if is_utf8 {
+            let mut buf = String::new();
+            std::io::stdin().read_to_string(&mut buf)?;
+            return Ok(buf);
+        }
+        let mut buf = Vec::new();
+        std::io::stdin().read_to_end(&mut buf)?;
+        return Ok(decode(buf));
     }
     if !cli.positionals.is_empty() {
         let mut s = String::new();
@@ -422,13 +702,37 @@ fn parse_args(args: Vec<OsString>) -> Cli {
                     "--help" => cli.print_help = true,
                     "--version" => cli.print_version = true,
                     "--ipa" => cli.ipa = true,
+                    "--markup" => cli.markup = true,
                     "--stdout" => cli.stdout_wav = true,
                     "--stdin" => cli.stdin_all = true,
+                    // --compile[=lang] / --compile-debug[=lang]: dictionary
+                    // compilation.  --compile-phonemes[=src]: phoneme-table
+                    // compilation.  Other --compile-* variants (mbrola/
+                    // intonation) are accepted as no-ops (no source ships).
+                    "--compile-phonemes" => cli.compile_phonemes = Some(String::new()),
+                    _ if s.starts_with("--compile-phonemes=") => {
+                        cli.compile_phonemes = Some(s["--compile-phonemes=".len()..].to_string());
+                    }
+                    "--compile" | "--compile-debug" => cli.compile = Some(String::new()),
+                    _ if s.starts_with("--compile=") => {
+                        cli.compile = Some(s["--compile=".len()..].to_string());
+                    }
+                    _ if s.starts_with("--compile-debug=") => {
+                        cli.compile = Some(s["--compile-debug=".len()..].to_string());
+                    }
                     _ if s.starts_with("--compile") => {}
-                    _ if s == "--voices" || s.starts_with("--voices=") => {}
+                    "--voices" => cli.list_voices = true,
+                    _ if s.starts_with("--voices=") => {
+                        cli.list_voices = true;
+                        cli.voices_filter = Some(s["--voices=".len()..].to_string());
+                    }
                     _ if s == "--ssml-break" || s.starts_with("--ssml-break=") => {}
                     _ if s == "--tie" || s.starts_with("--tie=") => {}
-                    _ if s == "--punct" || s.starts_with("--punct=") => {}
+                    "--punct" => cli.punct = Some(Vec::new()),
+                    _ if s.starts_with("--punct=") => {
+                        let chars = s["--punct=".len()..].trim_matches('"').chars().collect();
+                        cli.punct = Some(chars);
+                    }
                     _ => {
                         cli.had_unknown.get_or_insert(s.to_string());
                     }
@@ -446,7 +750,7 @@ fn parse_args(args: Vec<OsString>) -> Cli {
                     'h' => cli.print_help = true,
                     'q' => cli.quiet = true,
                     'x' => cli.x_mnem = true,
-                    'm' => { /* SSML: not supported */ }
+                    'm' => cli.markup = true,
                     'v' => {
                         if idx + 1 < bytes.len() {
                             let voice = &s[idx + 1..];
@@ -506,6 +810,27 @@ fn parse_args(args: Vec<OsString>) -> Cli {
                             }
                         }
                     }
+                    'k' | 'g' | 'b' | 'l' => {
+                        // Numeric-argument options. `-k` (capitals) and `-g`
+                        // (word gap) are applied; `-b` (input encoding) and
+                        // `-l` (line length) are accepted for parity.
+                        let (n, _) = parse_trailing_u32(&s[idx + 1..]);
+                        let val = if let Some(v) = n {
+                            idx = bytes.len();
+                            Some(v)
+                        } else if let Some(a) = args.get(i + 1) {
+                            a.to_string_lossy().parse::<u32>().ok().inspect(|_| i += 1)
+                        } else {
+                            None
+                        };
+                        match c {
+                            'k' => cli.capitals = val,
+                            'g' => cli.word_gap = val,
+                            'b' => cli.input_encoding = val,
+                            _ => {} // -l: accepted, no effect
+                        }
+                    }
+                    'z' => cli.no_final_pause = true,
                     'w' => {
                         if idx + 1 < bytes.len() {
                             cli.wave_out = Some(PathBuf::from(&s[idx + 1..]));
@@ -576,6 +901,7 @@ Phonemes / IPA
 
 Voice / data
   -v <voice>       Voice / language tag (e.g. en-us, de, fr)
+  --voices[=<lang>]  List available voices (optionally filtered by language)
   --path=<dir>     Parent of espeak-ng-data/ or data dir itself
 
 Speech (WAV only; playback not implemented)
@@ -583,9 +909,16 @@ Speech (WAV only; playback not implemented)
   --stdout         WAV to stdout
   -s -p -P -a      Speed, pitch, pitch range, amplitude (same ranges as upstream)
 
+Compile
+  --compile[=<lang>]  Compile <lang>_list + <lang>_rules (in the data dir) into
+                      <lang>_dict (default <lang> = the -v voice's language)
+  --compile-phonemes[=<src>]  Compile a phoneme-table source (default: the data
+                      dir's `phonemes`) into `phontab` (table only)
+
 Other
   -f <file>        Input text file
   --stdin          Read all stdin as one string
+  --punct[=CHARS]  Announce punctuation by name (all, or only the given chars)
   --help           This help
   --version        Version and data directory
 

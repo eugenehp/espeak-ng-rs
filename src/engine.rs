@@ -43,6 +43,19 @@ use crate::phoneme::PhonemeData;
 use crate::synthesize::{PcmBuffer, Synthesizer, VoiceParams};
 use crate::translate::{default_data_dir, normalize_voice_tag, Translator};
 
+/// Controls formatting of IPA returned by [`EspeakNg::text_to_phonemes_with_options`].
+///
+/// The default preserves the output format of [`EspeakNg::text_to_phonemes`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct TextToPhonemesOptions {
+    /// Reinsert input punctuation into the generated IPA.
+    pub preserve_punctuation: bool,
+    /// Replace clause-separating newlines with spaces.
+    pub flatten_clauses: bool,
+    /// Interpret SSML markup in the input (equivalent to the `-m` CLI flag).
+    pub markup: bool,
+}
+
 // ---------------------------------------------------------------------------
 // Parameter – mirrors espeak_PARAMETER
 // ---------------------------------------------------------------------------
@@ -109,6 +122,10 @@ pub struct VoiceSpec {
     pub gender: Gender,
     /// Preferred speaker age (0 = unspecified).
     pub age: u8,
+    /// `+variant` acoustic modifier parsed from the voice name (`en+f3` →
+    /// `Some("f3")`), corresponding to a file in `espeak-ng-data/voices/!v/`.
+    /// The variant's acoustic parameters are not yet applied to synthesis.
+    pub variant: Option<String>,
 }
 
 impl VoiceSpec {
@@ -116,8 +133,10 @@ impl VoiceSpec {
     ///
     /// Equivalent to calling `espeak_ng_SetVoiceByName("en")`.
     pub fn by_name(lang: &str) -> Self {
+        let (base, variant) = crate::translate::split_voice_variant(lang);
         VoiceSpec {
-            language: Some(normalize_voice_tag(lang)),
+            language: Some(normalize_voice_tag(base)),
+            variant: variant.map(|v| v.to_string()),
             ..Default::default()
         }
     }
@@ -143,9 +162,14 @@ pub struct VoiceSpecBuilder {
 }
 
 impl VoiceSpecBuilder {
-    /// Set the language tag (e.g. `"en"`, `"de"`, `"fr"`).
+    /// Set the language tag (e.g. `"en"`, `"de"`, `"fr"`).  A `+variant`
+    /// suffix (`en+f3`) is split off into [`VoiceSpec::variant`].
     pub fn language(mut self, lang: &str) -> Self {
-        self.spec.language = Some(normalize_voice_tag(lang));
+        let (base, variant) = crate::translate::split_voice_variant(lang);
+        self.spec.language = Some(normalize_voice_tag(base));
+        if variant.is_some() {
+            self.spec.variant = variant.map(|v| v.to_string());
+        }
         self
     }
 
@@ -223,6 +247,9 @@ pub enum EventKind {
     MsgTerminated,
     /// A phoneme boundary (only produced when phoneme events are enabled).
     Phoneme(String),
+    /// An SSML `<mark name="…"/>` reference point was reached.  Payload is the
+    /// mark name.  Mirrors `espeak_EVENT_MARK`.
+    Mark(String),
 }
 
 // ---------------------------------------------------------------------------
@@ -277,8 +304,36 @@ pub struct EspeakNg {
     range:      u32,
     /// Word gap in 10ms units.
     word_gap:   i32,
+    /// Capital-letter indication (`-k`): 0 = none, 2 = announce "capital".
+    capitals:   u8,
+    /// Announce punctuation by name (`--punct`): `None` = off, `Some(empty)` =
+    /// all, `Some(chars)` = only those.
+    punct:      Option<Vec<char>>,
+    /// Suppress the end-of-utterance trailing silence (`-z`).
+    no_final_pause: bool,
     /// Path to the espeak-ng data directory.
     data_dir:   PathBuf,
+    /// Registered sound icons (external WAV clips spliced into the output).
+    soundicons: crate::soundicon::SoundIconTable,
+    /// When set, `synth` interprets SSML `<audio src="…">` markup.
+    markup:     bool,
+    /// Post-synthesis tempo scale (libsonic, `1.0` = off): `>1` faster/shorter,
+    /// pitch preserved.  Applied to the final PCM in [`synth`](Self::synth).
+    post_tempo: f64,
+    /// Post-synthesis pitch scale (libsonic, `1.0` = off): `>1` higher.  Unlike
+    /// the base-F0 `pitch`, this resamples, so formants shift too (an effect
+    /// voice — chipmunk/robot).  Applied to the final PCM.
+    post_pitch: f64,
+}
+
+/// Drop trailing near-silence from a PCM run.  Used when splicing sound icons so
+/// each spliced text run's own end-of-utterance silence doesn't accumulate into
+/// long internal gaps.
+fn trim_trailing_silence(pcm: &mut Vec<i16>) {
+    const THRESHOLD: u16 = 64; // ≈ -54 dBFS
+    while matches!(pcm.last(), Some(&s) if s.unsigned_abs() <= THRESHOLD) {
+        pcm.pop();
+    }
 }
 
 impl EspeakNg {
@@ -313,8 +368,31 @@ impl EspeakNg {
             pitch:      50,
             range:      50,
             word_gap:   0,
+            capitals:   0,
+            punct:      None,
+            no_final_pause: false,
             data_dir:   data_dir.to_path_buf(),
+            soundicons: crate::soundicon::SoundIconTable::new(22_050),
+            markup:     false,
+            post_tempo: 1.0,
+            post_pitch: 1.0,
         })
+    }
+
+    /// Set a post-synthesis libsonic **tempo** scale (`1.0` = off): the final PCM
+    /// is time-scaled by `factor` (`>1` faster/shorter) with pitch preserved.
+    /// Builder-style; returns `self`.
+    pub fn with_post_tempo(mut self, factor: f64) -> Self {
+        self.post_tempo = factor;
+        self
+    }
+
+    /// Set a post-synthesis libsonic **pitch** scale (`1.0` = off): the final PCM
+    /// is pitch-shifted by `factor` (`>1` higher) at unchanged duration.  Note
+    /// this resamples, so formants shift too (an effect voice).  Returns `self`.
+    pub fn with_post_pitch(mut self, factor: f64) -> Self {
+        self.post_pitch = factor;
+        self
     }
 
     /// Start building an engine with a fluent builder.
@@ -334,6 +412,36 @@ impl EspeakNg {
 
     // ── Configuration ────────────────────────────────────────────────────
 
+    /// Register a punctuation character to play an external WAV clip (a "sound
+    /// icon") instead of being spoken.
+    ///
+    /// Mirrors eSpeak NG's per-voice `soundicon <char> <file>` directive.  The
+    /// file is loaded immediately (and resampled / down-mixed to the engine
+    /// rate); relative paths resolve against `<data>/soundicons`.  Sound icons
+    /// are then spliced into [`synth`](Self::synth) output wherever the character
+    /// appears.
+    pub fn add_soundicon(&mut self, ch: char, path: impl AsRef<Path>) -> Result<()> {
+        let base = self.soundicon_base_dir();
+        self.soundicons
+            .register_punct(ch, path.as_ref().to_path_buf(), &base)?;
+        Ok(())
+    }
+
+    /// Enable or disable SSML markup interpretation in [`synth`](Self::synth).
+    ///
+    /// When on, `<audio src="…">fallback</audio>` plays the referenced WAV as a
+    /// sound icon (speaking the fallback text if it can't be loaded).  Off by
+    /// default.
+    pub fn set_markup(&mut self, on: bool) {
+        self.markup = on;
+    }
+
+    /// Base directory for resolving relative sound-icon paths
+    /// (`<data>/soundicons`, mirroring C's `path_home/soundicons`).
+    fn soundicon_base_dir(&self) -> PathBuf {
+        self.data_dir.join("soundicons")
+    }
+
     /// Select a voice by language code or voice name.
     ///
     /// Equivalent to `espeak_ng_SetVoiceByName(name)`.
@@ -346,6 +454,24 @@ impl EspeakNg {
     /// Equivalent to `espeak_ng_SetVoiceByProperties(voice_selector)`.
     pub fn set_voice_by_spec(&mut self, spec: VoiceSpec) {
         self.voice_spec = spec;
+    }
+
+    /// Select the best-matching installed voice for a property query (language /
+    /// name / gender), scored by [`crate::voices::find_voice`].  Returns `true`
+    /// if a voice matched (and was selected).  This resolves voice *names* and
+    /// locale fall-backs that [`set_voice`](Self::set_voice) does not — e.g.
+    /// `name = "English (Great Britain)"` → the `en-gb` voice.
+    ///
+    /// Equivalent to `espeak_ng_SetVoiceByProperties(voice_selector)`.
+    pub fn set_voice_by_query(&mut self, query: &crate::voices::VoiceQuery) -> bool {
+        let voices = crate::voices::list_voices(&self.data_dir);
+        match crate::voices::find_voice(&voices, query) {
+            Some(v) => {
+                self.voice_spec = VoiceSpec::by_name(&v.language);
+                true
+            }
+            None => false,
+        }
     }
 
     /// Set a synthesis parameter (absolute value).
@@ -361,7 +487,12 @@ impl EspeakNg {
             Parameter::Pitch  => self.pitch     = value.clamp(0, 100)  as u32,
             Parameter::Range  => self.range     = value.clamp(0, 100)  as u32,
             Parameter::WordGap => self.word_gap = value,
-            Parameter::Punctuation | Parameter::Capitals => { /* TODO */ }
+            // `Punctuation`: 0 = off, non-zero = announce all punctuation.  Use
+            // [`set_punctuation_list`] to restrict to specific characters.
+            Parameter::Punctuation => {
+                self.punct = (value != 0).then(Vec::new);
+            }
+            Parameter::Capitals => self.capitals = value.clamp(0, 255) as u8,
         }
     }
 
@@ -383,8 +514,23 @@ impl EspeakNg {
             Parameter::Pitch     => self.pitch    as i32,
             Parameter::Range     => self.range    as i32,
             Parameter::WordGap   => self.word_gap,
-            Parameter::Punctuation | Parameter::Capitals => 0,
+            Parameter::Punctuation => self.punct.is_some() as i32,
+            Parameter::Capitals    => self.capitals as i32,
         }
+    }
+
+    /// Restrict `--punct` to specific characters, or clear the restriction.
+    ///
+    /// `Some(chars)` announces only those punctuation characters by name;
+    /// `Some(empty)` announces all; `None` disables announcement.  Mirrors
+    /// `espeak_ng_SetPunctuationList`.
+    pub fn set_punctuation_list(&mut self, chars: Option<Vec<char>>) {
+        self.punct = chars;
+    }
+
+    /// Suppress (or restore) the end-of-utterance trailing silence (`-z`).
+    pub fn set_no_final_pause(&mut self, value: bool) {
+        self.no_final_pause = value;
     }
 
     /// Return the sample rate of the synthesizer in Hz.
@@ -421,6 +567,40 @@ impl EspeakNg {
         translator.text_to_ipa(text)
     }
 
+    /// Translate text to IPA with configurable output formatting.
+    ///
+    /// Stress marks are retained in all modes. Use [`TextToPhonemesOptions::default`]
+    /// for output equivalent to [`EspeakNg::text_to_phonemes`].
+    pub fn text_to_phonemes_with_options(
+        &self,
+        text: &str,
+        options: TextToPhonemesOptions,
+    ) -> Result<String> {
+        let translator = self.make_translator()?;
+        translator.text_to_ipa_with_options(
+            text,
+            options.preserve_punctuation,
+            options.flatten_clauses,
+            options.markup,
+            true,
+        )
+    }
+
+    /// Translate text to IPA formatted for phonemizer-based TTS pipelines.
+    ///
+    /// Input punctuation is retained and clause separators are flattened to
+    /// spaces.
+    pub fn text_to_phonemes_phonemizer(&self, text: &str) -> Result<String> {
+        self.text_to_phonemes_with_options(
+            text,
+            TextToPhonemesOptions {
+                preserve_punctuation: true,
+                flatten_clauses: true,
+                markup: false,
+            },
+        )
+    }
+
     // ── Synthesis ────────────────────────────────────────────────────────
 
     /// Synthesize text to 16-bit PCM audio.
@@ -443,6 +623,76 @@ impl EspeakNg {
     /// # Ok::<(), espeak_ng::Error>(())
     /// ```
     pub fn synth(&self, text: &str) -> Result<(PcmBuffer, u32)> {
+        let rate = self.sample_rate();
+
+        // Fast path: no sound icons and no markup → single utterance, unchanged.
+        if self.soundicons.is_empty() && !self.markup {
+            return Ok((self.apply_post_fx(self.synth_text(text)?), rate));
+        }
+
+        // Split into speakable runs and sound-icon events, then render each:
+        // text runs go through the normal pipeline; icons are spliced in with a
+        // 10 ms lead-in pause (mirroring C's `DoPause(10)` before `EMBED_I`).
+        let mut table = self.soundicons.clone();
+        let base = self.soundicon_base_dir();
+        let pieces = crate::soundicon::split_pieces(text, &mut table, &base, self.markup);
+        let pause = rate as usize / 100;
+
+        let mut out: PcmBuffer = Vec::new();
+        let n_pieces = pieces.len();
+        for (pi, piece) in pieces.into_iter().enumerate() {
+            let is_last = pi + 1 == n_pieces;
+            match piece {
+                crate::soundicon::Piece::Text(t) => {
+                    // In markup mode the run still holds SSML tags (all but
+                    // `<audio>`, which was already extracted); process them to
+                    // plain speech text so they are not spoken literally — strips
+                    // tags, decodes entities, applies `<say-as>` spelling/`<sub>`
+                    // and the interpret modes (ordinal/date/time).
+                    let t = if self.markup {
+                        crate::translate::ssml_to_speech_text(&t, self.voice_spec.effective_lang())
+                    } else {
+                        t
+                    };
+                    if !t.trim().is_empty() {
+                        let mut s = self.synth_text(&t)?;
+                        // Each text run carries its own end-of-utterance trailing
+                        // silence; drop it for non-final runs so splicing icons in
+                        // doesn't accumulate long internal gaps.
+                        if !is_last {
+                            trim_trailing_silence(&mut s);
+                        }
+                        out.extend_from_slice(&s);
+                    }
+                }
+                crate::soundicon::Piece::Icon(idx) => {
+                    out.extend(std::iter::repeat(0i16).take(pause));
+                    out.extend(crate::soundicon::scale_icon_samples(table.samples(idx)));
+                }
+            }
+        }
+        Ok((self.apply_post_fx(out), rate))
+    }
+
+    /// Apply the post-synthesis libsonic tempo/pitch scaling to a rendered PCM
+    /// buffer.  A no-op (returns the buffer unchanged) when both factors are
+    /// `1.0`, so the default path is byte-identical.
+    fn apply_post_fx(&self, pcm: PcmBuffer) -> PcmBuffer {
+        let rate = self.sample_rate();
+        let pcm = if (self.post_tempo - 1.0).abs() > 1e-3 {
+            crate::synthesize::tempo::change_tempo(&pcm, self.post_tempo, rate)
+        } else {
+            pcm
+        };
+        if (self.post_pitch - 1.0).abs() > 1e-3 {
+            crate::synthesize::tempo::change_pitch(&pcm, self.post_pitch, rate)
+        } else {
+            pcm
+        }
+    }
+
+    /// Synthesize a plain (icon-free) text run through the normal pipeline.
+    fn synth_text(&self, text: &str) -> Result<PcmBuffer> {
         let translator = self.make_translator()?;
         let mut phdata  = self.load_phdata()?;
         phdata.select_table_by_name(self.voice_spec.effective_lang())
@@ -451,31 +701,98 @@ impl EspeakNg {
             ))?;
 
         let codes   = translator.translate_to_codes(text)?;
-        let voice   = self.make_voice_params();
+        // Inline embedded commands (`\x01…P/S/A`) adjust the utterance levels.
+        let (_, cmds) = crate::translate::parse_embedded_commands(text);
+        let (rate, pitch, volume) = self.embedded_levels(&cmds);
+        let voice   = self.make_voice_params_levels(rate, pitch, volume);
         let synth   = Synthesizer::new(voice);
-        let samples = synth.synthesize_codes(&codes, &phdata)?;
-
-        Ok((samples, self.sample_rate()))
+        synth.synthesize_codes(&codes, &phdata)
     }
 
-    /// Synthesize text and also return the associated [`SynthEvent`] stream.
+    /// Synthesize text and also return the associated [`SynthEvent`] stream —
+    /// the equivalent of `espeak_ng_Synthesize()` with an `espeak_SetSynthCallback`
+    /// registered, providing word/sentence timing alongside the PCM.
     ///
-    /// This is the full-featured equivalent of `espeak_ng_Synthesize()` with
-    /// an `espeak_SetSynthCallback` registered, providing word/sentence timing
-    /// alongside the PCM.
+    /// For the plain-text path this yields a `Sentence` event, one
+    /// [`EventKind::Word`] per spoken word (with its start time in the audio and a
+    /// best-effort source `text_position`), and `End`/`MsgTerminated`.  When
+    /// sound icons or SSML markup are present the runs are spliced, so only
+    /// message-level events are produced.
     ///
-    /// # Note
-    /// In the current implementation the event stream contains only
-    /// [`EventKind::MsgTerminated`].  Full word/sentence timing is on the
-    /// roadmap.
+    /// # Note on `text_position`
+    /// The audio timing is exact; the source char offset is derived by scanning
+    /// the input for word starts and pairing by index, so it can drift where a
+    /// source token expands to several spoken words (numbers, abbreviations).
     pub fn synth_with_events(&self, text: &str) -> Result<(PcmBuffer, u32, Vec<SynthEvent>)> {
-        let (samples, rate) = self.synth(text)?;
-        let events = vec![SynthEvent {
-            kind:             EventKind::MsgTerminated,
-            text_position:    text.len(),
-            audio_position_ms: samples.len() as u32 * 1000 / rate,
-        }];
+        let rate = self.sample_rate();
+        let ms = |s: usize| (s as u64 * 1000 / rate.max(1) as u64) as u32;
+
+        // Icon/markup splicing reorders audio; word-level timing isn't tracked
+        // through it, so fall back to a message-terminated event only — plus any
+        // SSML `<mark>` events, whose audio time is interpolated from their text
+        // position (exact per-word timing isn't tracked through the markup path).
+        if !self.soundicons.is_empty() || self.markup {
+            let (samples, _) = self.synth(text)?;
+            let end_ms = ms(samples.len());
+            let mut events = Vec::new();
+            if self.markup {
+                let (_segs, marks) = crate::translate::ssml::process_markup_with_marks(text);
+                let total = crate::translate::ssml::strip_markup(text).chars().count().max(1);
+                for m in marks {
+                    let at = (m.position as u64 * end_ms as u64 / total as u64) as u32;
+                    events.push(SynthEvent {
+                        kind: EventKind::Mark(m.name),
+                        text_position: m.position,
+                        audio_position_ms: at,
+                    });
+                }
+            }
+            events.push(SynthEvent {
+                kind: EventKind::MsgTerminated,
+                text_position: text.len(),
+                audio_position_ms: end_ms,
+            });
+            return Ok((samples, rate, events));
+        }
+
+        let (samples, word_marks, sentence_marks) = self.synth_text_with_marks(text)?;
+        let word_offsets = word_char_offsets(text);
+        let end_ms = ms(samples.len());
+
+        let mut events = Vec::with_capacity(word_marks.len() + sentence_marks.len() + 3);
+        // Sentence 0 begins at the start; each later clause boundary opens another.
+        events.push(SynthEvent { kind: EventKind::Sentence, text_position: 0, audio_position_ms: 0 });
+        for &start in &sentence_marks {
+            events.push(SynthEvent { kind: EventKind::Sentence, text_position: 0, audio_position_ms: ms(start) });
+        }
+        for (i, &start) in word_marks.iter().enumerate() {
+            events.push(SynthEvent {
+                kind: EventKind::Word(i as u32),
+                text_position: word_offsets.get(i).copied().unwrap_or(text.len()),
+                audio_position_ms: ms(start),
+            });
+        }
+        // Keep events in audio order (Sentence markers interleaved with words).
+        events.sort_by_key(|e| e.audio_position_ms);
+        events.push(SynthEvent { kind: EventKind::End, text_position: text.len(), audio_position_ms: end_ms });
+        events.push(SynthEvent { kind: EventKind::MsgTerminated, text_position: text.len(), audio_position_ms: end_ms });
         Ok((samples, rate, events))
+    }
+
+    /// Plain-text render (like [`synth_text`](Self::synth_text)) that also
+    /// returns each spoken word's and sentence's start sample offset.
+    fn synth_text_with_marks(&self, text: &str) -> Result<(PcmBuffer, Vec<usize>, Vec<usize>)> {
+        let translator = self.make_translator()?;
+        let mut phdata  = self.load_phdata()?;
+        phdata.select_table_by_name(self.voice_spec.effective_lang())
+            .map_err(|_| Error::VoiceNotFound(self.voice_spec.effective_lang().to_string()))?;
+
+        let codes = translator.translate_to_codes(text)?;
+        let (_, cmds) = crate::translate::parse_embedded_commands(text);
+        let (rate, pitch, volume) = self.embedded_levels(&cmds);
+        let voice = self.make_voice_params_levels(rate, pitch, volume);
+        let synth = Synthesizer::new(voice);
+        synth.synthesize_codes_with_marks(&codes, &phdata)
     }
 
     // ── Info ─────────────────────────────────────────────────────────────
@@ -500,10 +817,16 @@ impl EspeakNg {
     // ── Helpers ──────────────────────────────────────────────────────────
 
     fn make_translator(&self) -> Result<Translator> {
-        Translator::new(
+        let mut t = Translator::new(
             self.voice_spec.effective_lang(),
             Some(&self.data_dir),
-        )
+        )?;
+        // Carry the runtime text options through to the audio path so `-g`,
+        // `-k` and `--punct` affect synthesis, not just `-x`/`--ipa`.
+        t.options.word_gap = self.word_gap;
+        t.options.capitals = self.capitals;
+        t.options.punct = self.punct.clone();
+        Ok(t)
     }
 
     fn load_phdata(&self) -> Result<PhonemeData> {
@@ -513,19 +836,142 @@ impl EspeakNg {
             ))
     }
 
-    fn make_voice_params(&self) -> VoiceParams {
+    /// Apply the text's inline embedded commands (`\x01…`) to this engine's
+    /// rate/pitch/volume, returning the effective levels.  Absolute commands set
+    /// the level; `+`/`-` adjust it.  Utterance-level: exact per-position changes
+    /// aren't modelled, but a leading command (the common case) is applied
+    /// correctly.  `S`→rate (wpm), `P`→pitch, `A`→volume.
+    fn embedded_levels(&self, cmds: &[crate::translate::EmbeddedCmd]) -> (u32, u32, u32) {
+        let (mut rate, mut pitch, mut volume) =
+            (self.rate as i32, self.pitch as i32, self.volume as i32);
+        for c in cmds {
+            let slot = match c.letter {
+                'S' => &mut rate,
+                'P' => &mut pitch,
+                'A' => &mut volume,
+                _ => continue,
+            };
+            let v = c.value.max(0);
+            *slot = match c.relative {
+                1 => *slot + v,
+                -1 => *slot - v,
+                _ => v,
+            };
+        }
+        (rate.clamp(80, 450) as u32, pitch.clamp(0, 100) as u32, volume.clamp(0, 200) as u32)
+    }
+
+    fn make_voice_params_levels(&self, rate: u32, pitch: u32, volume: u32) -> VoiceParams {
         // Map rate (wpm) to speed_percent:  175 wpm → 100 %
-        let speed_percent = (self.rate * 100 / 175).clamp(50, 400);
+        let speed_percent = (rate * 100 / 175).clamp(50, 400);
         // Map pitch (0–100) to Hz:  50 → 118 Hz, 0 → 59 Hz, 100 → 177 Hz
-        let pitch_hz = 59 + self.pitch * 118 / 100;
+        let mut pitch_hz = 59 + pitch * 118 / 100;
+
+        // Apply a `+variant` voice's acoustic modifiers (pitch + per-formant
+        // frequency/height/width scaling), if one is selected and its file
+        // parses.  The no-variant path is unchanged.
+        let mut formant_freq_pct = [100i32; 7];
+        let mut formant_height_pct = [100i32; 7];
+        let mut formant_width_pct = [100i32; 7];
+        let (mut echo_delay_samples, mut echo_amp) = (0usize, 0i32);
+        let mut flutter = 0i32;
+        let mut stress_amps = [0i32; 8];
+        if let Some(var) = &self.voice_spec.variant {
+            if let Some(vp) = crate::voices::load_variant(&self.data_dir, var) {
+                pitch_hz = variant_scaled_pitch(pitch_hz, &vp);
+                variant_formant_pct(&mut formant_freq_pct, &mut formant_height_pct, &mut formant_width_pct, &vp);
+                if let Some((delay_ms, amp)) = vp.echo {
+                    if delay_ms > 0 && amp > 0 {
+                        echo_delay_samples = (self.sample_rate() as i64 * delay_ms as i64 / 1000).max(0) as usize;
+                        echo_amp = amp;
+                    }
+                }
+                flutter = vp.flutter.unwrap_or(0).max(0);
+                for (i, &a) in vp.stress_amp.iter().take(8).enumerate() {
+                    stress_amps[i] = a.max(0);
+                }
+            }
+        }
+
         // Map volume (0–200) to amplitude (0–100)
-        let amplitude = (self.volume / 2).clamp(0, 100);
+        let amplitude = (volume / 2).clamp(0, 100);
 
         VoiceParams {
             speed_percent,
             pitch_hz,
             amplitude,
+            no_final_pause: self.no_final_pause,
+            formant_freq_pct,
+            formant_height_pct,
+            formant_width_pct,
+            echo_delay_samples,
+            echo_amp,
+            flutter,
+            stress_amps,
             ..VoiceParams::default()
+        }
+    }
+}
+
+/// Scale a base pitch (Hz) by a variant voice's `pitch <base> <range>`
+/// directive, relative to eSpeak's default-voice pitch base (82).
+///
+/// This is a **directional** mapping — a female variant (`f3`, base 140) raises
+/// the pitch, a male one (`m3`, base 80) leaves it about the same — not a
+/// byte-exact port of `voices.c`'s pitch math (that is oracle-gated, GAPS §11).
+/// A variant with no `pitch` line returns the base unchanged.
+fn variant_scaled_pitch(base_hz: u32, variant: &crate::voices::VariantParams) -> u32 {
+    /// eSpeak's built-in default voice pitch base.
+    const DEFAULT_PITCH_BASE: f64 = 82.0;
+    match variant.pitch {
+        Some((p1, _)) if p1 > 0 => {
+            let scaled = base_hz as f64 * (p1 as f64 / DEFAULT_PITCH_BASE);
+            scaled.round().clamp(25.0, 600.0) as u32
+        }
+        _ => base_hz,
+    }
+}
+
+/// Byte offsets of each word start in `text` — a word being a maximal run of
+/// alphanumeric/apostrophe characters.  Used to give `EventKind::Word` events a
+/// best-effort source `text_position` (paired with spoken words by index).
+fn word_char_offsets(text: &str) -> Vec<usize> {
+    let mut offsets = Vec::new();
+    let mut in_word = false;
+    for (i, c) in text.char_indices() {
+        let is_word = c.is_alphanumeric() || c == '\'';
+        if is_word && !in_word {
+            offsets.push(i);
+        }
+        in_word = is_word;
+    }
+    offsets
+}
+
+/// Copy a `+variant`'s per-formant `formant <i> <freq%> <height%> [width%]`
+/// percentages into the `[i32; 7]` scale arrays read by the harmonic synthesizer
+/// (F0–F6).  This is the `voice.freq/height/width[i]` mapping of `voices.c`;
+/// formants the variant does not mention keep 100 (unity), and each field is
+/// clamped to a sane range (25–400 %).
+fn variant_formant_pct(
+    freq: &mut [i32; 7],
+    height: &mut [i32; 7],
+    width: &mut [i32; 7],
+    variant: &crate::voices::VariantParams,
+) {
+    for f in &variant.formants {
+        let i = f.index as usize;
+        if i >= freq.len() {
+            continue;
+        }
+        if f.freq > 0 {
+            freq[i] = f.freq.clamp(25, 400);
+        }
+        if f.height > 0 {
+            height[i] = f.height.clamp(25, 400);
+        }
+        if f.width > 0 {
+            width[i] = f.width.clamp(25, 400);
         }
     }
 }
@@ -635,6 +1081,28 @@ mod tests {
     }
 
     #[test]
+    fn variant_formant_pct_maps_variant_formants() {
+        use crate::voices::{VariantFormant, VariantParams};
+        let (mut freq, mut height, mut width) = ([100i32; 7], [100i32; 7], [100i32; 7]);
+        let vp = VariantParams {
+            formants: vec![
+                VariantFormant { index: 1, freq: 120, height: 75, width: 150 },
+                VariantFormant { index: 2, freq: 135, height: 70, width: 160 },
+                VariantFormant { index: 9, freq: 110, height: 70, width: 150 }, // out of range
+                VariantFormant { index: 3, freq: 0,   height: 80, width: 0 },   // freq/width 0 → skip those
+            ],
+            ..Default::default()
+        };
+        variant_formant_pct(&mut freq, &mut height, &mut width, &vp);
+        assert_eq!(freq[1], 120);
+        assert_eq!((height[2], width[2]), (70, 160));
+        assert_eq!(freq[0], 100, "untouched formant stays unity");
+        assert_eq!(freq[3], 100, "freq 0 leaves unity");
+        assert_eq!((height[3], width[3]), (80, 100), "height applies, width 0 skipped");
+        assert_eq!(freq[6], 100, "out-of-range index ignored (no panic)");
+    }
+
+    #[test]
     fn voice_spec_by_name() {
         let v = VoiceSpec::by_name("de");
         assert_eq!(v.effective_lang(), "de");
@@ -644,6 +1112,46 @@ mod tests {
     fn voice_spec_by_name_normalizes_region_tag() {
         let v = VoiceSpec::by_name("en_US");
         assert_eq!(v.effective_lang(), "en-us");
+    }
+
+    #[test]
+    fn variant_pitch_scales_directionally() {
+        use crate::voices::VariantParams;
+        let f3 = VariantParams { pitch: Some((140, 240)), ..Default::default() };
+        let m3 = VariantParams { pitch: Some((80, 122)), ..Default::default() };
+        let none = VariantParams { pitch: None, ..Default::default() };
+
+        // Female variant raises the base pitch; male stays about the same.
+        assert!(variant_scaled_pitch(118, &f3) > 118, "f3 should raise pitch");
+        assert!(
+            variant_scaled_pitch(118, &f3) > variant_scaled_pitch(118, &m3),
+            "f3 must be higher than m3"
+        );
+        // No `pitch` line → unchanged.
+        assert_eq!(variant_scaled_pitch(118, &none), 118);
+        // Clamped into a sane vocal range.
+        let extreme = VariantParams { pitch: Some((10000, 0)), ..Default::default() };
+        assert!(variant_scaled_pitch(118, &extreme) <= 600);
+    }
+
+    #[test]
+    fn voice_spec_parses_variant_suffix() {
+        // `en+f3`: base language selects the data, `+f3` is stored as the
+        // acoustic variant (not yet applied).
+        let v = VoiceSpec::by_name("en+f3");
+        assert_eq!(v.effective_lang(), "en");
+        assert_eq!(v.variant.as_deref(), Some("f3"));
+
+        let v = VoiceSpec::by_name("en_US+m3");
+        assert_eq!(v.effective_lang(), "en-us");
+        assert_eq!(v.variant.as_deref(), Some("m3"));
+
+        let v = VoiceSpec::by_name("de");
+        assert_eq!(v.variant, None);
+
+        let v = VoiceSpec::builder().language("fr+whisper").build();
+        assert_eq!(v.effective_lang(), "fr");
+        assert_eq!(v.variant.as_deref(), Some("whisper"));
     }
 
     #[test]
