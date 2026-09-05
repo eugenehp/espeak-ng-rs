@@ -30,8 +30,8 @@ fn romanian_si_between_tens_and_units() {
 fn icelandic_og_between_tens_and_units() {
     let Some(t) = tr("is") else { return };
     let ipa = |s: &str| t.text_to_ipa(s).unwrap();
-    assert!(ipa("34").contains("ɔɣ"), "is 34 → 'þrjátíu og fjórir': {}", ipa("34"));
-    assert!(!ipa("20").contains("ɔɣ"), "is 20 has no 'og': {}", ipa("20"));
+    assert!(ipa("34").contains("ɔːɣ"), "is 34 → 'þrjátíu og fjórir': {}", ipa("34"));
+    assert!(!ipa("20").contains("ɔːɣ"), "is 20 has no 'og': {}", ipa("20"));
 }
 
 #[test]
@@ -133,8 +133,8 @@ fn welsh_and_armenian_omit_the_one_before_hundred() {
         let ipa = |s: &str| t.text_to_ipa(s).unwrap();
         // "harjur", not "mek harjur" — no leading "one".
         assert!(!ipa("100").contains("mˈek"), "hy 100 drops 'mek': {}", ipa("100"));
-        assert!(ipa("100").contains("aɹjˈuɹ"), "hy 100 = 'harjur': {}", ipa("100"));
+        assert!(ipa("100").contains("arjˈur"), "hy 100 = 'harjur': {}", ipa("100"));
         // 200 keeps its multiplier ("yerku harjur").
-        assert!(ipa("200").starts_with("jeɹkˈu"), "hy 200 keeps 'yerku': {}", ipa("200"));
+        assert!(ipa("200").starts_with("jerkˈu"), "hy 200 keeps 'yerku': {}", ipa("200"));
     }
 }

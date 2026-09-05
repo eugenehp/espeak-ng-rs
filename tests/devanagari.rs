@@ -19,8 +19,8 @@ fn hindi_words_read_with_conjuncts_and_schwa_deletion() {
     };
     let ipa = |s: &str| t.text_to_ipa(s).unwrap();
     let cases: &[(&str, &str)] = &[
-        ("नमस्ते", "nʌmˈʌsteː"),  // conjunct स्त works
-        ("भारत", "bʰˈaːrʌt"),     // word-final schwa deleted (not "…rʌtʌ")
+        ("नमस्ते", "nəmˈʌsteː"),  // conjunct स्त works; first vowel reduces (== upstream)
+        ("भारत", "bʰˈaːɾət"),     // word-final schwa deleted (not "…rʌtʌ")
         ("किताब", "kɪtˈaːb"),     // ditto
         ("स्कूल", "skˈuːl"),      // leading conjunct स्क + final schwa deleted
         ("पानी", "pˈaːni"),
@@ -34,7 +34,7 @@ fn hindi_words_read_with_conjuncts_and_schwa_deletion() {
     let hindi = ipa("हिंदी");
     assert!(hindi.starts_with('h') && hindi.ends_with("di"), "हिंदी → hindi: {hindi}");
     // CVC words: keep the first inherent vowel, delete the word-final one.
-    for (word, want) in [("घर", "ɡʰˈʌr"), ("कर", "kˈʌr"), ("मन", "mˈʌn")] {
+    for (word, want) in [("घर", "ɡʰˈʌɾ"), ("कर", "kˈʌɾ"), ("मन", "mˈʌn")] {
         assert_eq!(ipa(word), want, "hi {word:?}");
     }
     // A single consonant keeps its inherent vowel (deletion needs another vowel).

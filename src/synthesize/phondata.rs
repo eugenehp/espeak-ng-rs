@@ -60,7 +60,8 @@ pub struct SpectFrame {
     pub bw: [u8; 4],
     /// Klatt parameters: AV, FNZ, Tilt, Aspr, Skew
     pub klattp: [u8; 5],
-    /// Extended Klatt parameters: AVp, Fric, FricBP, Turb, (spare)
+    /// Extended Klatt parameters, continuing `klattp` from index 5:
+    /// Kopen, AVp, Fric, FricBP, Turb
     pub klattp2: [u8; 5],
     /// Klatt parallel amplitudes F0–F6
     pub klatt_ap: [u8; 7],

@@ -1,0 +1,18 @@
+[package]
+name        = "espeak-ng-data-dict-ab"
+version     = "0.1.0"
+edition     = "2021"
+description = "eSpeak NG dictionary data for ab_dict"
+license     = "GPL-3.0-or-later"
+authors     = ["Eugene Hauptmann"]
+repository  = "https://github.com/eugenehp/espeak-ng-rs"
+homepage    = "https://github.com/eugenehp/espeak-ng-rs"
+
+keywords    = ["espeak", "tts", "ab", "dictionary", "data"]
+categories  = ["multimedia::audio", "accessibility"]
+
+include = [
+    "build.rs",
+    "src/**",
+    "data/ab_dict",
+]

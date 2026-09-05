@@ -22,10 +22,10 @@ fn seg(t: &Translator, text: &str) -> String {
 fn thousand_declines_by_count_and_gender() {
     let Ok(t) = Translator::new_default("ru") else { eprintln!("[SKIP] no ru dict"); return };
     // count 1 → feminine "одна" + nom-sg "тысяча".
-    assert!(seg(&t, "1000").starts_with("ʌdna") && seg(&t, "1000").ends_with("ʌ"),
+    assert!(seg(&t, "1000").starts_with("ʌdnɑ") && seg(&t, "1000").ends_with("ʌ"),
             "ru 1000 = 'одна тысяча': {}", seg(&t, "1000"));
     // count 2 → feminine "две" + gen-sg "тысячи".
-    assert!(seg(&t, "2000").starts_with("dvʲɛ") && seg(&t, "2000").ends_with('i'),
+    assert!(seg(&t, "2000").starts_with("dvʲe") && seg(&t, "2000").ends_with('i'),
             "ru 2000 = 'две тысячи': {}", seg(&t, "2000"));
     // count 5 → gen-pl "тысяч" (no trailing vowel).
     assert!(seg(&t, "5000").ends_with("tʃʲ"), "ru 5000 = 'пять тысяч': {}", seg(&t, "5000"));
@@ -37,9 +37,9 @@ fn thousand_declines_by_count_and_gender() {
 fn compound_count_keeps_gender() {
     let Ok(t) = Translator::new_default("ru") else { return };
     // "двадцать одна тысяча" — the trailing "one" is feminine even in a compound.
-    assert!(seg(&t, "21000").contains("ʌdna"), "ru 21000 has fem 'одна': {}", seg(&t, "21000"));
+    assert!(seg(&t, "21000").contains("ʌdnɑ"), "ru 21000 has fem 'одна': {}", seg(&t, "21000"));
     // "двадцать две тысячи"
-    assert!(seg(&t, "22000").contains("dvʲɛ"), "ru 22000 has fem 'две': {}", seg(&t, "22000"));
+    assert!(seg(&t, "22000").contains("dvʲe"), "ru 22000 has fem 'две': {}", seg(&t, "22000"));
 }
 
 #[test]
@@ -123,6 +123,6 @@ fn croatian_scale_word_declension() {
     // gender carries into a compound ("dvadeset dvije tisuće").
     assert!(s("22000").contains("dvije"), "hr 22000 has fem 'dvije': {}", s("22000"));
     // millions take the masculine "dva" + "milijuna".
-    assert!(s("2000000").starts_with("dva") && s("2000000").contains("milɪj"),
+    assert!(s("2000000").starts_with("dva") && s("2000000").contains("milij"),
             "hr 2000000 = 'dva milijuna': {}", s("2000000"));
 }

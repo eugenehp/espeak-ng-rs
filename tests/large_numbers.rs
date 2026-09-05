@@ -51,7 +51,7 @@ fn german_long_scale_billion_is_ten_to_the_twelfth() {
     };
     let ipa = |s: &str| t.text_to_ipa(s).unwrap();
     assert!(ipa("1000000000000").contains("bɪljˈoːn"), "de 10^12 = Billion: {}", ipa("1000000000000"));
-    assert!(ipa("1000000000000000000").contains("trɪljˈoːn"), "de 10^18 = Trillion: {}", ipa("1000000000000000000"));
+    assert!(ipa("1000000000000000000").contains("tɾɪljˈoːn"), "de 10^18 = Trillion: {}", ipa("1000000000000000000"));
 }
 
 #[test]

@@ -16,7 +16,7 @@ fn bishnupriya_words_read() {
     };
     let ipa = |s: &str| t.text_to_ipa(s).unwrap();
     // A conjunct (স্ক) collapses, and words read (not empty, no diacritic names).
-    for (word, frag) in [("নমস্কার", "ʃkar"), ("ভাষা", "bhˈaʃa"), ("বাংলা", "aŋla")] {
+    for (word, frag) in [("নমস্কার", "ʃkˌaɾ"), ("ভাষা", "bhˈaʃa"), ("বাংলা", "aŋla")] {
         let got = ipa(word);
         assert!(!got.trim().is_empty(), "bpy {word:?} produced no phonemes");
         assert!(got.contains(frag), "bpy {word:?}: want {frag:?}, got {got:?}");

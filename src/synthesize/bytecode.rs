@@ -26,6 +26,14 @@ pub const INSTN_CONTINUE: u16 = 0x0002;
 
 pub const I_IPA_NAME:       u16 = 0x0d;  // group-0, operand = UTF-8 byte count
 pub const I_CHANGE_PHONEME: u16 = 0x01;  // group-0: (opcode<<8)|phoneme_code
+pub const I_REPLACE_NEXT_PHONEME: u16 = 0x02;
+pub const I_INSERT_PHONEME:       u16 = 0x03;
+pub const I_APPEND_PHONEME:       u16 = 0x04;
+pub const I_APPEND_IFNEXTVOWEL:   u16 = 0x05;
+pub const I_SET_LENGTH:           u16 = 0x0a;
+pub const I_ADD_LENGTH:           u16 = 0x0c;
+pub const I_PAUSE_BEFORE:         u16 = 0x07;
+pub const I_PAUSE_AFTER:          u16 = 0x08;
 pub const I_CALLPH:    u16 = 0x9100;
 pub const I_PITCHENV:  u16 = 0x9200;
 pub const I_AMPENV:    u16 = 0x9300;
@@ -114,6 +122,27 @@ pub struct PhonemeExtract {
     /// The caller should look up this code's synthesis data as a fallback.
     pub change_phoneme_code: Option<u8>,
 
+    /// `InsertPhoneme(x)` — insert `x` *before* this phoneme.
+    pub insert_phoneme: Option<u8>,
+    /// `AppendPhoneme(x)` — insert `x` *after* this phoneme.
+    pub append_phoneme: Option<u8>,
+    /// `IfNextVowelAppend(x)` — insert `x` after this phoneme when the next one
+    /// is a vowel (English linking `r-`, and the `;` glide after `aI`).
+    pub append_if_next_vowel: Option<u8>,
+    /// `ChangeNextPhoneme(x)` — replace the *following* phoneme with `x`.
+    pub replace_next_phoneme: Option<u8>,
+    /// `PauseBefore <ms>` — silence to insert ahead of this phoneme (German
+    /// puts 15-30 ms before /r/ after a stop).
+    pub pause_before_ms: u8,
+    /// `PauseAfter <ms>` — silence to insert after this phoneme.
+    pub pause_after_ms: u8,
+    /// `length <n>` *inside* a program — overrides the phoneme's declared
+    /// `std_length` for this context (German shortens/lengthens several vowels
+    /// this way).  In mS/2 units, as `std_length` is.
+    pub set_length: Option<u8>,
+    /// `LengthAdd <n>` — a signed adjustment to the length.
+    pub add_length: i8,
+
     /// Vowel-transition data for coarticulation (GAPS §36, Stage 2).
     /// `[0..2]` come from `i_VOWELIN`, `[2..4]` from `i_VOWELOUT`.  Consumed
     /// by `FormantTransition2` (Stage 4).  Zero = no transition specified.
@@ -126,6 +155,17 @@ pub struct PhonemeExtract {
     /// onset.  Mirrors `phdata->pd_control & pd_FORNEXTPH` in synthdata.c and
     /// gates onset selection in the vowel branch of synthesize.c.
     pub pd_fornextph: bool,
+
+    /// The `ipa <string>` the program reached on the path its conditions
+    /// actually took — C's `phdata->ipa_string`, which `WritePhMnemonic` uses in
+    /// preference to the phoneme's mnemonic when writing IPA.  `None` when the
+    /// program has no `ipa` instruction on that path (fall back to the
+    /// mnemonic); `Some("")` cannot occur, but a string whose first byte is
+    /// `0x20` means "this phoneme has no IPA name" and prints nothing.
+    ///
+    /// Because it is read off the *executed* path, it is context-sensitive in
+    /// the same way C's is: Italian `*` is `r` between vowels and `ɾ` elsewhere.
+    pub ipa_string: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -426,18 +466,75 @@ const PHON_VOWEL_TYPES: i32 = 28; // start_type/end_type base for vowel categori
 /// (rendered as a synthetic `phPAUSE` entry so `prevPh(isPause)` etc. behave as
 /// in C, where clause boundaries are real pause phonemes).  The `*_wordstart`
 /// flags mark `sourceix != 0` positions for the `*PhW` condition variants.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Neighbours {
     pub prev: u8,
     pub this: u8,
     pub next: u8,
     pub next2: u8,
-    /// Stress level (0-7) of this phoneme (best-effort for stress conditions).
+    /// Stress level (0-6) of this phoneme's syllable.
     pub stress: u8,
+    /// Stress level of the *next* phoneme's syllable, or [`STRESS_UNKNOWN`].
+    ///
+    /// C's `StressCondition` reads the stress from the phoneme itself when it is
+    /// a vowel and otherwise from the phoneme that follows it, so a consonant
+    /// needs its neighbour's level.  When this is `STRESS_UNKNOWN` the caller
+    /// did not track per-syllable stress (the synthesis stage doesn't need to)
+    /// and `stress` is used for both.
+    pub next_stress: u8,
+    /// Stress level of the *previous* and *next-but-one* phonemes' syllables,
+    /// or [`STRESS_UNKNOWN`].  A stress condition can name any of the window's
+    /// phonemes (`nextVowel(isMaxStress)`, `prevPh(isStressed)`), and evaluating
+    /// them all against *this* phoneme's level made Russian `мама` read
+    /// `m'ama#` where upstream has `m'Ama#`.
+    pub prev_stress: u8,
+    pub next2_stress: u8,
+    /// The highest stress level in this phoneme's word (C's `plist->wordstress`),
+    /// or [`STRESS_UNKNOWN`].  `ChangeIfStressed` compares against it.
+    pub wordstress: u8,
+    /// This phoneme's position among the *vowels of its word*, 1-based
+    /// (C's `CountVowelPosition`).  `0` when the caller doesn't track it, which
+    /// makes `isFirstVowel`/`isSecondVowel` false — Malayalam's `a` keeps its
+    /// full quality in the first syllable because of it.
+    pub vowel_position: u8,
+    /// The language's `LOPT_REDUCE`: bit 0 lets the stress-conditioned changes
+    /// apply to dictionary-given words, bit 1 promotes the most stressed
+    /// syllable of an unstressed word to primary.
+    pub reduce: u32,
+    /// The word's pronunciation came from the dictionary rather than the
+    /// letter-to-sound rules (C's `SFLAG_DICTIONARY`), which Turkish, Bashkir
+    /// and Tatar test with `isTranslationGiven` to suppress vowel reduction.
+    pub translation_given: bool,
     pub this_wordstart: bool,
     pub prev_wordstart: bool,
     pub next_wordstart: bool,
     pub next2_wordstart: bool,
+}
+
+/// `next_stress`/`wordstress` value meaning "the caller doesn't track this".
+pub const STRESS_UNKNOWN: u8 = u8::MAX;
+
+impl Default for Neighbours {
+    fn default() -> Self {
+        Neighbours {
+            prev: 0,
+            this: 0,
+            next: 0,
+            next2: 0,
+            stress: 0,
+            next_stress: STRESS_UNKNOWN,
+            prev_stress: STRESS_UNKNOWN,
+            next2_stress: STRESS_UNKNOWN,
+            vowel_position: 0,
+            wordstress: STRESS_UNKNOWN,
+            reduce: 0,
+            translation_given: false,
+            this_wordstart: false,
+            prev_wordstart: false,
+            next_wordstart: false,
+            next2_wordstart: false,
+        }
+    }
 }
 
 /// Read a little-endian u16 word at word-index `i` (0 if out of bounds).
@@ -459,6 +556,40 @@ pub fn interpret_phoneme<F>(
     phonindex: &[u8],
     nb: &Neighbours,
     lookup: F,
+) -> PhonemeExtract
+where
+    F: Fn(u8) -> Option<PhonemeTab>,
+{
+    interpret_phoneme_ctl(program, phonindex, nb, lookup, false)
+}
+
+/// As [`interpret_phoneme`], with upstream's `control & 0x100` ("PhonemeList
+/// mode") selectable.
+///
+/// In that mode — the *translate* stage, where the phoneme list is still being
+/// built — the first `ChangePhoneme(x)` the program reaches **wins and ends
+/// interpretation** (`synthdata.c`: "found ChangePhoneme() in PhonemeList mode,
+/// exit").  At synthesis time (`false`) the instruction is only recorded, and
+/// scanning continues to find the FMT/WAV data.
+///
+/// The distinction matters for phonemes like Brazilian Portuguese `t#`:
+///
+/// ```text
+/// IF nextPhW(#i) THEN ChangePhoneme(tS)
+/// ELIF thisPh(isWordEnd) THEN ChangePhoneme(tS)
+/// ENDIF
+/// ChangePhoneme(t)
+/// ```
+///
+/// Without the early exit the trailing unconditional `ChangePhoneme(t)`
+/// overwrites the affricate the taken branch just selected, so `noite` came out
+/// `nˈoɪty` instead of `nˈoɪtʃɪ`.
+pub fn interpret_phoneme_ctl<F>(
+    program: u16,
+    phonindex: &[u8],
+    nb: &Neighbours,
+    lookup: F,
+    phoneme_list_mode: bool,
 ) -> PhonemeExtract
 where
     F: Fn(u8) -> Option<PhonemeTab>,
@@ -507,17 +638,57 @@ where
                     }
                     pc += 1;
                 } else if instn2 == I_IPA_NAME as usize {
+                    // Followed by UTF-8 bytes, two per instruction word.  C caps
+                    // the copy at 16 bytes (`ix < 16`), and a later `ipa` on the
+                    // same path overwrites an earlier one.
+                    let n = data.min(16);
+                    let mut bytes = Vec::with_capacity(n);
+                    for j in 0..n.div_ceil(2) {
+                        let w = word_at(phonindex, pc + 1 + j);
+                        bytes.push((w >> 8) as u8);
+                        bytes.push((w & 0xff) as u8);
+                    }
+                    bytes.truncate(n);
+                    result.ipa_string = String::from_utf8(bytes).ok();
                     pc += 1 + (data + 1) / 2; // header + ceil(data/2) UTF-8 words
                 } else {
-                    if instn2 == I_CHANGE_PHONEME as usize {
-                        // control == 0 at synthesis: record but do not exit.
-                        change_phoneme = Some((instn & 0xff) as u8);
+                    let param = (instn & 0xff) as u8;
+                    match instn2 as u16 {
+                        I_CHANGE_PHONEME => {
+                            change_phoneme = Some(param);
+                            if phoneme_list_mode {
+                                // PhonemeList stage: the first ChangePhoneme wins.
+                                end_flag = 1;
+                            }
+                        }
+                        // The list-editing instructions are only *recorded* here;
+                        // the caller applies them to the phoneme list (C keeps
+                        // them in `phdata->pd_param[]` and `MakePhonemeList`
+                        // acts on them).
+                        I_REPLACE_NEXT_PHONEME => result.replace_next_phoneme = Some(param),
+                        I_INSERT_PHONEME => result.insert_phoneme = Some(param),
+                        I_APPEND_PHONEME => result.append_phoneme = Some(param),
+                        I_APPEND_IFNEXTVOWEL => result.append_if_next_vowel = Some(param),
+                        I_SET_LENGTH => result.set_length = Some(param),
+                        I_ADD_LENGTH => result.add_length = param as i8,
+                        I_PAUSE_BEFORE => result.pause_before_ms = param,
+                        I_PAUSE_AFTER => result.pause_after_ms = param,
+                        _ => {}
                     }
                     pc += 1;
                 }
             }
             1 => {
-                // ChangeIf: only meaningful with a Translator; ignored (tr==NULL).
+                // `ChangeIf<condition>(ph)`.  C only evaluates these when it has
+                // a Translator, which is exactly the translate stage
+                // (`InterpretPhoneme(tr, 0x100, …)` in phonemelist.c); at
+                // synthesis time `tr` is NULL and the instruction is skipped.
+                if phoneme_list_mode && instn2 < 8 {
+                    if stress_condition(nb, (instn2 & 7) as u16, 1, true, &lookup) {
+                        change_phoneme = Some((instn & 0xff) as u8);
+                        end_flag = 1; // change phoneme, exit
+                    }
+                }
                 pc += 1;
             }
             2 | 3 => {
@@ -820,7 +991,7 @@ where
         COND_IS_PLACE => ((ph.phflags >> 16) & 0xf) as u16 == data,
         COND_IS_FLAG => (ph.phflags & (1u32 << data)) != 0,
         COND_IS_OTHER => match data {
-            0..=4 => stress_condition(nb.stress, data),
+            0..=4 => stress_condition(nb, data, which, false, &lookup),
             OTHER_IS_AFTER_STRESS => false, // needs history outside our window
             OTHER_IS_NOT_VOWEL => ph.typ != PH_VOWEL,
             OTHER_IS_FINAL_VOWEL => {
@@ -848,24 +1019,81 @@ where
                     _ => false,
                 }
             }
-            OTHER_IS_FIRST_VOWEL | OTHER_IS_SECOND_VOWEL | OTHER_IS_TRANSLATION => false,
+            OTHER_IS_TRANSLATION => which == 1 && nb.translation_given,
+            OTHER_IS_FIRST_VOWEL => which == 1 && nb.vowel_position == 1,
+            OTHER_IS_SECOND_VOWEL => which == 1 && nb.vowel_position == 2,
             _ => false,
         },
         _ => false,
     }
 }
 
-/// Simplified `StressCondition`: compares this phoneme's stress level to the
-/// requested threshold.  The full C version consults the following vowel and the
-/// word's stress; here we use the phoneme's own stress level (0-7), which is the
-/// common case for the conditions that gate synthesis-time FMT selection.
-fn stress_condition(stress: u8, condition: u16) -> bool {
+/// `StressCondition()` from synthdata.c.
+///
+/// The level is read from this phoneme when it is a vowel and otherwise from the
+/// phoneme after it; a consonant with no following vowel has no stress level and
+/// the condition is false.  `is_change_if` marks the `ChangeIf…` caller, which C
+/// additionally refuses for a word whose phonemes came from the dictionary list
+/// unless the language sets `LOPT_REDUCE & 1`.
+fn stress_condition<F>(
+    nb: &Neighbours,
+    condition: u16,
+    which: usize,
+    is_change_if: bool,
+    lookup: &F,
+) -> bool
+where
+    F: Fn(u8) -> Option<PhonemeTab>,
+{
     const CONDITION_LEVEL: [u16; 4] = [1, 2, 4, 15];
-    let level = (stress as u16) & 0xf;
+    let is_vowel = |c: u8| lookup(c).is_some_and(|p| p.typ == PH_VOWEL);
+    let known = |v: u8| (v != STRESS_UNKNOWN).then_some(v);
+
+    // C moves `plist` to the phoneme the condition names *before* reading its
+    // stress level, so `nextVowel(isMaxStress)` asks about the next vowel.
+    let selected = match which {
+        0 | 5 | 8 => known(nb.prev_stress),
+        2 | 4 => known(nb.next_stress),
+        3 | 6 => known(nb.next2_stress),
+        7 => {
+            if is_vowel(nb.next) {
+                known(nb.next_stress)
+            } else {
+                known(nb.next2_stress)
+            }
+        }
+        _ => None, // `thisPh`, handled below
+    };
+
+    let mut level = if let Some(v) = selected {
+        v
+    } else if is_vowel(nb.this) {
+        nb.stress
+    } else if nb.next_stress == STRESS_UNKNOWN {
+        // The caller tracks no per-syllable stress (synthesis stage): keep the
+        // phoneme's own level, which is what the FMT-selecting conditions want.
+        nb.stress
+    } else if is_vowel(nb.next) {
+        nb.next_stress
+    } else {
+        return false; // no stress level for this consonant
+    };
+
+    if is_change_if && nb.translation_given && nb.reduce & 1 == 0 {
+        // "Don't change phonemes which are given for the word in the dictionary."
+        return false;
+    }
+    let wordstress = if nb.wordstress == STRESS_UNKNOWN { 4 } else { nb.wordstress };
+    if nb.reduce & 2 != 0 && level >= wordstress {
+        // The most stressed syllable of an unstressed word counts as stressed.
+        level = 4; // STRESS_IS_PRIMARY
+    }
+
+    let level = (level as u16) & 0xf;
     match condition {
-        4 /* STRESS_IS_PRIMARY */ => level >= 4,
+        4 /* STRESS_IS_PRIMARY */ => level >= wordstress as u16,
         3 /* STRESS_IS_SECONDARY */ => level > 3,
-        c => level < CONDITION_LEVEL[c as usize],
+        c => level < CONDITION_LEVEL[(c & 3) as usize],
     }
 }
 

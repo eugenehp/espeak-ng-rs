@@ -65,7 +65,7 @@ fn hyphen_after_word_or_number_is_not_a_minus() {
     // A spaced dash "3 - 5" (hyphen not immediately before the digit) is unaffected.
     assert!(!ipa("3 - 5").contains("mˈaɪnəs"), "{}", ipa("3 - 5"));
     // The letter-hyphen word-break behaviour is preserved.
-    assert_eq!(ipa("well-known"), "wˈɛl nˈəʊn");
+    assert_eq!(ipa("well-known"), "wˈɛlnˈəʊn");
 }
 
 #[test]

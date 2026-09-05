@@ -8,6 +8,19 @@ Tracking document comparing this pure-Rust port against upstream
 **Snapshot date:** 2026-07-31 · upstream `master` around commit `84a37de` (emoji reading, #2463).
 **Upstream re-check (2, later 2026-08-01):** `84a37de` still HEAD. Since the first re-check the port has ALSO landed: homographs (verb/noun/past POS triggers), hyphen word-breaks, leading-zero numbers, `vi 10`, `.replace` engine-wide, Korean/Sinhala/Urdu/Sindhi/bpy scripts, and a working dictsource compiler (Bosnian #2269 demoed end-to-end). Fresh probes of newer issues: **#2248 `pt-br` errors** ("phoneme table 'pt-br' not found") — locale should fall back to `pt` (tractable code fix, not yet done); #2243 Hindi "crash" → Rust is memory-safe (no crash); #2295 Polish "zi" → not reproduced; #2196/#2195 en-us weak forms ("was"/"from" not reduced) → data; #2247/#2280 French `ɥ` still `/y/` → data; #2232 "niche" en-us → `niːʃ` (arguable). **Original upstream re-check:** `84a37de` is STILL `master` HEAD (nothing merged since the snapshot). Live GitHub sweep of all open PRs/issues done this date. **Port has since resolved** several tracked refs: #2464 (ja emoji → katakana support), #228 (CamelCase, both branches), #96 (2st ordinal), #2435 (stylized letters), plus non-reproductions #2438/#2340/#2393/#257. **New open items found (not yet in port):** PRs are all language-data (need dictsource): #2391 Swedish, #2390 Finnish /h/, #2349 Hebrew overhaul, #2281 Latvian, #1958 Kurdish, #2481 Hungarian emoji, #2422 Persian, #2352 fa dict, #2429 pt, #2419 it, #2423 nl, #2424 sl, #2426 lv, #2280 fr ɥ, #2269 bs, #2268 ja numbers, #2466 ar/ur/fa diacritics; new languages #2462 Bété, #2413 Sicilian, #2325 Sinago, #2277 Hadrianus, #2262 Toki Pona. Issues: #2442 Vietnamese tones/numerics (big), #2295 Polish "zi", #2314/#2352 language stresses, #2366 word+number split (contested — port already splits at the letter↔digit boundary), #2267 --voices completeness. Android/build/C-runtime issues (#2485/#2483/#2480/#2478/#2477/#2475/#2474/#2473/#2471/#2470/#2288/#2274/#2171/etc.) are N/A to a pure-Rust port. Merged since last snapshot but not separately re-verified: #2431 Russian feminine decimal fractions (§3 #18).
 
+**Upstream re-check (3, 2026-09-03):** master HEAD is now `f135499` (2026-09-01, ar→Mandarin #2511) — **432 commits ahead of the `1.52.0` tag the bundled `espeak-ng-data/` comes from**, with no 1.53.0 release cut yet. 13 PRs merged since 2026-08-01. The delta is recorded in **§3** (merged engine + data commits since `84a37de`), **§3b** (the whole unreleased 1.53.0 changelog vs. our 1.52.0 data — the single biggest parity lever), **§4** (open PRs, re-swept) and **§5** (issues opened since 2026-08-01). Status corrections from this sweep: **#2475 merged 2026-08-02** (§15/§5 still listed it as open) and **#2422/#2423/#2481 merged** (were tracked as open PRs in §4). Every ❌/✅ claim added by this sweep was probed against `./target/debug/espeak-ng-rs --path=espeak-ng-data` on 2026-09-03.
+
+**Implementation pass (2026-09-03, after re-check 3):** the §3b backlog was
+**executed**, not just recorded. Bundled data was rebuilt from upstream `master`
+(`f135499`) — 123 dicts / 151 voices — and the engine work that the refresh
+exposed or that upstream had landed went in with it: full script routing
+(§3b #46), program-driven `ChangePhoneme` resolution on both the IPA and codes
+paths (§3 #41), cross-word `nextPh` context, skin-tone + tag-sequence emoji
+(§3b #45), Sinhala ZWJ (§3b #47), Russian/Hungarian fraction reading (§3b #48),
+the terminator API (§3b #50), `SUFX_M` suffix chains (§3 #40) and the #2470 event
+rescale. Suite: **696 tests green**. Items below carry ✅ where that is now done;
+what remains is listed under "Still open after this pass" at the end of §3b.
+
 The port covers the **text → phonemes/IPA** path and a **working harmonic
 synthesizer** that reads real `phondata`. The gaps are concentrated in
 **prosody, alternate synthesizers, SSML, the compilers, and the runtime/audio
@@ -26,13 +39,13 @@ layer**, plus a long tail of per-language number/rule details.
 
 | # | Upstream module | Size | Status | Impact / notes |
 |---|---|---|---|---|
-| 1 | `intonation.c` | 36 KB | 🟡 | **Basic pitch envelope implemented** (`pitch_envelope` in `src/synthesize/mod.rs`): per-utterance declination for statements, rising tail for questions, applied per-phoneme in `synthesize_codes`. **Harness-measured improvement (`hello world`):** pitch-contour correlation vs oracle **0.06 → 0.49**, mean F0 **161 → 110 Hz** (oracle 102). 2 unit + 1 integration test. **Remaining:** faithful `CalcPitches` port — per-syllable/stress pitch from the `intonations` Tune tables (currently only a global declination), and the residual base-F0 offset on longer text. |
-| 2 | `klatt.c` | 33 KB | 🟡 | Klatt frame *fields* are parsed (`klattp`, `SPECT_SEQK`). **Cascade formant synthesizer implemented (2026-08-01, `src/synthesize/klatt.rs`):** a 2nd-order digital `Resonator` (Klatt `setabc`/`resonator`) + `synthesize(frame, n, sr)` drives a glottal impulse train (+ optional aspiration noise) through a **cascade** of per-formant resonators. **Spectrally verified** (`wav-analysis`): a steady /ɑ/ (F1 730, F2 1090, F3 2440) at 120 Hz yields F0 ≈ 120 and energy peaks at F1/F2 (>2× the above-formant band). **Wired into synthesis (2026-08-01):** `synthesize_frames_klatt` renders real `SpectFrame` runs through the cascade (formants from `ffreq[1..]`, bandwidths `fwidth*4`, per-frame pitch, resonator state carried across frames), routed from `flush_run` via `VoiceParams.klatt` **or automatically for runs whose frames carry `FRFLAG_KLATT`** (2026-08-01) — so Klatt frames use Klatt synthesis, harmonic frames stay harmonic, and the default en path is byte-unchanged (6 tests). **Correction:** the earlier "`is_klatt: false` hardcoded" note was stale — production `SpectSeq::from_bytes` (`phondata.rs:167`) already sets `is_klatt` from `FRFLAG_KLATT`, and the harmonic path even uses `klattp2` (Fric) for Klatt frames; the only `is_klatt: false` is a unit-test literal. **Intra-frame interpolation done (2026-08-01):** `synthesize_frames_klatt` now interpolates each formant's freq+bandwidth toward the next frame over the frame's duration (time-varying resonators) so transitions glide instead of stepping. **Remaining:** the **parallel** branch (fricatives/bursts), nasal antiresonator, LF glottal model; exact amplitude/`klattp` handling to match `parwav.c` bit-for-bit (oracle-gated). |
+| 1 | `intonation.c` | 36 KB | ✅ | **`CalcPitches` ported (2026-09-03/04, `src/synthesize/intonation.rs` + `envelopes.rs`).** The 20 pitch envelopes (128 bytes each) were extracted programmatically from upstream's `intonation.c`; `TONE_HEAD_TABLE`/`TONE_NUCLEUS_TABLE`, the 68-byte `TUNE` records parsed from the `intonations` data file, `SetPitch`/`CountPitchVowels`/`CountIncrements`/`SetPitchGradient`/`SetHeadIntonation`/`CalcPitchSegment` and the tune- and table-driven `CalcPitches` paths are all ported, along with `PUNCT_TO_TONE` clause-type selection and Mandarin tone sandhi (`CalcPitches_Tone`). Wired into the render loop: one `Syllable` per vowel carrying its stress, then per-syllable pitch from the tune; consonants carry the neighbouring syllable's pitch as C does. `PITCH_ADJUST_TAB` + `base_pitch_hz` fixed a systematic ~35 Hz offset (the port had been treating the voice's `pitch2` as base F0 rather than `(pitch1 - 9)`). **Oracle-verified:** mean F0 on "hello world" 108.6 Hz vs the C binary's 108.4. 6 unit tests. **Remaining:** none known; residual F0 differences on longer text are within the duration model's error. |
+| 2 | `klatt.c` | 33 KB | ✅ | **Fully ported (2026-09-04, `src/synthesize/klatt.rs`).** `synthesize_frames_klatt` is now a direct port of upstream's `parwave()` + `Wavegen_Klatt()` + `SetSynth_Klatt()` + `frame_init()` + `pitch_synch_par_reset()`, replacing the earlier placeholder (a bare cascade driven by a phase counter). Ported in full: the **cascade** (nasal antiresonator `Rnz` via `setzeroabc` with C's `a == 0` guard, nasal pole `Rnpc`, then R8c…R1c) **and the parallel branch** (R1p/Rnpp excited by voicing, R2p…R6p by frication plus the first difference of voicing, summed with alternating signs, plus the bypass path); both **glottal source models** (`impulsive_source`'s doublet through `RGL`, and `natural_source`'s quadratic pulse with the 224-entry `B0` shape table) at 4× oversampling through `RLP`; spectral tilt (`TLTdb` → `decay`/`onemd`), open-phase breathiness (`Aturb`), glottal skew, the 88-entry `DBtoLIN` table, F0 `flutter`, and the fade-in/out ramps. `espeak_rand` is reproduced exactly, upstream's `- min` bias included, so noise can be compared sample-for-sample. **Oracle-verified:** a sustained vowel through `-v en+klatt` matches the C binary at spectral-envelope **correlation 0.997, RMS difference 2.4 dB**. 10 unit tests. **Routing corrected (2026-09-04):** `flush_run` used to send any run whose frames carried `FRFLAG_KLATT` through Klatt — but that flag only marks a frame as carrying the extra parallel-resonator parameters, and *every* shipped `en` frame has it, so the standard voices were being rendered by the wrong engine. C routes to Klatt only when the voice sets `klattv[0]`; the port now matches, worth **4.19 → 2.79 dB** mean spectral-envelope RMS difference over an eight-sentence sweep (§36). **Deliberate divergences** (documented on `synthesize_frames_klatt`): a frame without `FRFLAG_KLATT` falls back to the `KlattInit` defaults instead of C's silence (upstream zeroes every `klattp`, so `amp_voice = DBtoLIN(-7) = 0`), and the run is peak-normalized rather than scaled by `wdata->amplitude` because the caller runs its own AGC. |
 | 3 | `ssml.c` (+ SSML parts of `readclause.c`) | 30 KB | 🟡 | **Markup mode (`-m`) implemented** in `src/translate/ssml.rs`: entity decoding (`&amp; &lt; &#NN; &#xHH;`), `<say-as characters>`, `<sub alias>`, `<break>`/`<p>`/`<s>` clause boundaries, comment/PI discard, and strip-but-keep-content for `<emphasis>`/`<prosody>`/`<voice>`/unknown tags. Wired to `Translator::text_to_ipa_ssml`, `TextToPhonemesOptions::markup`, CLI `-m`/`--markup`. 10 unit + 6 integration tests, verified vs C oracle. **`[[…]]` inline phonemes implemented** (`parse_inline_phonemes` in `src/translate/mod.rs`, always-on; greedy longest-mnemonic match; 6 tests, clean cases byte-identical to oracle). **`-x`/synthesis parity (2026-08-01):** `translate_to_codes` built the inline-phoneme entry but its code-emission `match` dropped it (bare `_ => {}`), so `-x "[[k]]"` was empty and `[[…]]` synthesised silently; now emitted like a word — `-x "[[h@l'oU]]"` → `h@l'oU` (exact round-trip), and audio of `[[…]]` renders. **`<voice xml:lang>` language switching implemented** (segment-based `process_markup` → per-language delegation; byte-identical to oracle for `hello <voice xml:lang="fr">bonjour</voice> bye`). **`<voice name>` resolution (2026-08-01):** the `<voice>` selector may be a human name (`name="French (France)"`) or code; `resolve_voice_lang` matches it via `find_voice` and falls back to the base voice if unmatched — previously an unresolvable selector *errored* ("dict not found"); now graceful. **`<phoneme ph="">` implemented** (`src/translate/ssml.rs`): the `ph` attribute (eSpeak mnemonics) is bridged to the always-on `[[…]]` inline-phoneme span and the element content is discarded — end-to-end byte-identical to `[[ph]]` via the IPA path (2 unit + 1 integration test). **`<say-as interpret-as="digits">` implemented (2026-08-01):** reads each digit ("42"→"four two", "007"→"zero zero seven") by routing to the spell mechanism; `cardinal`/`number` still read the whole number. 2 tests. **`<say-as interpret-as="ordinal">` implemented (2026-08-01):** via a new **per-span `Segment.interpret` (`ssml::SayAs`) attribute** threaded from the SSML walker through `text_to_ipa_with_options` — the walker flushes+tags the ordinal span, and the translate layer (which knows the language) appends the English ordinal suffix (`english_ordinal_suffix`: 1st/2nd/3rd/11th/21st) so the number path reads it as an ordinal ("3"→"third", "21"→"twenty first", "100"→"one hundredth"); stays in-clause. Non-English passes through (no regression). 2 tests. **This `interpret` hook is reusable for `date`/`time`.** **`telephone`/`tel` also implemented (2026-08-01):** routes to the spell path (digits individual, `+`→"plus", `-` silent) — `<say-as tel>+1-800-555</say-as>` → "plus one eight zero zero five five five". **`date`/`time` implemented (2026-08-01):** via the same `interpret` hook — `date` renders ISO `YYYY-MM-DD` → "Month Dayth Year" ("2024-01-15" → "January fifteenth …"); `time` renders `HH:MM` → hour+minute with "oh"/"o'clock" ("14:30"→"fourteen thirty", "9:05"→"nine oh five", "14:00"→"fourteen o'clock"). English best-effort (non-English passes through). The full say-as family (characters/glyphs/digits/telephone/ordinal/date/time/cardinal) is now covered. **Audio-path SSML fixed (2026-08-01):** the engine `synth` markup path only handled `<audio>` sound icons — **all other SSML tags were spoken literally** (e.g. `-m -w` of `<emphasis>hi</emphasis>` said "emphasis hi emphasis"). Now each text run goes through `crate::translate::ssml_to_speech_text` — strip + entity decode + `<say-as>` spelling **and** the language-aware interpret modes (ordinal/date/time) — so the audio path is at **parity with `--ipa`** for SSML (verified byte-identical: `-m` audio of `<say-as ordinal>3</say-as>` == plain "3rd", `<say-as date>2024-01-15</say-as>` == "January 15th 2024"). **`-x -m` fixed too (2026-08-01):** the `-x` mnemonic path fed *raw* text to `translate_to_codes`, so `-m` tags/entities were spoken literally ("emphasis hello slash emphasis"); now it runs `ssml_to_speech_text` first — `-x -m <emphasis>hello</emphasis>` == `-x hello`. **All three output surfaces (`--ipa`, `-x`, audio) now process SSML consistently** (voice-language *switching* still only on `--ipa`). **Document-level `<prosody rate/pitch/volume>` (2026-08-01):** when a single `<prosody>` wraps the whole utterance, its multipliers (`50%`/keywords/`+20%`) scale the global rate/pitch/volume for audio (`ssml::document_prosody` + CLI `apply_prosody`); verified rate 50%→longer / 200%→shorter WAV (== `-s 88`/`-s 350`); scoped/partial prosody is not applied (no regression). **Remaining:** *scoped* prosody (per-span acoustic params in the engine), `<phoneme alphabet="ipa">`, in-bracket stress-digit notation, cosmetic empty clause lines around standalone `<voice>`. |
-| 4 | `synth_mbrola.c`, `mbrowrap.c`, `compilembrola.c` | ~36 KB | 🟡 | **Interface implemented (2026-08-01, `src/mbrola.rs`):** `PhoLine` + `write_pho` render the `.pho` handoff (`<phoneme> <ms> [<pos> <hz>]…`); `mbrola_database` resolves `mb-en1`→`en1`; `find_database` locates a diphone DB (→ `MbrolaVoiceNotFound` if absent); `synthesize(pho, db)` pipes to the external `mbrola` binary and reads raw PCM (→ `MbrolaNotFound` if the binary is absent). 3 tests. **Hard blocker for the rest:** the `mbrola` binary + diphone databases are separately licensed and **not shipped**, so the actual diphone audio can't be produced/validated here. **Remaining (needs data):** driving `write_pho` from real synthesis (per-phoneme durations + pitch + eSpeak→MBROLA phoneme-name mapping via the voice's translation table), and `compilembrola` (the phoneme-map compiler). |
+| 4 | `synth_mbrola.c`, `mbrowrap.c`, `compilembrola.c` | ~36 KB | ✅ (bar the external binary) | **Ported (2026-09-04, `src/mbrola.rs`).** `MbrolaTable::compile` ports `compilembrola.c` (the `phsource/mbrola/<db>` text format: `<control> <phoneme> <next|NULL|VWL> <percent> <name1> [<name2>]`, `volume`, `//` comments, C's 39-byte line truncation); `parse`/`to_bytes` handle the binary `<db>_phtrans` (4-byte volume + 24-byte records + zero terminator); `mbr_name` ports `GetMbrName` with **all seven `control` bits** (skip-next, match-previous, word-initial, no-cross-word, name-prefix, stressed-only, word-final) and the `NULL`/`VWL`/`:`/`_` context sentinels; `write_pitch` ports `WritePitch` (envelope extremes → up to five `(position%, Hz)` targets, `env100 = 80`, the split-vowel ±`percent` cases) on top of the ported `SetPitch2`; `translate` ports `MbrolaTranslate`. **Oracle-checked on data:** all **49 shipped `_phtrans` tables round-trip byte-for-byte**, and the compiler reproduces the shipped `en1_phtrans` rows exactly. **Wired end to end:** `Synthesizer::mbrola_phonemes` builds the phoneme list (mnemonic, type, stress, word stress, duration, and the syllable's `env`/`pitch1`/`pitch2` from the ported intonation), `voices::load_mbrola_voice` reads `voices/mb/mb-<db>` (its `mbrola <db> <phtrans>` directive and the best-priority `language` line — `mb-en1` → `en`, `mb-de4` → `de`), `--pho` writes the script and `--compile-mbrola=<src>` compiles a table. A `-v mb-*` voice hands the `.pho` to the external `mbrola` binary and, because neither that binary nor the diphone databases are shipped, falls back to the built-in synthesizer on the voice's own language with a clear warning. 20 tests. **Only remaining gap: the diphone audio itself**, which needs the separately-licensed `mbrola` binary + databases — the C oracle can't produce `.pho` here either (`-v mb-en1 --pho` → "voice does not exist"), so the `.pho` text is verified structurally rather than byte-for-byte. |
 | 5 | `compiledict.c` | 42 KB | 🟡 | **List-section compiler implemented (2026-08-01, `src/dictionary/compile.rs`):** `compile_dict(entries, transpose)` packs word → pronunciation exception entries into the binary `_dict` format (magic + rules_offset header, 1024 hash buckets with the exact entry encoding — transpose-compressed word, null-term phonemes, flag bytes). **Round-trip verified** against the reader (compile → `from_bytes` → `lookup` returns the same phonemes/flags). **Rules-section compiler started (2026-08-01):** `compile_rules(groups)` + `compile_dict_with_rules` emit the binary rule-group format (`RULE_GROUP_START` + name + `[<match letters> RULE_PHONEMES <phonemes> 0]…` + `RULE_GROUP_END`) — the inverse of `build_groups`/`match_rule`. **Round-trip verified:** compile a group → the reader registers `groups1['a']` at the right offset with correct rule bytes. 3 tests. **List DSL parser done (2026-08-01):** `parse_list_dsl(source, phdata)` reads `<lang>_list` source text (`word<ws>phonemes[<ws>flags]` per line, `//` comments) into `ListEntry`s, converting phoneme **mnemonics→codes** via the active phoneme table. **Verified end-to-end against real en data** (source → entries → `compile_dict` → `from_bytes` → `lookup` returns the codes) — the first compiler slice validated with *shipped* data, not just synthetic. **Rules DSL parser done (2026-08-01):** `parse_rules_dsl(source, phdata)` reads `<lang>_rules` source — `.group <name>` directives + `match<ws>phonemes` rules (mnemonics→codes, group letter stripped from the match) → `RuleGroup`s; verified with real en data (parse → `compile_rules` → reader registers the groups). So both source DSLs (`_list` + `_rules`) now parse to compiler input. **Top-level `compile_dictionary` driver done (2026-08-01):** reads `<dir>/<lang>_list`+`_rules` dictsource files → DSL parsers → `_dict` binary (the `compiledict.c` entry point) — the dict compiler is now **end-to-end**: dictsource → compile → read → lookup, and a compiled **no-context rule actually fires** through the real translate engine (`word_to_phonemes` emits the rule's phoneme). 7 tests. **Remaining:** rule **context/conditions/stress** (`(`/`)` pre/post-context, `RULE_CONDITION`, `$` flags); the real espeak-ng `dictsource/` files (not in this checkout — drop them in and `compile_dictionary` yields real `_dict`s); >255-byte entries. |
 | 6 | `compiledata.c` | 72 KB | 🟡 | **phontab compiler implemented (2026-08-01, `phoneme/table.rs` `compile_phontab`):** builds the binary phoneme-table file (`[n_tables]` header + per-table 4-byte header + 32-byte name + 16-byte entries) — the inverse of `parse_phontab`. **Round-trip verified** (compile → parse → identical names/includes/mnemonics/codes + full 16-byte entries). **Phoneme-program bytecode compiler started (2026-08-01, `synthesize/bytecode.rs` `compile_program`/`ProgInstn`):** encodes a phoneme program to `phonindex` bytecode (`i_FMT`/`i_WAV` with the exact address+param bit-packing, `RETURN`, raw words) — the inverse of `InterpretPhoneme`/`scan_phoneme`. **Round-trip verified:** compile `[i_FMT(addr,param), RETURN]` → `scan_phoneme` reads back `fmt_addr`+`fmt_param` exactly (1 test). **Phondata SPECT_SEQ frame writer done (2026-08-01):** `SpectFrame::to_bytes_t2` + `compile_spect_seq(frames)` emit the `phondata` frame-sequence format (`length_total`/`n_frames`/`sqflags` header + 44-byte `frame_t2` entries) — inverse of `SpectSeq::parse`; **round-trip verified** (compile → parse → byte-identical frames). So the phoneme-data path now round-trips end-to-end: program bytecode (`compile_program`) → FMT frames (`compile_spect_seq`). Both frame types now round-trip: non-Klatt `frame_t2` (44 B) **and** Klatt `frame_t` (64 B). **WAV-sample writer done (2026-08-01):** `sample::compile_wav_sample` emits the consonant-WAV `phondata` format (header + 16-bit LE data); round-trip verified (structural + `parse_wav_sample` decodes the right count). So the acoustic-data compiler now covers **both** phoneme forms — FMT frame sequences and WAV samples. **Phoneme-source DSL parser done (2026-08-01, `phoneme/source.rs` `parse_phoneme_dsl`):** parses `phonemetable`/`phoneme … endphoneme` source (mnemonic + code, manner/place/voicing via the `PhonemeFeature`/`apply_feature` machinery, `pause`/`stress`/`vowel`/`liquid`, `length`/`lengthmod`) into `PhonemeTabList`s — the table-level front-end, symmetric with the dict rules DSL. **Round-trip verified** (source → `compile_phontab` → `parse_phontab`, now `pub`). Program-body lines (`FMT`/`WAV`/`IF`) pass through. **Remaining:** more program opcodes (conditions/jumps/`CALLPH`/IPA-name); a source parser for the program *body* (FMT/WAV → `phonindex`/`phondata`). |
-| 7 | `fifo.c`, `event.c`, `espeak_command.c` | ~31 KB | 🟡 | **Async runtime implemented (2026-08-01, `src/async_synth.rs`):** `AsyncSynth` runs a background worker owning its own `EspeakNg`, with a **cancellable request queue** (`Mutex<VecDeque>` + `Condvar`) and a per-utterance callback (PCM + events). `speak` enqueues and returns immediately; `cancel` clears the queue and stops in-flight delivery (`espeak_Cancel`, #172); `synchronize` blocks until drained; `is_speaking`; `Drop` stops+joins. **Streaming + commands (2026-08-01):** audio is delivered to the callback **in `CHUNK_SAMPLES` chunks** (`AsyncChunk` with `is_final`/events; the callback returns `true` to stop, mirroring `espeak_SetSynthCallback`), and the queue is now a **command list** — `set_parameter`/`set_voice` apply to subsequent utterances (verified: a queued slow-rate command lengthens the next utterance). Cancellation is checked **between chunks**. 3 tests. **Word/sentence events implemented (2026-08-01):** `synth_with_events` emits `Sentence` (one per clause) + one `EventKind::Word(i)` per spoken word (start time in audio + best-effort source `text_position`) + `End`/`MsgTerminated`, via `Synthesizer::synthesize_codes_with_marks` recording the sample offset at each `WordBoundary`/`ClauseBoundary`. 4 integration tests. **Remaining:** true incremental *rendering* (chunks currently split a whole-utterance render, so latency isn't reduced); exact word `text_position` through number/abbrev expansion (needs `sourceix` threading). |
+| 7 | `fifo.c`, `event.c`, `espeak_command.c` | ~31 KB | 🟡 | **Async runtime implemented (2026-08-01, `src/async_synth.rs`):** `AsyncSynth` runs a background worker owning its own `EspeakNg`, with a **cancellable request queue** (`Mutex<VecDeque>` + `Condvar`) and a per-utterance callback (PCM + events). `speak` enqueues and returns immediately; `cancel` clears the queue and stops in-flight delivery (`espeak_Cancel`, #172); `synchronize` blocks until drained; `is_speaking`; `Drop` stops+joins. **Streaming + commands (2026-08-01):** audio is delivered to the callback **in `CHUNK_SAMPLES` chunks** (`AsyncChunk` with `is_final`/events; the callback returns `true` to stop, mirroring `espeak_SetSynthCallback`), and the queue is now a **command list** — `set_parameter`/`set_voice` apply to subsequent utterances (verified: a queued slow-rate command lengthens the next utterance). Cancellation is checked **between chunks**. 3 tests. **Word/sentence events implemented (2026-08-01):** `synth_with_events` emits `Sentence` (one per clause) + one `EventKind::Word(i)` per spoken word (start time in audio + best-effort source `text_position`) + `End`/`MsgTerminated`, via `Synthesizer::synthesize_codes_with_marks` recording the sample offset at each `WordBoundary`/`ClauseBoundary`. 4 integration tests. **Incremental rendering done (2026-09-04):** `Synthesizer::render` now takes an optional sink and flushes each **clause** as it finishes, exposed as `EspeakNg::synth_streaming` / `synth_streaming_with_events`; `AsyncSynth` uses the latter, so a queued utterance starts producing audio after its first clause rather than its last. The rendering *order* is unchanged, so concatenated chunks equal `synth()` byte-for-byte (asserted in `tests/streaming_synth.rs`); sound icons, SSML and the tempo/pitch post-pass fall back to a single final chunk, and a voice with `echo` is never split (the echo rings across boundaries). **Optional runtimes:** `parallel` (rayon) adds `EspeakNg::synth_many` for batch rendering; `tokio-runtime` adds `espeak_ng::tokio_synth` (`synth` awaits an utterance, `synth_stream` returns a bounded `mpsc::Receiver` fed clause by clause, with backpressure and drop-to-cancel), both off the executor via `spawn_blocking`. 13 tests. **Remaining:** exact word `text_position` through number/abbrev expansion (needs `sourceix` threading). |
 | 8 | libsonic (`sonic`) | — | 🟡 | **Pitch-preserving tempo scaling implemented (2026-08-01, `synthesize::tempo::change_tempo`):** pitch-synchronous overlap-add (AMDF period detection + period merge/repeat with crossfade) time-scales PCM without shifting pitch — the `sonic` core. Verified on synthetic sines (2×→~0.5× length, pitch held; 0.5×→~2× length). **Pitch-shift added (2026-08-01, `change_pitch`):** duration-preserving pitch scaling (stretch + resample); 200 Hz ×1.5 → ~300 Hz same length, verified. **Engine hook added (2026-08-01):** `EspeakNg::with_post_tempo`/`with_post_pitch` post-process the final PCM (opt-in; `1.0` = byte-identical default). The base-F0 pitch / frame-duration rate remain the primary controls (better for normal voice); the sonic hook is for effect voices / independent post-scaling. |
 | 9 | `soundicon.c` | 5 KB | ✅ (+track #2465) | **Implemented** (`src/soundicon/mod.rs`): both trigger paths. **SSML `<audio src="…">fallback</audio>`** (via `EspeakNg::set_markup(true)` / CLI `-m`) plays the referenced WAV, speaking the fallback text if it can't be loaded; **punctuation icons** register a char→WAV mapping (`EspeakNg::add_soundicon(ch, path)`, mirroring the `soundicon <char> <file>` voice directive). The engine splits text into speakable runs + icon events, synthesises runs normally and splices the icon PCM with a 10 ms lead-in (C `DoPause(10)`), amplitude-matched to C's `EMBED_I`/`PlayWave` (amp 21). The WAV loader is **more robust than C** (which requires exact mono/16-bit/rate and punts to a commented-out `sox` call): a dependency-free decoder handles PCM 8/16/24/32-bit + IEEE float, any channel count (down-mixed), and any rate (linearly resampled). Fast path unchanged when no icons/markup. 9 unit + 4 integration tests. **Note:** no soundicon *data* ships with espeak-ng — it is entirely opt-in (apps supply their own clips or use `<audio>`). **Upstream #2465 (open):** 3 ASan-confirmed OOB accesses loading `<audio src>` — `soundicon_tab` has no upper bound (`N_SOUNDICON_TAB` = 80). The port's loader must bound the icon table and reject malformed WAV without panicking; add a defensive test (fuzz an oversized `<audio>` set + a truncated/garbage WAV). |
 | 10 | Audio backends (`pcaudiolib` / PortAudio / ALSA / Pulse) | — | ❌ | WAV via `-w` / `--stdout` only (documented). No device playback. |
@@ -45,7 +58,7 @@ layer**, plus a long tail of per-language number/rule details.
 | 12 | `numbers.c` | 53 KB | 🟡 | Grouped scale composition works, but not every language's number/ordinal format (see §4 PRs). **Comma-grouped thousands + European decimal swap added (2026-08-01):** `NumberGrammar.group_separator`/`decimal_separator` — en uses `,`-group/`.`-decimal, while de/es/fr/nl/mt + Nordic use `.`-group/`,`-decimal (fixes `de "3,14"`→"drei komma…" and `de "1.000"`→"eintausend"). Per-language, default en-style off. **Space (SI/ISO) thousands grouping added (2026-08-01):** `NumberGrammar.space_group` (auto-enabled for the comma-decimal languages) merges `1 234 567` → one number via `apply_space_grouping` (1–3 digit lead + `⎵<3 digits>` groups; anything not exactly 3 digits ends the run) — `fr "1 234 567"`→"un million deux cent trente-quatre mille…", `fi "1 000"`→"tuhat"; English keeps a space as a separator. **Grouped decimals added (2026-08-01):** the final space group may be a 3-digit-integer decimal, so `fr "1 234,56"` merges to == `fr "1234,56"` (and `1 234 567,89` == `1234567,89`). **French letter-suffix ordinals done (2026-08-01):** `1er`/`2e`/`21e`… generate the ordinal word (premier/deuxième/vingt et unième) for 1..=1000 since the fr dict lacks `_No`. Remaining: full per-language ordinal words for other langs. **Round-thousands year-form over-application fixed (2026-08-01):** 2000+ no longer read as "N hundred" (was `2000`→"vingt-cent"); now "deux mille"/"two thousand"/"zweitausend", year form kept for 1100–1900. **Portuguese cardinals generated (2026-08-01):** the pt dict lacks number keys (`1`/`5`/`1000`→empty, `2000`→"dois"), so pt cardinals 0–999,999,999 are now spelled as text (European Portuguese, with the "e"/cem-cento/milhão rules) and pronounced via the rules. |
 | 13 | `tr_languages.c` | 75 KB | 🟡 | `lang/` files are read, but hardcoded per-language special cases and replacement tables are only partially reflected. **Upstream #2476 (open):** a missing `break` in the ~1000-line `SelectTranslator()` `switch` silently gives one language a neighbour's `langopts` (this reached a green PR undetected) — the port's language-selection should be structured (table/`match`) so C-style fallthrough can't happen; worth a test asserting each language's opts are independent. **Done (2026-08-01):** `lang_number_grammars_are_independent` asserts en/es/fr/de/nl each get their own `NumberGrammar` (no neighbour inheritance) and unknown langs fall back to `default` — the port already uses a non-fallthrough `match`, so this locks in correct arm assignment. |
 | 14 | `readclause.c` | 31 KB | 🟡 | Clause splitting works; **`[[…]]` phoneme input and technical-symbol name reading (`# $ % & * + / = @ ~`) now implemented** (`is_spoken_symbol`/`lookup_symbol_name`, 5 tests, 9/10 symbols byte-identical to oracle). **`-x`/synthesis parity (2026-08-01):** `translate_to_codes` had no `Token::Punctuation` arm, so spoken symbols rendered in `--ipa` but were **dropped in `-x`** and silent in audio; added to the word-emission arm (non-spoken punctuation has empty phonemes → no-op) — `-x "a & b"` → `'eI and b'i:`, matching `--ipa`. **Capital-letter announcement (`-k 2` → `_cap` "capital", byte-exact) implemented** (`cap_ipa` in `src/translate/mod.rs`, 3 tests). **`--punct`/`--punct=CHARS` implemented (2026-08-01):** announces punctuation by name — `LangOptions.punct` (`None`/all/subset) + `punct_covers`; a covered `Token::ClauseBoundary`/`Token::Punctuation` becomes a `Word` entry via `lookup_symbol_name` (`,`→"kˈɒmə", `.`→"dˈɒt"), gated so the default path is byte-identical. Works in `--ipa` and `-x` (with END_WORD bracketing for spacing since punctuation absorbs its whitespace). 3 tests. **Reaches audio too (2026-08-01):** `--punct`, `-g` (word gap) and `-k` (capitals) now thread through the engine `synth` path — `make_translator` applies `word_gap`/`capitals`/`punct`; new `EspeakNg::set_punctuation_list` + `Parameter::{Punctuation,Capitals}` handling; the `-k 2` capital announcement was ported into `translate_to_codes` (was `text_to_ipa`-only). Verified: `--punct`/`-g`/`-k` each lengthen the WAV (`runtime_options_audio.rs`). **Remaining:** embedded commands (`\001..`), `-k 1` capital *sound*. |
-| 15 | `phonemelist.c` | 19 KB | 🟡 | **`phonSWITCH` mid-clause language switching implemented** (`TranslateEntryKind::LangSwitch` in `src/translate/mod.rs`): `_^_LL` dict entries re-translate the word with the target language's translator and mark it `(target)…(orig)`; bare `phonSWITCH` → default voice `en`. 4 tests, byte-identical to oracle (af→en/de/fr). Also fixed promotion corrupting switch entries. **Remaining:** script-detection switches (non-Latin input), `<voice xml:lang>` wiring (now feasible atop this), `-x` mnemonic path still uses the old `"SW"`-mnemonic check. **Upstream (track):** merged #2456 clears `phoneme_tab` on a table switch so absent codes resolve to NULL (follow-on to #2459/§19); open #2475 reverts #2128 and fixes a NULL `phoneme_tab` **crash in four shipped voices** underneath it; open #2469 is a related segfault — `espeak -v alex` → "Unknown phoneme table: ''" → SIGSEGV. **⇒ the port already resolves a missing/empty phoneme table to a clean `Error::InvalidData` (never a panic)** — `find_table`/`select_table_by_name` return errors (test `load.rs:669`), and a `LangSwitch` entry always carries the `PHON_SWITCH` byte so the re-translation path can't index-panic; unknown switch targets go through `if let Ok(Translator::new)`. Verified 2026-08-01; a regression test would lock it in. Open #2479: the automatic script-based switch target is hardcoded to `en` (→ en-gb) upstream and isn't configurable — make it configurable when script-detection switching lands. |
+| 15 | `phonemelist.c` | 19 KB | 🟡 | **`phonSWITCH` mid-clause language switching implemented** (`TranslateEntryKind::LangSwitch` in `src/translate/mod.rs`): `_^_LL` dict entries re-translate the word with the target language's translator and mark it `(target)…(orig)`; bare `phonSWITCH` → default voice `en`. 4 tests, byte-identical to oracle (af→en/de/fr). Also fixed promotion corrupting switch entries. **Remaining:** script-detection switches (non-Latin input), `<voice xml:lang>` wiring (now feasible atop this), `-x` mnemonic path still uses the old `"SW"`-mnemonic check. **Upstream (track):** merged #2456 clears `phoneme_tab` on a table switch so absent codes resolve to NULL (follow-on to #2459/§19); **#2475 (merged 2026-08-02, `503708d3`)** reverts #2128 and fixes a NULL `phoneme_tab` **crash in four shipped voices** underneath it — it also adds `phonemelist.c` "keep the word start when dropping an untranslatable phoneme", which is **not ported** (§3 #42); #2492 (merged 2026-08-03) fixes the same class at `i_APPEND_IFNEXTVOWEL` (§3 #41); open #2469 is a related segfault — `espeak -v alex` → "Unknown phoneme table: ''" → SIGSEGV. **⇒ the port already resolves a missing/empty phoneme table to a clean `Error::InvalidData` (never a panic)** — `find_table`/`select_table_by_name` return errors (test `load.rs:669`), and a `LangSwitch` entry always carries the `PHON_SWITCH` byte so the re-translation path can't index-panic; unknown switch targets go through `if let Ok(Translator::new)`. Verified 2026-08-01; a regression test would lock it in. Open #2479: the automatic script-based switch target is hardcoded to `en` (→ en-gb) upstream and isn't configurable — make it configurable when script-detection switching lands. |
 | 16 | CLI (`espeak-ng.c`) | — | 🟡 | `-f` (file), `--stdin`, `-m` (SSML), **`-k` (capitals, byte-exact)**, **`-g` (word gap → `_` pause per word in `-x`, byte-exact)**, **`--voices[=<lang>]` (voice listing)** now wired; **`-z` (no final sentence pause)** suppresses the ~0.30 s end-of-utterance trailing silence (§35) via `VoiceParams.no_final_pause` + `EspeakNg::set_no_final_pause`, verified by WAV sample count (`runtime_options_audio.rs`); **`-b <n>` input encoding (1=UTF-8, 2=Latin-1, 4=UCS-2)** now decodes `-f`/`--stdin` bytes via the `encoding` module (`gather_text` → `decode_to_string`) — a Latin-1 file that fails as UTF-8 reads correctly with `-b 2` (`input_encoding.rs`); `-l` accepted for arg-parity. **`--voices` (2026-08-01):** new `src/voices.rs` walks `<data>/lang/**`, parses `name`/`language <code> [pty]`/`gender`/`age`, and lists all 145 voices sorted by code (filterable by language prefix). Listing-only (identification lines), not the full acoustic voice spec. 2 unit + 2 CLI tests. **`--compile[=<lang>]` implemented (2026-08-01):** compiles `<data>/<lang>_list`+`_rules` → binary `<lang>_dict` via `compile_dictionary` (the `espeak-ng.c` `--compile`/`--compile-debug` path); verified end-to-end (`--compile=en` then `-x hello` → `h@l'oU` from the compiled dict), missing-source fails cleanly. **`--compile-phonemes[=<src>]` implemented (2026-08-01):** parses a phoneme-table source (`parse_phoneme_dsl`) → binary `phontab` (`compile_phontab`); verified end-to-end (source → phontab → `parse_phontab` round-trips), missing-source fails cleanly. Table only (phonindex/phondata not regenerated). **Remaining:** `-b` actual re-decoding, `--compile-mbrola`/`--compile-intonation` (no-ops; no source ships), `--pho`, `-X` trace, and audio playback. |
 
 ## 3. Recent upstream commits not reflected here
@@ -57,6 +70,84 @@ layer**, plus a long tail of per-language number/rule details.
 | 19 | #2459 (`121d8dd`) | NULL-deref guard after mid-clause phoneme-table switch | Ties to missing `phonSWITCH` (§15). |
 | — | #2456 (2026-07-22) | Clear `phoneme_tab` on table switch so absent codes resolve to NULL | Follow-on to #2459; ties to the open crash cluster #2475/#2469 (§15). |
 | — | Android / build / libsonic build commits | N/A to a pure-Rust port | — |
+| 38 🟡 | #2511 (`f135499`, 2026-09-01) | **Arabic voice reads Han ideographs with the Mandarin translator** instead of spelling "Chinese letter". Adds `langopts.alt_alphabet` + `alt_alphabet_lang`, the `AL_IDEOGRAPHS` alphabet flag, `ShouldSplitIdeographs()` (per-ideograph word splitting for a *base* language that nominates an ideographic alternate), and `tone_ph_data` on `PHONEME_LIST` + `TonePhoneme()` / `InterpretPhoneme2WithData()` so a tone phoneme resolved under one table survives the switch back | ❌ **Probe 2026-09-03:** `-v ar "إذا 如果您因为翻译 النص"` → `ʔˈiðaː ɣ ʔˈannˈas̪s̪` — the whole Han run collapses to a stray `ɣ`. **Two gaps:** (a) no `alt_alphabet` concept (a language cannot nominate a fallback translator for a script range); (b) **no tone-phoneme support at all** — `tone_ph` appears nowhere in `src/`, which also blocks zh/yue/vi tone rendering generally (cf. §1.1 intonation). |
+| 39 | `1f1e3fa3` (2026-09-01) | `TonePhoneme()` accessor replacing five `tone_ph_data`/`phoneme_tab` ternaries; alphabets-table realignment | Refactor, no behaviour change. Adopt the same shape if/when tone phonemes land (#38). |
+| 40 ✅ | #2495 (`56f2e9c7`, 2026-08-10) | Stack buffer overflow when a word stacks many `SUFX_M` suffixes — the `while (more_suffixes)` loop in `TranslateWord3()` is now capped like the prefix loop | ❌ **Not a crash risk here (Rust), but a feature gap:** the port has **no multi-suffix loop at all** (`SUFX_M`/`more_suffixes` unimplemented; only single-suffix `SUFX_I` stripping). Probe: `s'`×220 → 220 bare `s`. |
+| 41 🟡 | #2492 (`89fd5d50`, 2026-08-03) | NULL `phoneme_tab` deref in `i_APPEND_IFNEXTVOWEL` (109 of 148 shipped voices segfaulted on `-v de "ईघ"`) | ❌ Crash is N/A (memory-safe), but the **instruction itself is unimplemented**: `src/synthesize/bytecode.rs:498-516` no-ops every group-0 instruction except `RETURN`/`I_IPA_NAME`/`I_CHANGE_PHONEME`, and group-1 `ChangeIf` is skipped entirely (`tr == NULL`). So `i_APPEND_PHONEME`, `i_APPEND_IFNEXTVOWEL`, `i_INSERT_PHONEME`, `i_REPLACE_NEXT_PHONEME`, `i_DELETE_NEXT_PHONEME`, `i_PAUSE_BEFORE/AFTER`, `i_SET_LENGTH`/`i_ADD_LENGTH` and the `CHANGE_IF*` family all silently do nothing. **New gap — phoneme-program instruction coverage.** Probe: `-v de "ईघ"` → empty output (no crash, no speech). |
+| 42 | #2475 (`503708d3`, **merged 2026-08-02** — §5/§15 tracked it as *open*) | Reverts #2128 as dead code and fixes the real NULL `phoneme_tab` crash under it; also `phonemelist.c` **"keep the word start when dropping an untranslatable phoneme"** and NULL-substitution in `SetWordStress` | 🟡 Crash-safety already verified here (`tests/crash_safety.rs`, §15). **Not ported:** the word-start preservation when an untranslatable phoneme is dropped — relevant once script-switching lands (#46). |
+| 43 ✅ | #2500 `ku` (2026-08-19), #2422 `fa` (2026-08-19), #2481 `hu` emoji (2026-08-19), #2423 `nl` (2026-08-18) | Dictsource-only language fixes: Kurmanji oblique-plural/preverb/negation stress + unstressed subject pronouns (+ new `docs/languages/ira/ku.md`); Persian exception words; Hungarian emoji + rules exceptions; Dutch `na`+CVC+`ige` | ❌ Inherited automatically by the §3b data refresh; nothing to port in code. |
+| — | Android cluster (#2471, #2480, #2483, #2487, #2493, 2026-08-01→08-03) | TTS-framework word boundaries + error reporting, stop actually aborts synthesis, voice name as hint, settings screen off the main thread, launcher alias | N/A to a pure-Rust library. (`#2493`'s analogue — cancel between chunks — already exists in `async_synth.rs`, §7.) |
+
+## 3b. Data staleness — bundled data is 1.52.0, upstream is 432 commits ahead
+
+`espeak-ng-data/` in this repo is eSpeak NG **1.52.0** (2024-12-12) plus a few 1.52.0.1
+`lang/` files. Upstream's **unreleased 1.53.0** ChangeLog is therefore, almost verbatim,
+our parity backlog. **This is the single biggest lever in the whole document:** refreshing
+the data closes the missing languages, all 14 updated ones and the entire emoji block at
+once, and `compile_dictionary` (§1.5, CLI `--compile`) already does dictsource → `_dict`.
+All probes below run against `./target/debug/espeak-ng-rs --path=espeak-ng-data` (2026-09-03).
+
+| # | Upstream 1.53.0 item | Port status / probe |
+|---|---|---|
+| 44 ✅ | **6 new languages** — `ab` (Abkhaz), `crh` (Crimean Tatar), `lij` (Ligurian), `mn` (Mongolian), `ps` (Pashto), `rup` (Aromanian); plus restored `fo`/`kaa`/`xex` dictionary builds under CMake | ❌ **9 languages upstream has dictsource for that we ship no dict for**: `ab, crh, fo, kaa, lij, mn, ps, rup, xex` (upstream has 123 dictsource languages, we ship 114 `_dict` files). Worse, `lang/` files for `crh, mn, ps, rup, fo, kaa` **are** bundled, so `--voices` advertises them and then they fail: `-v crh` → `not yet implemented: text_to_ipa: dict not found` (same for mn/ps/rup/fo/kaa/lij). `-v ab` silently returns empty. **Two fixes:** compile the missing dicts (data refresh) *and* make an advertised-but-dictless voice fail with a clear error rather than being listed as available. Supersedes the "blocked (missing data)" note on #2437 (§5) — Pashto dictsource now exists upstream. |
+| 45 ✅ | **Emoji overhaul** — CLDR 33.1 → **48.2** (Unicode Emoji 12→16) for 66 languages, emoji/symbol data added for **28 more languages** (he, uk, th, nb, be, uz, kk, fo, …), ZWJ sequences matched against multi-codepoint dict entries, **skin-tone sequences spoken as base name + modifier**, emoji split from adjacent words, subdivision-flag and hyphenated-description fixes | 🟡 Tokenisation largely landed 2026-08-01 (§3 #17) but the **data is CLDR 33.1** and two behaviours are wrong. Probes: `👍🏽` → **empty output** (the *combined* skin-tone sequence is dropped; `👍 🏽` split by a space works → `θˈʌmz ˌʌp mˈiːdiəm skˈɪn tˈəʊn`); `🏴󠁧󠁢󠁥󠁮󠁧󠁿` (England) → `blˈak flˈaɡ` — exactly the subdivision-flag bug upstream fixed; `-v th "👍"` → empty (th is one of the 28 newly covered languages). |
+| 46 ✅ | **"Split a word where the script changes to a foreign one"**, so mixed-script tokens are translated per script instead of spelled out (+ "Arabic text spelled letter-by-letter under non-Arabic voices" fixed, + the #2475 crash on a Latin word under a non-Latin voice) | ❌ **The foreign-script run is silently dropped, not spelled and not translated.** Probes: `-v ru "привет hello"` → `prʲivʲˈɛt` (in `--ipa` *and* `-x`); `-v ru "hello"` → empty; `-v en "hello 你好"` → `həlˈəʊ`; `-v en "hello مرحبا"` → `həlˈəʊ`. Silently losing input text is worse than mispronouncing it. Ties to §15 (`phonSWITCH` script-detection switches) and #2479 (hardcoded `en` switch target). |
+| 47 ✅ | **Sinhala ZWJ conjunct clusters** read as one conjunct instead of separate letters | ❌ `-v si "ක්‍ර"` → `k ɹˈə` (separate letters) — the bug upstream fixed. |
+| 48 ✅ | **Russian decimal fractions** use feminine unit forms and numerators ("одна сотая", "две тысячных") — upstream #2431, already listed as §3 item 18 | ❌ Probes: `-v ru "0,5"` → `nˈojɭʲ ˈi pʲˈʌʲtʲ` ("ноль и пять"), `-v ru "0,25"` → `nˈojɭʲ ˈi dvˈɑ pʲˈʌʲtʲ` — digit-by-digit, no fraction naming at all. Number-grammar gap (§12). |
+| 49 | **Slovak number handling** fixed (Samuel Thibault) | 🟡 Not verified against an oracle; `-v sk "21 1000000"` → `dvˈadsatʲjˈeden mˈiliˌoːn` looks plausible. Re-check after the data refresh. |
+| 50 ✅ | **New API `espeak_TextToPhonemesWithTerminator`** (Jonathan McDowell) — returns the clause terminator alongside the phonemes | ❌ No equivalent: `EspeakNg::text_to_phonemes{,_with_options,_phonemizer}` (`src/engine.rs:565-593`) return only a `String`. The terminator exists internally (`LookupContext::clause_terminator`, `dictionary/lookup.rs:86`) — surface it. |
+| 51 | **Dictionary replacement text is word-segmented like normal input, with nested replacements** (hanzi → pinyin) — fixes silently dropped emoji descriptions in Chinese, Cantonese and Thai | 🟡 The port re-translates TEXTMODE replacement text (§3 #17) but not recursively/segmented. `-v cmn "🇧🇫"` → `ˈuouowʰoˌaiuə` (non-empty but unverified); `-v th "👍"` → empty. Needs an oracle pass after the data refresh. |
+| 52 | **`compiledict` no longer leaks bogus entries from over-length list lines** | 🟡 Our compiler (§1.5) has the same class of limitation documented as "remaining: >255-byte entries" — fold the upstream bound in when that's finished. |
+| 53 | **IPA/phoneme output no longer ignores `prevPh`/`prevPhW` conditions** (regression since #2082 — restores linking-j suppression after i-vowels, German r-flap, …) | 🟡 The port *does* evaluate `prevPhW` (`bytecode.rs:750`) and `prevPh` end_type matches (`:811`). Add a regression test for linking-j and the German r-flap to lock parity in. |
+| 54 ✅ | **14 updated languages** — `de, en, es, fa, fr, he, hu, ko, ku, pt, ru, sv, th, tlh` | ❌ Inherited by the data refresh (#44). Several §4/§5 items collapse into this. |
+| — | Build (autotools removal, CMake/GNUInstallDirs/Emscripten/CMake 4.0, PIC, PATH_MAX, macOS CoreAudio), Android app, libsonic big-endian, libpcaudio error reporting, MBROLA fuzzing, `%x` SSML format specifier, Windows voice identifier, "warn when MBROLA/Klatt not compiled in" | N/A to a pure-Rust port. |
+
+**Executed 2026-09-03** (see the progress log for detail and probe output):
+
+| Item | What landed |
+|---|---|
+| #44 ✅ | Data rebuilt from upstream `master` with CMake, merged over `espeak-ng-data/` (MBROLA files kept), `data-crates/` + Cargo features regenerated. 123 dicts / 151 voices; new test `every_advertised_voice_can_speak` walks every advertised voice and asserts it speaks. |
+| #45 ✅ | Skin-tone sequences fall back to base name + modifier names when the pair has no entry (`👍🏽` was **silent**); tag characters stay in the token so subdivision flags name their country. |
+| #46 ✅ | 22-script routing table + per-language `alt_alphabet` hook (#2511) + Serbian digraphia + "the dictionary wins over the script". No input text is dropped any more. |
+| #47 ✅ | ZWJ/ZWNJ treated as in-word joiners: `si ක්‍ර` → `kɹˈɐ`, byte-identical to upstream. |
+| #48 ✅ | Data-driven fraction reading via `_0Z<n>` / `_0Z<n>s` + `_1f`/`_2f`, with the singular/plural and feminine rules; covers ru **and** hu. Structure matches the oracle on all 12 probed cases. |
+| #50 ✅ | `Translator::text_to_ipa_with_terminator` / `EspeakNg::text_to_phonemes_with_terminator` + `ClauseTerminator`. |
+| #40 ✅ | `SUFX_M` suffix chains (`s's's` → `'EsI2zI2z`, == oracle), bounded at 50. |
+| #41 🟡 | `ChangePhoneme` + condition programs now run at translate time on both the IPA and the codes path (so `-x` and synthesis see resolved phonemes), with cross-word `nextPh` context. The rest of the group-0 family (append/insert/delete/length/pause) and group-1 `ChangeIf` are still no-ops. |
+| #2470 ✅ | `synth_with_events` applies the tempo/pitch post-pass and rescales event times to the resulting buffer. |
+| — ✅ | Fallout fixed on the way: voice `phonemes` directive now outranks the bare tag (European Portuguese was using the *Brazilian* table); `-x` accepts regional locales; composed number entries take end-stress promotion on their last word; Chinese tone digits stay in the word; `[[…]]` keeps word boundaries. |
+
+**Still open after this pass:**
+
+| # | Item | Why it's left |
+|---|---|---|
+| 38 ✅ | Tone phonemes (`tone_ph`) | **Done 2026-09-03 (second pass).** Root cause was `langopts.textmode`: cmn/yue/zh compile their dictionaries as replacement *text*, which **reverses** `FLAG_TEXTMODE`, so `你`'s reading (`ni3`) was being read as phoneme codes (`qr`). With that fixed plus tone phonemes (phSTRESS entries carrying a program — previously dropped as stress markers), tone-after-vowel placement, the `_|` word gap, tone digits kept inside pinyin words, and a port of `CalcPitches_Tone`'s Mandarin sandhi, `-x -v cmn 中文` / `北京` / `请问` and `yue 你好` are **byte-identical to upstream**. Remaining: multi-character dictionary words (谢谢 keeps two full tones where upstream neutralises the second), and Vietnamese tone selection (its rules emit no tone phoneme at all for `xin`, so nothing reaches the tone pass). |
+| — | Foreign-script **run grouping** | Upstream emits one switch per run (`(cmn)w1 w2(ar)`); the port emits one per word (`(cmn)w1(ar) (cmn)w2(ar)`). Same words spoken, different marker placement. |
+| — | Deliberate divergence: scripts upstream **spells** | Upstream only auto-switches for the `AL_WORDS` alphabets (el, hy, ar, hi, bn, pa, gu, ta, kn, ml, si, ka, ko) and *spells* the rest — `en "привет"` → "pe er ee ve ye te", `en "你好"` → "Chinese letter" ×2. The port speaks them with the script's voice instead (the pre-existing Cyrillic/Greek design here), which never loses text but is not oracle-identical. Implementing the spelling path would need `LookupLetter`-style foreign letter names. |
+| 49 | Slovak numbers | Unverified against the oracle; the data refresh may already cover it. |
+| 51 🟡 | Word-segmented / nested dictionary replacements | The hanzi→pinyin half now works (§3 #38), so Chinese emoji descriptions read. Still open: segmenting replacement text for languages without spaces (`th 👍`), and multi-character Chinese dictionary words. |
+| 52 | `compiledict` over-length list lines | Belongs with the dict-compiler work (§1.5). |
+| 53 | `prevPh`/`prevPhW` regression tests | The conditions are evaluated correctly (linking-j, German r-flap verified by hand); dedicated tests not yet added. |
+| ✅ | German/Hungarian vowel break (`_!`/`_|`) | **Done (third pass), corrected (eleventh).** The two pause phonemes were swapped and the stress was read before the placement rule rather than after; instrumenting both engines showed C picks `_!` when `vowel_stress[1] >= 4` and `_|` otherwise. German, Hungarian and Dutch now match upstream byte-for-byte. Original note: **Done (third pass).** It wasn't `PauseBefore` at all but `langopts.vowel_pause`, parsed into `StressOpts` and then ignored. Implemented in `set_word_stress` for the 0x30/0x20/0x20c languages; `de beachten` is byte-identical to upstream. Residual: the choice between `_|` (no-link) and `_!` (very short) still differs for *dictionary-stressed* words — upstream reads `vowel_stress[1]` at a point in `SetWordStress` this port doesn't reproduce exactly, so `Ich`/`einen` get `_!` where upstream gives `_|`. Both are breaks; the audible difference is small. |
+| ✅ | Foreign-script run grouping | **Done (third pass).** Consecutive words in the same foreign script now share one `(target)…(base)` group, as upstream does. |
+| ✅ | Short decimal fractions as one number | **Done (third pass).** `NUM_DFRACTION_2`/`_4` implemented for the ~25 languages upstream lists, including the Portuguese text path; `cs 0,25` and `fr 3,14` are byte-identical to upstream. |
+| ✅ | Group-0 list-editing instructions | **Done (fourth pass).** `InsertPhoneme`, `AppendPhoneme`, `IfNextVowelAppend` and `ChangeNextPhoneme` are applied on both the IPA and the codes path: English linking r (`sofa area` → `sˈəʊfəɹ ˈeəɹiə`) and the `;` glide (`maI; 'ap@L`) now match upstream, and the mnemonic-sniffing approximations they replace are gone. `ChangePhoneme(NULL)` deletes the phoneme, as in C. Still no-ops: `PauseBefore`/`PauseAfter` and the length modifiers (`SetLength`/`AddLength`/`LengthMod`), which only affect synthesis timing. |
+| ✅ | Context-dependent vowels + `isTranslationGiven` | **Done (fourth pass).** Program-driven `ChangePhoneme` now applies to vowels as well as the `#` class — `the apple` → `ðɪ ˈapəl`, Hindi `भारत` → `bʰˈaːɾət`, both byte-identical to upstream — and `isTranslationGiven` keeps dictionary/number readings unreduced in tr/ba/tt (`tr 100` = `jˈyz`, `yüz` = `jˈøz`). Consonant changes stay deferred, matching upstream's `-x` (which keeps a plain `l` in "world"). |
+| — | Georgian decimals | `ka` reads the fraction digit by digit and speaks its `_dpt` word; upstream reads it as a number with no point word. Not one of the modes upstream lists for `ka`, so it needs its own investigation. |
+| ✅ | `-x` allophone spelling | **Done (twelfth pass).** Not a phoneme-choice problem at all: a `/` in a mnemonic is a *variant indicator* that C drops when printing (`WritePhMnemonic`), so `a/` prints as `a` and `l/2` as `l`. The port printed the full mnemonic. Fixing the display (and dropping the earlier "consonant changes are deferred" theory, which this disproves) took the `-x` sweep from 27/32 to 31/32. Superseded note: | Several languages print an allophone variant where upstream prints the base mnemonic (`es 'ola/` vs `'ola`, `it bUo/n…`), while `--ipa` agrees with upstream. **Investigated (fifth pass):** C gates `ChangeIfNotStressed` inside `StressCondition` on `SFLAG_DICTIONARY`, unless the language sets `LOPT_REDUCE & 1` (only Italian) — "don't change phonemes which are given for the word in the dictionary". Wiring that gate to this port's notion of a dictionary-given word made Russian **lose** its reduction (`molok'o`) while Spanish kept its allophone, dropping the `-x` sweep from 18/24 to 15/23, so it was reverted; `LangOptions::reduce_dictionary_vowels` is parsed and carried for a future attempt with a faithful `SFLAG_DICTIONARY`. Not a pronunciation difference — the IPA is identical either way. |
+| ✅ | `PauseBefore` / `PauseAfter` | **Done (eighth pass).** Both render paths honour them: the formant path ends its run at the pause and emits the silence, the WAV path splices it inline. Verified against `ph_german`'s /r/ — 30 ms after /t/, 15 ms after the other stops, none after a vowel. |
+| ✅ | Length modifiers (`length` / `LengthAdd` inside a program) | **Done (eleventh pass).** Captured in `PhonemeExtract` and used in place of the declared `std_length` when computing a vowel's duration, as C does by seeding `pd_param[i_SET_LENGTH]` with `std_length`. German raises /a/ 110 → 125 before a rhotic and uses the pattern on most of its vowels. |
+| ✅ | Thai tone placement | **Done (sixth pass).** Tones are attached one per syllable vowel — pulled back over a coda (Mandarin), or forward from ahead of the syllable (Thai) — and extras are dropped. `สวัสดี`, `ขอบคุณ` and `ไทย` are byte-identical to upstream; Mandarin/Cantonese unchanged. Residual: `กิน` still picks the leading tone (`k'i3n`) where upstream takes the trailing one (`k'i2n`) — with two tones around one vowel, which wins isn't captured by "first wins", and the two Thai samples that need opposite answers don't disambiguate it. |
+| ✅ | Vietnamese tones | **Done (seventh pass).** The tone wasn't missing from the rules — `CalcPitches_Tone` *adds* it: a toneless syllable takes `phonDEFAULTTONE`, and Vietnamese turns the clause-final one into tone 7. With that plus the `langopts.word_gap` `_|`, `xin chào`, `tôi` and `Việt Nam` are byte-identical to upstream. |
+| ✅ | Decimal separators for af/ka/kk | **Done (seventh pass).** All three read "3,14" as two numbers and use the period; the port had them as comma-decimal. Verified against the oracle for all 18 languages the port configures. |
+| ✅ | Sentence-end detection | **Done (seventh pass).** A period only ends a sentence before a capital (or at end of text) — `one. two` is one clause, `one. Two` is two — and a comma between two numbers is a digit separator. The port broke on every period, adding a spurious clause break to "etc. and", "5. item" and decimal text. |
+| ✅ | Explicit stress vs the placement rule | **Done (ninth pass).** An explicit primary-stress marker from the dictionary or rules now fixes the stressed syllable for every language (composed number words exempt), matching `GetVowelStress`; Crimean Tatar is byte-identical to upstream. The default rule was also corrected to C's (`STRESSPOSN_2R`, `unstressed_wd2 = 3`). |
+| ✅ | Voice-file `stressRule` | Parsed and applied (ninth pass) — `stressRule <rule> [wd1] [wd2]`, used by ~15 languages. |
+| ✅ | Per-language `stress_flags` | **Done (tenth pass).** They were set in only seven language arms, three of which disagreed with upstream; the rest ran with none. Upstream's whole `tr_languages.c` table is now transcribed as the *base*, with the port's tuned per-arm values still overriding where it has them (those compensate for differences in its own stress fill, and replacing them wholesale regressed nl/pt/ru). Basque, which was the symptom, is byte-identical: `kaixo` → `kˈaɪʃo`, `etxe` → `ˈetʃe`. Diagnosis came from instrumenting *both* engines and diffing their `vowel_stress[]` arrays. |
+| — | Multi-character Chinese words | Re-examined (fifth pass): `谢谢` is **not** in the shipped `cmn` dictionary, so upstream's neutral tone on the second syllable comes from neither a dictionary entry nor the sandhi rules already ported. Mechanism still unidentified. |
+| — | Georgian fractions | `ka` ships `_0Z*` entries but upstream reads the numerator *without* the scale word; the port still reads digit-by-digit. Needs its own decimal mode. |
+
+**Suggested execution order for #44–#54:** (1) vendor `dictsource/` from master and run `--compile` for all 123 languages, adding the 9 missing dicts + data-crates; (2) fix the advertised-but-dictless voice error path; (3) skin-tone / subdivision-flag emoji sequences (code, not data); (4) foreign-script split (#46) — the only one that currently *loses* input text; (5) `alt_alphabet` + tone phonemes (§3 #38); (6) the small ones: terminator API (#50), ru fractions (#48), si ZWJ (#47).
 
 ## 4. Open upstream PRs = language data / pronunciation the port would inherit as gaps
 
@@ -70,14 +161,38 @@ layer**, plus a long tail of per-language number/rule details.
 | — | #2426 | Latvian: inflections of ordinal numbers. |
 | — | #2429 | Portuguese: language update (2026). |
 | — | #2424 | Slovene: pronunciation of phoneme "v". |
-| — | #2423 | Dutch: prevent mispronunciation of na+CVC+ige words. |
+| ✅ | #2423 | Dutch: na+CVC+ige mispronunciation — **merged upstream 2026-08-18**, inherited via the §3b data refresh. |
 | — | #2419 | Italian: correct pronunciation rules. |
-| — | #2422 | Persian: language improvements. |
+| ✅ | #2422 | Persian: language improvements — **merged upstream 2026-08-19**, inherited via the §3b data refresh. |
 | — | #2466 | Arabic/Urdu/Farsi: diacritics + code-switched letters; corpus-attested vocalizations for 763 fallback words. |
 | ✅ | #2435 | Normalize stylized Latin letters/digits to plain ASCII — **done 2026-08-01** (`stylized_to_ascii`: math bold/italic/script/fraktur/double-struck/sans/mono + circled + Letterlike holes). |
 | — | #2413 | New language: Sicilian. |
 | — | #2462 / #2447 | New language: Bété (ISO 639-3 `bof`). |
 | — | #2472 | New voice variant "ali" (cf. §11 variants gap). |
+| — | #2413 | New language: Sicilian (re-swept 2026-09-03, still open). |
+| — | #2262 | New language: Toki Pona (barebones voice). |
+| — | #1937 | New language: Amazigh (first implementation). |
+| — | #1589 | New language: Interlingue. |
+| — | #2325 / #2277 | New languages: Sinago / Hadrianus. |
+| — | #2520 | Mongolian voice rebuilt against a measured speech corpus (pairs with the missing `mn` dict, §3b #44). |
+| — | #2518 | Japanese pronunciation improvements. |
+| — | #2510 | Haitian Creole: pronunciation rewrite (1979 orthography). |
+| — | #2513 | Two new Catalan accents (alguerès, rossellonès). |
+| — | #2509 | Hungarian: further pronunciation exceptions (follow-on to merged #2481). |
+| — | #2391 | Swedish: comprehensive pronunciation improvements. |
+| — | #2512 | Spanish pronunciation corrections (filed as an issue). |
+| 🔧 | #2524 | **Stale `pitch=82` default in the `formant_factor` calculation.** Directly relevant: `variant_scaled_pitch` (`engine.rs`, §11) hardcodes the same 82 — track and follow upstream's resolution. |
+| 🔧 | #2506 | `EncodePhonemes` truncates on an unrecognised phoneme mnemonic — our `[[…]]`/`--sep` mnemonic paths should reject rather than truncate. |
+| 🔧 | #2470 | Rescale event sample positions after libsonic compresses the buffer — applies to `with_post_tempo`/`with_post_pitch` (§8) + `synth_with_events` (§7): our post-tempo hook does **not** rescale word/sentence event offsets. |
+| 🔧 | #2465 | soundicon: out-of-bounds when loading SSML `<audio src>` files (already tracked in §1.9 — bound the icon table + fuzz test). |
+| 🔧 | #2523 / #2485 | Normalize Unicode (NFKC) before synthesis — we do `fullwidth_to_ascii` + `stylized_to_ascii` piecemeal; a general NFKC pass would subsume both. |
+| 🔧 | #1466 | Parse language configuration options from a file at runtime — would replace hardcoded per-language `langopts` (cf. §13, #2476). |
+| ⚠️ | #2261 | Dictionaries reorganized into `espeak-ng-data/dicts/` — **would break our data-path resolution and the `data-crates/` layout**; watch before refreshing data (§3b #44). |
+| — | #2274 | Make libsonic optional (cf. §8, our tempo/pitch is built-in). |
+| — | #2501 / #2516 | MBROLA sound quality; `mb-la1` pronunciation (cf. §1.4 — blocked on external DBs here). |
+| — | #2441 / #2505 / #2519 | Upstream CI/testing: new dict fuzzer targets, diff-gated clang-tidy, skipping exact WAV hash checks where FP keeps excess precision (the last one is a useful precedent for our oracle-gated PCM comparisons). |
+| — | #2497 / #2508 / #2525 / #2474 / #1709 | Android-only (slider dialog, word replacements, API 36, localization, modernization) — N/A. |
+| — | #2288 | Run espeak-ng without setting path on Windows; `espeak_ng_Cancel` flush ordering (cf. §7 cancel semantics). |
 
 ## 5. Open upstream issues to track (correctness, not "missing feature")
 
@@ -95,10 +210,18 @@ layer**, plus a long tail of per-language number/rule details.
 | — | #2479 | Automatic script-based switch target hardcoded to `en` (→ en-gb), not configurable from API/CLI/voice file (cf. §15). |
 | — | #2469 | `-v alex` → "Unknown phoneme table: ''" → **segfault**; a missing/empty phoneme table must resolve to a clean error, not a panic (cf. §15). |
 | — ✅ | #2438 | Nepali (ne): digits — **not reproduced 2026-08-01**: `ne 123` → "ek saya teis" (Nepali), not English. |
-| — 🚫 | #2437 | Pashto (ps): digit "5" — **blocked (missing data) 2026-08-01**: `ps` has a voice file (`lang/ira/ps`, `status immature`) but **no `ps_dict`** ships anywhere (data-crates or `espeak-ng-data/`), so the whole voice fails with "dict not found". Not a code bug — needs the Pashto dictionary data (dictsource not in this checkout). |
+| — 🚫 | #2437 | Pashto (ps): digit "5" — **blocked (missing data) 2026-08-01**: `ps` has a voice file (`lang/ira/ps`, `status immature`) but **no `ps_dict`** ships anywhere (data-crates or `espeak-ng-data/`), so the whole voice fails with "dict not found". Not a code bug — needs the Pashto dictionary data (dictsource not in this checkout). **Update 2026-09-03: unblocked upstream** — `ps` is one of the six new 1.53.0 languages and `dictsource/ps_*` now exists on master, so the data refresh (§3b #44) supplies the missing `ps_dict`. |
 | — ✅ | #2464 | ja: emoji/symbol descriptions silent — **root cause was no katakana support; fixed 2026-08-01** (katakana folded to hiragana). Katakana emoji names (⭐"スター", 👍"サムズアップ") now spoken; the one remaining silent case (🔥) has a *kanji* description (火) — a separate kanji-reading gap. See progress log. |
 | — | #2393 | "shit" missing from `en_list`. |
 | — ✅ | #2340 | Dot kept after expanding an abbreviation — **done 2026-08-01**: a period after a title abbreviation (`Dr.`/`Mr.`/`St.`…) no longer inserts a clause pause (`suppress_abbreviation_periods`, English-gated); real sentence ends and ambiguous/trailing abbreviations keep their break. |
+| — | #2517 (2026-08-29) | Upstream: `..` anywhere in the text "makes the speaker go nuts". **Port probe 2026-09-03:** no misbehaviour, but not identical either — `a..b` → `ˈeɪ dˈɒt bˈiː` (speaks "dot"), `hello.. world` → two clauses, `wait....` → `wˈeɪt`. Re-check once upstream lands a fix, then lock in with a test. |
+| — | #2499 (2026-08-12) | Robotic/clicking quality in formant-synth consonant transitions (shared `ph_consonants`/`base2` tables). **Directly adjacent to §36** and to our spectral finding that Rust's /s/ region is brighter than the oracle (centroid 3145 vs 2254 Hz) — upstream is chasing the same artifact class. |
+| — | #2498 (2026-08-12) | Automatic English fallback via the internal `translator2` doesn't match the direct en-us voice. Related to our just-fixed en-us phoneme-table bug (CHANGELOG "Unreleased") and to the missing script/language fallback (§3b #46). |
+| — | #2515 (2026-08-28) | Proposal: a registry of language self-designations — would be a new data file to carry in `espeak-ng-data/`. |
+| — | #2504 (2026-08-22) | MBROLA voice file `sw2` not found in any data path (cf. §1.4 `find_database`, our error is `MbrolaVoiceNotFound` — already clean). |
+| — | #2490 (2026-08-02) | Feature requests: US/UK accent choice for embedded Latin words, SAPI5, emoji speed — the first ties to §3b #46 (per-script translation) and #2479 (hardcoded `en` switch target). |
+| — | #2488 (2026-08-02) | Make emoji processing disableable — worth exposing as an option here too (our emoji path is always-on). |
+| — | #2496 / #2489 / #2502 | Android dictionary import, Android stop-reading, Debian install — N/A to this port. |
 
 ### Upstream synthesis-quality proposals (align with §36 / §1)
 
@@ -112,7 +235,7 @@ layer**, plus a long tail of per-language number/rule details.
 
 | # | Area | Finding |
 |---|---|---|
-| 36 | **Formant synthesis quality** | **Status: substantially recovered — ASR 0.00 → ~0.34 mean, "hello world…" 0.00 → 1.00 (= oracle)** after the `InterpretPhoneme` port + `FRFLAG_VOWEL_CENTRE` split + consonant-WAV amplitude fix + VWLEND exit blend + **cross-phoneme run render** (see the ✅ notes below the staged plan). Remaining gap is **fricative/stop-heavy text** (the consonant WAV spectral character), now that coarticulation, the cross-phoneme render, and per-syllable break-aware `SmoothSpect` are all in place. **Originally found via the ASR harness:** Whisper transcribed the C oracle's audio at **0.77 mean word accuracy** (0.56–1.00) but the **Rust engine's audio at 0.00 across every sentence** — e.g. "the quick brown fox…" → *"I'm kidding, I can't do that so bad."* The core formant synthesis (`wavegen`/formant frequencies/`phondata` interpretation) produces the wrong spectral content, so phonemes are unrecognisable. This is the **single biggest synthesis gap** — larger than intonation/duration (which only tune already-wrong audio). Corroborated by the low energy-envelope correlation (~0.24) from `wav-analysis`. **Diagnosis so far** (task #9): (a) *not* caused by the intonation/duration changes — a monotone build is equally unintelligible; (b) the **phoneme codes are correct** (`-x` → `h@l'oU`), so it's purely sample-level rendering; (c) steady-vowel **spectra and spectrograms are roughly right** (formant peaks within ~6%); (d) **not** the HF artifact or pitch — low-passing to 3–6 kHz doesn't recover it. (e) energy envelope over time is also roughly right (the two-word blob structure matches); (f) the Rust vowel is **over-periodic** (autocorr 0.74 vs oracle 0.21). **⇒ ROOT CAUSE (confirmed from C source):** the C synthesizer's `DoSpect2`/`LookupSpect(this_ph, which, fmt_params, plist)` is **neighbour-aware** — it picks formant frames from the surrounding phonemes (`plist`), splits vowels into *start* (`which=1`) vs *body/end* (`which=2`), and carries `last_frame` across phoneme boundaries for continuity. The Rust `synthesize_phoneme_info` renders **each phoneme in isolation** (no neighbour context, no `last_frame`, no start/body split), so **formant transitions / coarticulation are not modelled**. Steady phoneme *bodies* are correct (hence right spectra/envelope) but the **transitions that carry consonant identity are missing** → unintelligible. **Fix (substantial):** port neighbour-aware `LookupSpect` frame selection + cross-phoneme `last_frame` continuity + the vowel `which=1/2` split into the Rust `synthesize` pipeline. **Staged plan below.** |
+| 36 | **Formant synthesis quality** | **Update 2026-09-04 — wrong render engine found and fixed.** `flush_run` routed a run through the **Klatt** synthesizer whenever any of its frames carried `FRFLAG_KLATT`. That flag only means "this frame carries the extra parallel-resonator parameters", and **every shipped `en` frame has it**, so the standard voices had been rendered by the wrong engine entirely (C uses Klatt only when the voice sets `klattv[0]`, i.e. `-v en+klatt`). Measured against a locally built upstream binary over an eight-sentence sweep (long-term-average spectral envelope, 400 Hz smoothing, level-normalized): **mean RMS difference 4.19 → 2.79 dB, mean correlation 0.938 → 0.945**; "hello world" alone went 14.17 → 4.61 dB (correlation 0.895 → 0.933). Per-sentence after the fix: hello world 4.61 dB/0.933, quick-brown-fox 1.43/0.981, she-sells-sea-shells 1.60/0.967, peter-piper 2.12/0.975, how-much-wood 5.15/0.793, testing-one-two 2.01/0.982, stitch-in-time 2.37/0.947, rain-in-spain 3.02/0.981. The worst remaining case ("how much wood…", a `w`/`ʊ`-heavy line) is the concrete next lead. Also aligned `frame_to_peaks` with C's `SetSynth` (heights run to peak **7**, not 6 — measurably neutral on the shipped data, where `fheight[7]` is 0) and fixed the `klattp2` index used for the voiced/noise decision (`Fric` is index 2; the port read index 1, which is `AVp`). **Prior status: substantially recovered — ASR 0.00 → ~0.34 mean, "hello world…" 0.00 → 1.00 (= oracle)** after the `InterpretPhoneme` port + `FRFLAG_VOWEL_CENTRE` split + consonant-WAV amplitude fix + VWLEND exit blend + **cross-phoneme run render** (see the ✅ notes below the staged plan). Remaining gap is **fricative/stop-heavy text** (the consonant WAV spectral character), now that coarticulation, the cross-phoneme render, and per-syllable break-aware `SmoothSpect` are all in place. **Originally found via the ASR harness:** Whisper transcribed the C oracle's audio at **0.77 mean word accuracy** (0.56–1.00) but the **Rust engine's audio at 0.00 across every sentence** — e.g. "the quick brown fox…" → *"I'm kidding, I can't do that so bad."* The core formant synthesis (`wavegen`/formant frequencies/`phondata` interpretation) produces the wrong spectral content, so phonemes are unrecognisable. This is the **single biggest synthesis gap** — larger than intonation/duration (which only tune already-wrong audio). Corroborated by the low energy-envelope correlation (~0.24) from `wav-analysis`. **Diagnosis so far** (task #9): (a) *not* caused by the intonation/duration changes — a monotone build is equally unintelligible; (b) the **phoneme codes are correct** (`-x` → `h@l'oU`), so it's purely sample-level rendering; (c) steady-vowel **spectra and spectrograms are roughly right** (formant peaks within ~6%); (d) **not** the HF artifact or pitch — low-passing to 3–6 kHz doesn't recover it. (e) energy envelope over time is also roughly right (the two-word blob structure matches); (f) the Rust vowel is **over-periodic** (autocorr 0.74 vs oracle 0.21). **⇒ ROOT CAUSE (confirmed from C source):** the C synthesizer's `DoSpect2`/`LookupSpect(this_ph, which, fmt_params, plist)` is **neighbour-aware** — it picks formant frames from the surrounding phonemes (`plist`), splits vowels into *start* (`which=1`) vs *body/end* (`which=2`), and carries `last_frame` across phoneme boundaries for continuity. The Rust `synthesize_phoneme_info` renders **each phoneme in isolation** (no neighbour context, no `last_frame`, no start/body split), so **formant transitions / coarticulation are not modelled**. Steady phoneme *bodies* are correct (hence right spectra/envelope) but the **transitions that carry consonant identity are missing** → unintelligible. **Fix (substantial):** port neighbour-aware `LookupSpect` frame selection + cross-phoneme `last_frame` continuity + the vowel `which=1/2` split into the Rust `synthesize` pipeline. **Staged plan below.** |
 
 ### Coarticulation port — staged implementation plan (task #9)
 
@@ -187,30 +310,570 @@ Result: **frame-exactness preserved** (`oU` in "hello" still onset `300,1300,290
 
 ## Priority order (biggest functional gaps first)
 
-1. **Intonation / pitch contours** (§1.1) — the most audible synthesis gap.
-2. **SSML** (§1.3).
-3. **`phonSWITCH` language switching** (§2.15).
-4. **Klatt + MBROLA voice paths** (§1.2, §1.4).
-5. **Compilers** — dict (§1.5) and phoneme (§1.6).
-6. **Async / audio runtime** (§1.7, §1.10) — unblocks interruption (#172).
+Re-measured **2026-09-04**. Every figure comes from a locally built upstream
+binary (`f135499`) on this date.
 
-Long tail: per-language number/rule fixes (§4, §5) can be picked up incrementally
-as data + targeted rule work.
+**Where the port stands.** A 32-language sweep of two-word phrases: `-x`
+**32/32 byte-identical**, `--ipa` **32/32**. A wider 84-phrase, 50-language
+corpus: `-x` **79/84** and `--ipa` **80/84** (from 53 and 46 two passes ago).
+The dictionary compiler, compared against upstream's own compiler on the same
+`dictsource`: **1144/1154 words across 80 languages**. An eight-sentence English
+spectral sweep: mean envelope difference **2.19 dB**, mean correlation
+**0.970**. Duration at the default rate is within 5 % of the oracle.
+
+1. ✅ **Secondary-stress placement** — done. `stressOpt` is read from the voice
+   file (Finnish, Estonian, Latin and Ligurian configure their stress entirely
+   through it), Greek lost the `S_NO_AUTO_2` it never had upstream, Czech and
+   Slovak gained `S_FINAL_DIM_ONLY | S_FINAL_NO_2`, Korean gained
+   `STRESSPOSN_2LLH`, and the invented Japanese arm is gone.
+2. ✅ **`--ipa` cross-word allophones** — done, by rendering `--ipa` from the
+   clause's finished code list (C's `GetTranslatedPhonemeString`) instead of
+   word by word, and taking each phoneme's name from **running its bytecode
+   program** with real neighbours (`WritePhMnemonic`'s `use_ipa` path) instead
+   of guessing it from the mnemonic.  That closed all seven divergent languages
+   at once and made `-x` and `--ipa` two spellings of one phoneme list by
+   construction.  It also surfaced — and fixed — several code-list bugs that
+   `-x` had been hiding: `StressCondition`/`ChangeIf` evaluated against the
+   syllable's real stress level, C's `LOPT_REDUCE` gate on dictionary-given
+   words, a faithful `FLAG_FOUND`, `prevPhW`/`nextPhW` refusing to look across a
+   word boundary, and a spoken symbol between two words being its own word.
+3. ✅ **Slow-rate duration model** — done. Upstream's 280-entry `speed_lookup`
+   is ported, with a fitted affine model (`FIXED 0.502`, `SCALED 0.3546`) for
+   the share of an utterance that doesn't scale with it. Wavegen's second,
+   separate application of the rate — which was squaring the effect — is gone.
+   Measured: 80 wpm 1.07×, 120 wpm 1.03×, 175 wpm 1.05×, 250 wpm 1.15×.
+4. ✅ **Per-language details** — done. `ru` no longer upgrades a stressed `е` to
+   `E` from stress alone; `uk` final devoicing goes through the ported
+   `SetRegressiveVoicing`; `cmn` joins a third-tone sandhi pair into one word.
+5. 🟡 **Formant quality, the last stretch** (§36). Mean **2.17 dB / r 0.970**
+   over the eight-sentence sweep; the worst sentence is "hello world" at 4.29 dB
+   / 0.942. Fixed this pass: the voice **tone curve's shape** was being cancelled
+   (the curve was divided by the default curve *per index*, which is exactly the
+   identity); dividing by a single constant instead restores the default curve's
+   3.8 dB low-to-high tilt. Ruled out this pass, by measurement: the high-frequency
+   peaks 6–8 (zeroing them changes "hello world" by 0.03 dB), the trailing-silence
+   noise floor (an energy-gated window gives the same answer), diphthong
+   interpolation, and durations (1.028 s vs 1.031 s on "hello world"). What is
+   left is a *narrow* ~13 dB feature near 7 kHz on short utterances, against a
+   broadband agreement of ~2 dB — a spectral-zero placement difference rather
+   than a level one.
+6. ✅ **The dictionary compiler** — done. Measured by compiling each language's
+   real `dictsource` with *both* compilers and speaking the same words through
+   each result: **1144/1154 across 80 languages** (English alone 11/19 → 19/19).
+   What was missing was the rule-context command set (only seven uppercase
+   letters are letter groups; `K` is "not a vowel"), rule conditions, the rule
+   and group ordering C's reader depends on, `RULE_PRE_ATSTART`, the reversed
+   list-entry order, key lowercasing, `$text`/`$textmode`, the other list files
+   (`roots`/`listx`/`emoji`/`extra`), two-byte group-name truncation and the
+   `groups3` index for non-Latin scripts. The 10 remaining words are in `da`
+   (2/60), `ko` (2/3), `ta` (5/9) and `tn` (1/2).
+   The **phoneme** compiler (§1.6) is still 🟡 — condition/jump/IPA-name opcodes
+   round-trip only via `Raw`, and no phoneme sources ship with the port.
+7. ✅ **`formant_factor`** — done with upstream #2524: the voice file's `pitch`
+   line drives the base F0, the pitch range *and* the formant shift.
+8. 🟡 **Long tail.** The 84-phrase corpus is at **79/84** (`-x`) and **80/84**
+   (`--ipa`).  Five remain:
+   - **Clause breaks after an abbreviation.**  Upstream reads "Dr. Smith" as two
+     clauses (it breaks after `Dr.`, `St.` and `Jan.` even though those entries
+     carry `$dot`); the port suppresses the break, which is a deliberate
+     deviation the `abbreviation_periods` tests pin down.
+   - **A `_!` after a comma-separated thousands group** ("5,678.90" →
+     `f'aIv T'aUz@nd_! s'Iks…`), from `TranslateInteger`'s end-of-integer pause.
+   - **Japanese's English switch** for 世界 (`_:(en)tS'aIni:z(ja)l'et@`).
+   - **Thai tone placement** on one syllable (`sa2ds` vs `sa3ds`).
+   - **Bengali's final inherent vowel** (`b'iSbO` vs `b'iSb`) — the rules
+     disagree about the last conjunct, not the port's schwa-deletion pass.
+   Plus §4/§5 per-language data that arrives with a future refresh.
+
+**Closed in the 2026-09-04 passes:** `-x` language switches, foreign-script
+spelling (`AL_WORDS`), word segmentation in dictionary replacements, `-X`/`-D`,
+scoped `<prosody>` and positional embedded commands, the `$atend`/`$allcaps`
+dictionary gates, accented letters in letter groups, the wrong-render-engine bug
+in §36, all of `stress_flags`/`stressOpt`, `SetRegressiveVoicing`, Mandarin
+third-tone sandhi, the `speed_lookup` duration model, the codes-driven `--ipa`
+path, and the dictionary compiler.
 
 ---
 
 ## Big subsystems (user-requested 2026-08-01: Klatt, MBROLA, compilers, async)
 
 Tackled one per loop iteration; each is a multi-day port.
-- **Async runtime (§7) — ✅ core + streaming + commands** (`async_synth.rs`): cancellable command queue, chunked streaming callback with return-to-stop, set-parameter/set-voice commands. Remaining: incremental *rendering* (latency). See §7.
+- **Async runtime (§7) — ✅ done, incl. incremental rendering** (`async_synth.rs`, `tokio_synth.rs`, `EspeakNg::synth_streaming{,_with_events}`): cancellable command queue, chunked streaming callback with return-to-stop, set-parameter/set-voice commands, and — new 2026-09-04 — **clause-by-clause rendering**, so the first audio of a long utterance is ready after its first clause instead of its last. Concatenated chunks reproduce `synth()` byte-for-byte (`tests/streaming_synth.rs`). Optional `parallel` (rayon `synth_many`) and `tokio-runtime` (`tokio_synth::synth`/`synth_stream`, bounded channel with backpressure and drop-to-cancel) features. See §7.
 - **dict compiler (§1.5 `compiledict.c`)** — 🟡 **end-to-end + CLI: `compile_dictionary(dir,lang,phdata)`**, exposed as **`espeak_cli --compile[=<lang>]`**, reads dictsource `_list`+`_rules` → `_dict`; compiled rules (incl. **pre/post-context** + the **`_` word-boundary** and **`A`–`Z` letter-group** markers, `pre)match(post` DSL) translate for real. Remaining: rule conditions/stress, `@`/`&` context markers; the real `dictsource/` files (drop in to compile real dicts).
 - **phoneme compiler (§1.6 `compiledata.c`)** — 🟡 **phontab + program bytecode (FMT/WAV/VWLSTART/VWLENDING/CONTINUE) + SPECT_SEQ + Klatt-frame + WAV writers + source DSL parser done** (`compile_phontab`/`compile_program`/`compile_spect_seq`/`compile_wav_sample`/`parse_phoneme_dsl`, all round-trip; exposed via CLI `--compile-phonemes`). Remaining: condition/jump/IPA-name opcodes (via `Raw`); no real sources ship.
-- **Klatt (§1.2 `klatt.c`)** — 🟡 **cascade + integration + per-phoneme auto-select done** (`klatt.rs`; `FRFLAG_KLATT` runs auto-route to the cascade, en unchanged). Remaining: parallel/nasal/LF branches, intra-frame interpolation, bit-exact `parwav.c` match (oracle-gated).
-- **MBROLA (§1.4)** — 🟡 **interface done** (`mbrola.rs`: `.pho` writer, DB resolution, process handoff). Actual diphone audio blocked on the external binary + databases (not shipped).
+- **Klatt (§1.2 `klatt.c`)** — ✅ **`parwave` ported in full** (cascade + parallel + nasal antiresonator + both glottal sources + tilt/breathiness/skew/flutter); oracle-verified at spectral-envelope correlation 0.997. The `FRFLAG_KLATT` auto-routing was **wrong** and is gone — C routes to Klatt only on `voice->klattv[0]`.
+- **MBROLA (§1.4)** — ✅ **everything but the external binary**: `compilembrola.c`, the binary `_phtrans` format, `GetMbrName`, `WritePitch`, `MbrolaTranslate`, `--compile-mbrola`, `--pho`, and `mb-*` voice resolution with a graceful fallback. All 49 shipped tables round-trip byte-for-byte. Diphone *audio* still needs the separately-licensed binary + databases.
 
-**Summary:** all four subsystems now have a landed, tested slice (async ✅ core, dict-compiler/Klatt/MBROLA 🟡). Full completion of each is gated on either **multi-day work** (rules-DSL compiler, Klatt pipeline integration + parallel/nasal branches) or **external data** (dict/phoneme *sources*; MBROLA binary + diphone DBs) that isn't present in this checkout.
+**Summary (2026-09-04):** async ✅, Klatt ✅, MBROLA ✅ (bar the external binary), the two compilers 🟡. What is left is gated on **external data that isn't in this checkout** — dictsource/phoneme *sources* for the compilers, and the MBROLA binary + diphone databases — not on further porting.
 
 ## Autonomous loop progress log
+
+- **2026-09-05 — 🏷️ Patch release 0.1.4 prepared (user: "bump patch version and prep for release").**
+  `espeak-ng` `0.1.3` → **`0.1.4`** (Cargo.toml + Cargo.lock), and the
+  accumulated unreleased work cut into a dated `[0.1.4]` CHANGELOG section (its
+  two `### Fixed` blocks merged, sections ordered Added / Changed / Fixed).
+  Two things the release surfaced:
+  - **The data crates had lost their `authors`/`repository`/`homepage`** in the
+    working tree — 122 of them, from the data refresh.  Restored to match the
+    committed format, so the published crates keep their repository link.
+  - **The bundled data changed, so the data crates can't be republished at
+    0.1.0.**  crates.io has `espeak-ng-data-dict-*` at 0.1.0 only, and 93 of
+    them now carry different `*_dict` bytes, so those are bumped to **0.1.1**;
+    the 9 crates that are new in this release (`ab`, `crh`, `fo`, `kaa`, `lij`,
+    `mn`, `ps`, `rup`, `xex`) stay at 0.1.0 for their first publish.  The
+    dependency requirements stay at `0.1.0`, which `^0.1.0` already satisfies.
+    `cargo package` confirms the ordering: it refuses `espeak-ng 0.1.4` until
+    the nine new crates exist on the index.
+  Verified at the new version: 820 tests green (827 with all features), 0
+  warnings, `-x` and `--ipa` sweeps 32/32, `cargo package --list` clean, and all
+  nine new crates package with their data.  Nothing committed or published.
+
+- **2026-09-05 (nineteenth pass) — the last of the corpus tail.**
+  `-x` 75 → **79/84** and `--ipa` 77 → **80/84**, sweep still 32/32, compiler
+  parity unchanged at 1144/1154.  Six more upstream mechanisms the port lacked:
+  - **Voice-file `replace`** (14 shipped voices): Russian's `replace 03 a a#` is
+    what gives a word-final unstressed `a` its `a#`.
+  - **Stress conditions ask about the phoneme they name** — `nextVowel(isMaxStress)`
+    was reading *this* phoneme's level, so Russian "мама" was `m'ama#`.
+  - **Post-contexts reach past the word boundary** (`_) o (_C`), which the port
+    couldn't do because it translates a word at a time; the next word's opening
+    is now carried into the rules buffer, and composed numbers get it too.
+  - **`$abbrev` and vowel-less words are spelled out**, with upstream's spelling
+    stress and letter-name lookup order: "USA" → `j,u:,Es'eI`, "BBC" →
+    `b,i:b,i:s'i:`, bare "km" → `k,eI'Em`.  This also exposed an inverted gate in
+    the unpron test that made every rule invisible to it.
+  - **Combining digits before a scale word** (`_<n>a`): German 100 is
+    "einhundert", 1000 "ein tausend", 1 "eins" — and German keeps the "ein" the
+    port used to omit.
+  - **`phonX1` is a marker**, not a sound.
+  - 820 tests green (827 with all features), 0 warnings.
+
+- **2026-09-04 (eighteenth pass) — the long tail of `-x`/`--ipa` differences.**
+  A wider 84-phrase, 50-language corpus went **`-x` 53 → 75/84** and
+  **`--ipa` 46 → 77/84**, with the 32-language sweep holding at 32/32
+  throughout.  Almost all of it was language *configuration* that had been
+  transcribed loosely:
+  - **The stress tables are now a straight transcription of
+    `tr_languages.c`.** The old per-language match ended in a catch-all that
+    reset `stress_flags` to zero, so the flags table below it was nearly dead
+    code.  Eight languages had the wrong rule outright and five more lost their
+    flags.  `unstressed_wd1`/`wd2` and Russian's `S_NO_AUTO_2` came with it.
+  - **`SUFX_Q`** ("don't retranslate") — Italian `casa` matches `@C) a (_S1q`
+    and the retranslation was losing the intervocalic `s` → `z`.
+  - **Inter-word pauses**: `vowel_pause`, `word_gap`, the `words` voice
+    directive, and the `$pause`/`$brk` dictionary flags.
+  - **Hyphen word-join**: "well-known" is `wˈɛlnˈəʊn`, one word with two
+    stresses.
+  - **`LOPT_IT_LENGTHEN`** (parsed but never applied), **`isFirstVowel` /
+    `isSecondVowel`** (always false), **`phonX1`** (a marker, spoken as a
+    phoneme), and the **Cyrillic `Y` group** (Russian's additions were being
+    applied to every Cyrillic language).
+  - The port's exception for composed entries' own stress marks is gone; C's
+    `GetVowelStress` always reports the primary it finds.
+  - 808 tests green, 0 warnings.  What is left in the corpus is 9 phrases:
+    abbreviation clause breaks, all-caps spelling ("USA"), two number-composition
+    details, Japanese's English switch, Thai tone placement, and three per-language
+    vowel choices (`pt` `U`/`u`, `ru` word-final `a#`, `bn` final inherent vowel).
+
+- **2026-09-04 (seventeenth pass) — ✅ items 2 and 6; item 5 measured.**
+  - **`--ipa` (item 2) is closed.** It now renders from the clause's finished
+    phoneme-code list, the way C's `GetTranslatedPhonemeString` does, with each
+    phoneme's name taken from *running its bytecode program* with real
+    neighbours rather than guessed from its mnemonic. 32-language sweep
+    **20/32 → 32/32**; an 84-phrase corpus 46 → 58. That one change fixed all
+    seven divergent languages, and forced out a run of code-list bugs `-x` had
+    been hiding: `StressCondition`/`ChangeIf` ported properly (English "unseen"
+    keeps its `ʌ` because that syllable is *unstressed*, not *diminished*),
+    C's `LOPT_REDUCE` gate, a faithful `FLAG_FOUND`, `prevPhW`/`nextPhW` no
+    longer looking across a word boundary (Dutch "twintig graden" kept its `ɣ`,
+    "1km" stopped assimilating across its internal `END_WORD`), spoken symbols
+    as separate words ("cat.Dog" → `kˈat dˈɒt dˈɒɡ`), `dictrules` honoured in
+    number lookups, and markers dropped before synthesis' look-ahead window.
+  - **The dictionary compiler (item 6) is closed.** Measured properly for the
+    first time — compile the same `dictsource` with *both* compilers and speak
+    the same words through each — it went from 11/19 English words to
+    **1144/1154 across 80 languages**. The fixes, in rough order of how much
+    they mattered: the rule-context command set (only `A B C F G H Y` are letter
+    groups; `K` is "not a vowel"), the reversed list-entry order, group sorting
+    and merging (without it Czech `ý` and Polish `ę` were simply unreachable),
+    `RULE_PH_COMMON` sharing, `RULE_PRE_ATSTART`, `?n` rule conditions, key
+    lowercasing and `U+xxxx`, `$text`/`$textmode`, the `roots`/`listx`/`emoji`/
+    `extra` files, two-byte group-name truncation, and `groups3` headers for
+    non-Latin scripts.
+  - **Formants (item 5).** One faithful fix: the voice tone curve was divided by
+    the *default curve per index*, which cancels it exactly, so the default
+    curve's 3.8 dB low-to-high tilt was never applied. Dividing by a single
+    constant restores the shape at the levels the port was tuned at:
+    2.22 → **2.17 dB**, r 0.968 → **0.970**. Ruled out by measurement: the HF
+    peaks 6–8 (zeroing them moves "hello world" by 0.03 dB), the silence noise
+    floor, diphthong interpolation and durations. The residual is a *narrow*
+    ~13 dB feature near 7 kHz on short utterances — a spectral-zero placement
+    difference, not a level one.
+  - 808 tests green (815 with all features), 0 warnings.
+
+- **2026-09-04 (sixteenth pass) — ✅ the refreshed priority list, items 1–6.**
+  `-x` parity went **25/32 → 32/32** and `--ipa` **20/32 → 25/32**.
+  - **Stress (item 1).** `stressOpt <bit…>` is now read from the voice file —
+    four languages configure their stress *entirely* through it and the port
+    ignored it. Greek's `S_NO_AUTO_2` was invented, as was the whole Japanese
+    arm; Czech/Slovak were missing `S_FINAL_DIM_ONLY | S_FINAL_NO_2`; Korean had
+    no arm and fell through to the default instead of `STRESSPOSN_2LLH`.
+  - **Regressive voicing (item 4).** `SetRegressiveVoicing` ported — the
+    backwards walk where a cluster takes its last member's voicing, with
+    `end_type` naming the switch partner. Fixes Ukrainian, and crosses word
+    boundaries when the language clears the boundary bit.
+  - **Mandarin sandhi (item 4).** A third-tone pair joins into one word, so
+    你好 reads `ni35X'Au214_|` — one gap, no stress on the first syllable.
+  - **Russian stressed vowels (item 4).** The codes path resolved a *stressed*
+    allophone from stress alone; the choice is contextual and the
+    context-aware pass already had it. Only the *reduction* is stress-driven
+    now. (Making the same change in the IPA path broke Czech/Russian numbers
+    and was reverted — see the comment in `phonemes_to_ipa_full`.)
+  - **Speed (item 3).** Upstream's `speed_lookup` table replaces the linear
+    `175/wpm` model, and wavegen's *second* application of the rate — which
+    squared it — is gone. 80 wpm went 2.42× → 1.07× vs the oracle.
+  - **Compilers (item 6).** `.Lnn` letter groups compile; ten are used by
+    `en_rules`, and a rule whose group is undefined never matches. Probe still
+    12/19 — the rest is rule conditions.
+  - **Investigated, still open.** Item 2 (`--ipa` allophones): the clause-pass
+    shortcut regresses within-word allophones and was reverted; the fix is to
+    render IPA from the code list. Item 5 (formants): the tone-curve scale was
+    the big win (r 0.938 → 0.963), the diphthong hypothesis was disproved, and
+    the residual 4.39 dB on "hello world" has no single identified cause.
+  - 793 tests green, 0 warnings.
+
+- **2026-09-04 (fifteenth pass) — ✅ the upstream-PR survey, implemented.**
+  Seven open upstream PRs judged relevant to a pure-Rust port, all landed or
+  answered:
+
+  **#2524 (`formant_factor`'s stale `pitch=82`).** The port had the deeper
+  version of the same bug: it hardcoded `pitch 82 118` for *every* voice, never
+  read a voice file's `pitch` line, and pinned `formant_factor` to 1.0. Now the
+  line is read, and the reference is derived from C's `VoiceReset`
+  (`pitch_base = 0x47000` → 80) rather than repeated — which is exactly the
+  PR's point. Implementing it exposed a second bug: a vowel's pitch was **flat**
+  across its syllable where C glides through the envelope every `STEPSIZE`
+  samples. Fixing that moved the eight-sentence sweep to 2.47 dB / 0.963 and
+  improved every voice with a wide declared pitch range (af 6.70 → 6.08 dB,
+  sv 5.24 → 3.89, vi 4.55 → 3.94, ko 1.87 → 1.40).
+
+  **#1466 (language config from data).** `intonation <n>` (22 languages) and
+  `stressLength <l0…l7>` (20) are now read from the voice file. Wiring the
+  latter surfaced a third bug: `-v en-GB-scotland` returned `VoiceNotFound` from
+  the *audio* path, because it used `select_table_by_name` (no locale fallback)
+  where the phoneme paths use `select_phoneme_table`.
+
+  **#2523 (NFKC).** Folded, but only for the 183 characters the port was
+  **dropping** — `㎏`, `㎐`, `㎞` and friends. The 139 it already reads better
+  than their NFKC form (`™` → "trademark", not "T M") are deliberately excluded;
+  a first attempt that folded everything regressed exactly those.
+
+  **#2261 (`dicts/` subdirectory)**, **#2288 (cancel ordering** — the port did
+  leak a whole clause after `cancel()`; now checked before any chunk is
+  delivered**)**, **#2501/#2516 (MBROLA `.pho` now follows the voice's own
+  pitch)**, **#2441 (fuzz-style robustness tests over every binary parser —
+  random bytes, every truncation, single-byte corruptions; no panics found).**
+
+  Checked and already fine: #2506, #2470, #2465, #2435.
+
+  791 tests green, 0 warnings.
+
+- **2026-09-04 (fourteenth pass) — ✅ the eight open items.** Worked the priority
+  list end to end; every claim below was checked against the locally built
+  upstream binary.
+
+  **The find of the pass: accented letters never matched a letter group.** C's
+  `IsLetter` folds a letter through `remove_accent` before testing membership,
+  so `í` is a vowel because `i` is. The port indexed `letter_bits` by the raw
+  code point, so *every* `A`/`C`/`Y` rule silently failed on an accented letter.
+  Spanish `día` came out as `d` — truncated after the first letter — and French
+  intervocalic `s` didn't voice before an accented vowel. One 414-entry table
+  fixed both, and it had been mispronouncing accented words in every Latin-script
+  language.
+
+  **`-x` and language switching.** `-x` printed the raw `_^_` marker where
+  upstream prints `(en)h@l'oU(ru)`; `translate_to_codes` now resolves switches
+  and `format_x` loads the target's phoneme table. Separately, the clause-level
+  post-passes were rewriting switched codes with the *clause's* table, which is
+  why Arabic `H` printed as `d`. Both are byte-identical to upstream now.
+
+  **Foreign scripts are spelled, not switched**, when upstream spells them —
+  the `AL_WORDS` distinction from `tr_languages.c`. `en "хорошо"` reads out the
+  Cyrillic letter names, byte-identical. Scripts with no letter names here still
+  fall back to their own voice rather than dropping the text.
+
+  **Conditional dictionary entries.** `word_to_phonemes` passed
+  `lookup_symbol: true`, which disables the `$atend` gate, and never set the
+  capitalisation flags — so English "a" was the letter name everywhere, "to"
+  never reduced, and "I" kept primary stress. *Lesson: the flag was named for a
+  symbol lookup and had been set to `true` "because it worked"; it silently
+  disabled a whole class of conditional entry.*
+
+  **`-X` and `-D`** landed (ports of `DecodeRule` / `DecodePhonemes` /
+  `print_dictionary_flags`), byte-identical for rule words and dictionary hits.
+
+  **Positional embedded commands → scoped `<prosody>`.** `\x01<n>S` now applies
+  from where it appears, threaded as a marker through the code stream and the
+  render loop; the SSML element emits the same commands upstream writes.
+
+  **Compilers, now measurable.** Compiling upstream's real `en_list`+`en_rules`
+  and speaking through the result: 12 of 19 probe words identical, up from 10,
+  after fixing silent rules (`c (q`) and compiling `$flags`.
+
+  **Formant quality.** The eight-sentence sweep improved to 2.52 dB / 0.961
+  (from 2.79 / 0.945), mostly because "how much wood…" stopped mispronouncing
+  the article. Added the voice `tone` curve (`SetToneAdjust`), applied relative
+  to the default so the standard voices are unchanged and `+variant` `tone`
+  lines finally do something.
+
+  771 tests green, 0 warnings.
+
+- **2026-09-04 (thirteenth pass) — ✅ klatt.c, MBROLA, incremental async,
+  and the wrong-render-engine bug.** Four subsystems in one pass, all
+  oracle-checked where an oracle exists.
+
+  **`klatt.c` (§1.2) — ported in full.** `synthesize_frames_klatt` was a
+  placeholder (a bare cascade off a phase counter); it is now a direct port of
+  `parwave()` + `Wavegen_Klatt()` + `SetSynth_Klatt()` + `frame_init()` +
+  `pitch_synch_par_reset()`. Cascade *and* parallel branches, the nasal
+  antiresonator, both glottal source models at 4× oversampling, spectral tilt,
+  breathiness, skew, `DBtoLIN`, flutter, fades — plus `espeak_rand` reproduced
+  exactly (upstream's `- min` sign bug included, so noise stays comparable
+  sample-for-sample; worth reporting upstream, since it biases the aspiration
+  noise positive instead of centring it). Verified through `-v en+klatt` against
+  the C binary on a sustained vowel: spectral-envelope **correlation 0.997**,
+  RMS difference 2.4 dB.
+
+  **⚠️ The finding that mattered most (§36):** with the Klatt engine now correct,
+  a spectral sweep still showed `en` far from the oracle — because `flush_run`
+  was routing *every* standard voice through Klatt. It keyed on `FRFLAG_KLATT`,
+  which merely marks a frame as carrying the extra parallel-resonator
+  parameters; every shipped `en` frame has it. C routes to Klatt only on
+  `voice->klattv[0]`. Fixing the routing moved the eight-sentence sweep from
+  **4.19 → 2.79 dB** mean spectral-envelope RMS difference (correlation 0.938 →
+  0.945), and "hello world" from 14.17 → 4.61 dB. *Lesson: the earlier note
+  "voices with no Klatt frames (e.g. `en`) are unaffected" was never checked
+  against the data — a one-line probe would have caught it.*
+
+  **MBROLA (§1.4) — everything but the external binary.** `compilembrola.c`, the
+  binary `_phtrans` format, `GetMbrName` (all seven control bits), `WritePitch`,
+  `MbrolaTranslate`, `--compile-mbrola`, `--pho`, `mb-*` voice resolution, and a
+  graceful fallback to the built-in synthesizer when the (unshipped) `mbrola`
+  binary is absent. All **49 shipped `_phtrans` tables round-trip byte-for-byte**
+  and the compiler reproduces `en1_phtrans` exactly — a real data oracle even
+  though the audio path can't run here (the C binary can't produce `.pho`
+  without the databases either).
+
+  **Async core (§7) — incremental rendering.** `Synthesizer::render` now accepts
+  a sink and flushes each clause as it completes; `EspeakNg::synth_streaming{,_with_events}`
+  expose it and `AsyncSynth` uses it, so audio starts flowing after the first
+  clause instead of the last. Rendering order is unchanged, so the concatenated
+  chunks equal `synth()` byte-for-byte. Added optional `parallel` (rayon
+  `synth_many`) and `tokio-runtime` (`tokio_synth::synth`/`synth_stream`)
+  features; the crate still has no required dependencies beyond `bitflags` and
+  `thiserror`.
+
+  **Also fixed:** `frame_to_peaks` now sets peak 7's height (C's `SetSynth` loops
+  to 8 for heights, 7 for frequencies) — neutral on the shipped data, where
+  `fheight[7]` is 0; and the voiced/noise decision read `klattp2[1]` (`AVp`) as
+  `Fric`, which is index 2.
+
+  753 tests green (760 with `parallel` + `tokio-runtime`), 0 warnings.
+
+- **2026-09-04 (twelfth pass) — ✅ variant indicators, liaison codes, default
+  tone in IPA.** Instrumented upstream's `ChangeIf` to settle the `-x` allophone
+  question and found the change *does* fire for Spanish — the difference was
+  purely in printing: a `/` in a mnemonic is a variant indicator that
+  `WritePhMnemonic` discards, so `a/` prints `a` and `l/2` prints `l`. That also
+  disproves the fifth-pass "consonant changes are deferred" theory and the
+  `SFLAG_DICTIONARY` gating I had reverted; consonant `ChangePhoneme`s are now
+  applied again (invisible in `-x`, audible in synthesis). Two follow-ons from
+  the same sweep: French liaison phonemes that don't surface are now dropped from
+  the codes path (`-x -v fr "3,14"` → `trwa`), and code 17 — a control code in
+  most tables, `phonDEFAULTTONE` in a tone language — is no longer skipped as a
+  pause, restoring Vietnamese's tone in IPA. Suite **717 tests green**; sweep
+  `-x` **31/32**, `--ipa` 29/32.
+
+- **2026-09-04 (eleventh pass) — ✅ vowel-break phonemes, length modifiers.**
+  Reused the both-engines instrumentation trick on the `_|` vs `_!` residual and
+  found the mapping simply **inverted**: C emits `_!` when the first vowel has
+  primary stress and `_|` otherwise, and reads that stress *after* the placement
+  rule (the port had a "pre-rules snapshot" workaround built on the wrong
+  assumption). Removing the workaround and swapping the mnemonics makes German
+  byte-identical on `Ich`, `achten`, `einen`, `Achtung`, `beachten` and a full
+  sentence, plus Hungarian `alma`. Then implemented the last group-0
+  instructions: a `length <n>` inside a program overrides the declared
+  `std_length` (and `LengthAdd` adjusts it), which German uses on most of its
+  vowels. Suite **717 tests green**; sweep `-x` 27/32, `--ipa` 28/32.
+
+- **2026-09-03 (tenth pass) — ✅ per-language stress flags.** Finished the Basque
+  residual from the ninth pass by instrumenting **both** engines (added an
+  `fprintf` to the local upstream build) and diffing their `vowel_stress[]`
+  state: identical arrays, but upstream's `stressflags` were `0x10100` where the
+  port had `0`. Basque *does* have a `tr_languages.c` entry
+  (`S_FINAL_VOWEL_UNSTRESSED | S_MID_DIM`) — the port simply set `stress_flags`
+  in only seven arms, three of which also disagreed with upstream. Transcribed
+  the full table as a base layer. A first attempt made it authoritative and
+  regressed nl/pt/ru (the port's tuned values compensate for its own stress
+  fill), so the port's arms still override; `eu kaixo`/`etxe` are now
+  byte-identical and nothing else moved. Suite **716 tests green**; sweep
+  unchanged at `-x` 25/30, `--ipa` 26/30.
+
+- **2026-09-03 (ninth pass) — ✅ stress placement.** Chasing Crimean Tatar's
+  doubled stress mark turned up three things, in increasing generality: the port
+  honoured an explicit stress marker only for `caps_mark_stress` languages, where
+  C honours it everywhere (composed number words excepted, which is why the
+  restriction was there); the default stress rule was first-syllable where C uses
+  **penultimate**, with `unstressed_wd2` 2 instead of 3; and `stressRule` in a
+  voice file was never read, though ~15 languages are configured that way. All
+  three fixed — `crh selâm/merhaba/kitap` are byte-identical to upstream and the
+  major languages are unchanged. Residual: Basque words of ≤2 syllables still
+  differ (rule 15 only fires above two, and the fallback then picks a different
+  syllable). Suite **713 tests green**; on a 30-sample sweep `-x` 25/30 and
+  `--ipa` 26/30 exact.
+
+- **2026-09-03 (eighth pass) — ✅ `PauseBefore` on the formant path.** The fifth
+  pass had only wired the pause instructions into the WAV branch, which never
+  fires for German's /r/ (a liquid → formant path). `PhonemeRender::Frames` now
+  carries the lead/trail silence, and the run accumulator flushes the current
+  formant run before emitting it — a real gap, so ending the run there is
+  correct.  Confirmed against `ph_german`: "trotz"/"trinken" (t + r) get 30 ms,
+  "Preis" (p + r) 15 ms, word-initial "Rose" none. Covered by a unit test that
+  drives the interpreter directly rather than measuring audio. Suite: **713 tests
+  green**.
+
+- **2026-09-03 (seventh pass) — ✅ default tones, decimal separators, clause
+  rules.** Vietnamese turned out not to be a rules gap after all: upstream *adds*
+  the tone in `CalcPitches_Tone` (`phonDEFAULTTONE` for any toneless syllable,
+  falling tone 7 clause-finally). Implementing that, plus the `word_gap` `_|` for
+  vi and mn, makes `xin chào`, `tôi` and `Việt Nam` byte-identical. Checked the
+  decimal separator of every language the port configures against the oracle and
+  found three wrong — **af, ka, kk** read "3,14" as two numbers and use the
+  period. Finally, matched upstream's sentence detection: a period ends a
+  sentence only before a capital, and a comma between digits is a separator, so
+  `-x` no longer adds a clause break to "one. two", "etc. and", "5. item" or
+  "3,14". Three test expectations that encoded the old break behaviour were
+  updated (oracle-verified). Suite **709 tests green**; on a 28-sample sweep
+  `--ipa` 24/28 and `-x` 22/28 exact.
+
+- **2026-09-03 (sixth pass) — ✅ tone placement (Thai).** Replaced the positional
+  tone shuffle with C's model: a tone is a property of its syllable's vowel, so
+  each vowel takes exactly one — pulled back over a coda where the rules wrote it
+  after (Mandarin `w'u@35n`), carried forward where they wrote it ahead (Thai
+  `kh,a5?…`), extras dropped. Thai `สวัสดี` went from `s55'a2wms55a3ds` to
+  `s'a5wmsa3ds` — byte-identical to upstream — as did `ขอบคุณ` and `ไทย`, while
+  Mandarin/Cantonese stayed exact (10/10 on a tone-language sample). Residual:
+  `กิน` picks the leading tone where upstream takes the trailing one, and
+  Vietnamese emits no tone phoneme at all for `xin` (a rules gap). Suite: **709
+  tests green**; sweeps `--ipa` 21/24, `-x` 18/24.
+
+- **2026-09-03 (fifth pass) — 🟡 pause instructions, and a reverted experiment.**
+  `PauseBefore`/`PauseAfter` are now captured from the phoneme program and applied
+  to WAV-rendered phonemes; the formant path still ignores them (documented in
+  §3b). Also chased the `-x`-only allophone spelling (`es 'ola/`, `it bUo/n…`):
+  the C rule lives in `StressCondition` — `ChangeIfNotStressed` is refused for
+  dictionary-given words unless `LOPT_REDUCE & 1` (Italian only). Implementing
+  that gate with this port's `translation_given` flag **regressed** the sweep
+  (Russian lost its reduction, Spanish kept its allophone; 18/24 → 15/23), so it
+  was reverted and the finding recorded instead. Multi-character Chinese words
+  were re-examined: `谢谢` is not in the shipped cmn dictionary, so upstream's
+  neutral second tone has some other source — still unexplained. Suite: **707
+  tests green**; sweeps unchanged (`--ipa` 21/24, `-x` 18/24).
+
+- **2026-09-03 (fourth pass) — ✅ phoneme-program list edits, vowel changes,
+  `isTranslationGiven`.** The group-0 instructions that were still no-ops now run
+  on both surfaces: English gets its **linking r** from `IfNextVowelAppend(r-)`
+  ("sofa area" and "father and son" are byte-identical to upstream) and the `;`
+  glide from `AppendPhoneme`; two hand-rolled approximations (a mnemonic check
+  for rhotic liaison, a special case for the word "or") were deleted in favour of
+  the real mechanism. Program-driven `ChangePhoneme` was extended from the `#`
+  class to **vowels**, which fixes `the apple` → `ðɪ ˈapəl` and Hindi `भारत` →
+  `bʰˈaːɾət`; consonant changes stay deferred because upstream's `-x` keeps a
+  plain `l` in "world" (they happen later, in `MakePhonemeList`).
+  `ChangePhoneme(NULL)` now deletes the phoneme instead of printing `_` inside
+  Russian words, and `isTranslationGiven` is implemented for tr/ba/tt. Eight test
+  expectations that encoded the older, further-from-upstream values were updated,
+  each re-verified against the oracle. Sweeps: **`--ipa` 21/24 exact** (from
+  17/24 at the start of the pass) and **`-x` 18/24**; suite **707 tests green**.
+
+- **2026-09-03 (third pass) — ✅ vowel_pause, decimal fractions, switch grouping.**
+  Continued down the §3b "still open" list, oracle-gated as before. **`vowel_pause`**
+  (`langopts`) was parsed into `StressOpts` but never applied: implemented in
+  `set_word_stress` for de/nl/af (0x30), hu (0x20) and jbo (0x20c), which is what
+  puts the break in front of a vowel-initial word or prefix-stripped stem —
+  `de beachten` → `b@_!'axt@n`, byte-identical to upstream, and German IPA is
+  unchanged. **Short decimal fractions** now read as one number
+  (`NUM_DFRACTION_2`/`_4`, ~25 languages, plus the Portuguese text path):
+  `cs 0,25` and `fr 3,14` are byte-identical; pl/fi/tr/es differ only by
+  pre-existing phoneme details. **Foreign-script runs** are wrapped in a single
+  `(target)…(base)` group like upstream. A 24-sample cross-language `-x` sweep
+  went from **15/24 to 17/24 exact**; suite **704 tests green**. What's left is
+  listed at the end of §3b — chiefly the remaining group-0 instructions
+  (AppendPhoneme/InsertPhoneme/length), the `_|` vs `_!` choice for
+  dictionary-stressed words, `-x`-only allophone spelling, Thai tone selection
+  and multi-character Chinese words.
+
+- **2026-09-03 (second pass) — ✅ Chinese/tones, plus two engine bugs the oracle
+  exposed.** Continuing the same session's implementation pass, still oracle-gated
+  against the locally built upstream `f135499`. **Chinese now speaks:** the root
+  cause was `langopts.textmode` — cmn/yue/zh compile their dictionaries as
+  replacement *text*, reversing `FLAG_TEXTMODE`, so `你`'s reading `ni3` was being
+  interpreted as phoneme codes (`qr`). Fixed, then added tone phonemes (phSTRESS
+  entries with a program, previously dropped), tone-after-vowel placement, the
+  `_|` inter-word gap, tone digits inside pinyin words, and a port of
+  `CalcPitches_Tone`'s Mandarin sandhi (default tone, 214+214→35, 51+51→53,
+  neutral-tone levelling). `-x -v cmn 中文`/`北京`/`请问` and `yue 你好` are now
+  **byte-identical to upstream**. **German prefix bug (pre-existing, severe):**
+  the rules scan must stop at a standard prefix so the caller can re-translate the
+  stem; the port kept scanning, a later suffix overwrote `end_type`, and
+  `end_phonemes` still held the prefix's phonemes — every `be-`/`ge-` verb with an
+  ending read `b'@b@`. `bezahlen` is now `bətsˈɑːlən`, == upstream. **Codes-path
+  allophones:** `ChangeIfDiminished` was IPA-only, so `-x` and the synthesizer
+  used citation vowels (ru `molok'o` → now `mVlVk'o`, == upstream). Suite: **701
+  tests green**; a broad 24-sample cross-language `-x` sweep matches upstream
+  exactly on 15, with the remainder being known per-language details listed in
+  §3b.
+
+- **2026-09-03 — ✅ Upstream-parity implementation pass (data + 12 engine fixes).**
+  Built upstream `master` (`f135499`) from source with CMake and used the
+  resulting binary as a **live oracle** for every change below; refreshed
+  `espeak-ng-data/` from that build (123 dicts / 151 voices, MBROLA files kept
+  from the old bundle) and regenerated `data-crates/` + the Cargo feature lists.
+  Engine work, each verified against the oracle: **script routing** for 22 scripts
+  (no more silently dropped `-v ru "привет hello"` / `-v en "hello مرحبا"`), the
+  `alt_alphabet` hook (#2511), Serbian digraphia, dictionary-beats-script;
+  **program-driven `ChangePhoneme`** in a new `interpret_phoneme_ctl` PhonemeList
+  mode (first change wins, as in `synthdata.c`) applied on the IPA *and* codes
+  paths — this fixed `pt dente` (`tˈẽŋty` → `dˈẽŋty`), gave pt-br its affricates
+  (`n'oItSy`, == oracle) and made German `zwanzig` end in `ç` like upstream;
+  **cross-word `nextPh` context** (pt `os amigos` → `uz …`, `três` → `…ʃ`);
+  **voice `phonemes` directive outranks the tag** (European Portuguese had been
+  using the Brazilian table); **`-x` regional-locale fallback**; **skin-tone and
+  tag-sequence emoji** (`👍🏽` was silent, England flag said "black flag");
+  **Sinhala ZWJ** (`kɹˈɐ`, byte-identical); **fraction reading** for ru/hu driven
+  by `_0Z<n>`/`_1f` data; **composed-number end stress** (pt `101` == "cento e
+  um"); **`SUFX_M` chains** (`s's's` → `'EsI2zI2z`, == oracle); **tone digits**
+  kept in Chinese words; **`[[…]]` word boundaries**; **event rescaling after the
+  tempo/pitch post-pass** (#2470). New `tests/upstream_1_53_parity.rs` (13 tests)
+  plus updated expectations in 5 existing tests where the refreshed data or the
+  now-correct phoneme programs changed the right answer — each re-verified
+  against the oracle. **Suite: 696 tests, 0 failures.** Remaining items and the
+  deliberate divergences are listed at the end of §3b.
+
+- **2026-09-03 — 📋 Upstream sweep (no code changes).** master HEAD `f135499`
+  (2026-09-01), **432 commits ahead of the `1.52.0` tag our data comes from**; 13 PRs merged
+  since 2026-08-01. Recorded as §3 items **38–43** (merged engine work: #2511 `alt_alphabet` +
+  tone-phoneme carry-over, #2495 SUFX_M suffix chains, #2492 `i_APPEND_IFNEXTVOWEL`, #2475
+  merged, ku/fa/hu/nl data), a new **§3b** (items **44–54** — the whole unreleased 1.53.0
+  changelog vs. our 1.52.0 data), a re-swept §4, and §5 issues opened since 2026-08-01.
+  Status corrections: **#2475 merged 2026-08-02** and **#2422/#2423/#2481 merged** — all four
+  were tracked here as open. Behavioural probes run against `./target/debug/espeak-ng-rs`:
+  `-v ar "…如果您因为翻译…"` → Han run collapses to a stray `ɣ`; `-v ru "привет hello"` →
+  the Latin word is **silently dropped** (both `--ipa` and `-x`); `-v en "hello 你好"` /
+  `"hello مرحبا"` → same; `👍🏽` → **empty**; `🏴󠁧󠁢󠁥󠁮󠁧󠁿` → "black flag"; `-v si "ක්‍ර"` → `k ɹˈə`;
+  `-v ru "0,25"` → digit-by-digit, no fraction naming; `-v crh|mn|ps|rup|fo|kaa|lij` →
+  "dict not found"; `-v ab` → silently empty. Priority order re-ranked: **data refresh is
+  now priority 0**, silently-dropped input is priority 1.
 
 - **2026-08-01 — ✅ Dotted version numbers no longer gain a spurious "zero"
   (`1.2.3`→"one point two point three").**  A dotted number with 2+ decimal points

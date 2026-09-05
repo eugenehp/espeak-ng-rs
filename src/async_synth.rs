@@ -7,9 +7,11 @@
 //! return non-zero to stop).  The caller is never blocked during synthesis and
 //! can stop from the callback or via [`cancel`](AsyncSynth::cancel) (#172).
 //!
-//! Cancellation is checked **between chunks**, so it takes effect part-way
-//! through a long utterance's delivery (the underlying render is still whole-
-//! utterance internally — true incremental *rendering* is future work).
+//! Rendering is **incremental**: each clause is synthesized and delivered
+//! before the next one starts (`EspeakNg::synth_streaming_with_events`), so the
+//! first audio of a long utterance is available after its first clause rather
+//! than after its last.  Cancellation is checked between chunks, so it takes
+//! effect part-way through as well.
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
@@ -171,9 +173,37 @@ fn worker_loop(
             Command::SetParameter(p, v) => engine.set_parameter(p, v),
             Command::SetVoice(name) => engine.set_voice(&name),
             Command::Speak(text) => {
-                if let Ok((samples, sample_rate, events)) = engine.synth_with_events(&text) {
-                    stream_utterance(&shared, callback, &text, &samples, sample_rate, &events);
-                }
+                // Render clause by clause: the first chunk goes out as soon as
+                // the first clause is done, instead of after the whole
+                // utterance.  Each clause is then split into `CHUNK_SAMPLES`
+                // pieces so cancellation stays responsive within a long one.
+                let mut pending: Option<Vec<i16>> = None;
+                let rate = engine.sample_rate();
+                let _ = engine.synth_streaming_with_events(&text, |samples, is_final, events| {
+                    // Check *before* delivering anything: once `cancel` has been
+                    // called, no further chunk of this utterance may reach the
+                    // callback (upstream #2288 makes the same guarantee for the
+                    // audio device).  Checking only between the `CHUNK_SAMPLES`
+                    // pieces below let a whole clause through.
+                    if shared.state.lock().unwrap().cancel {
+                        pending = None;
+                        return true;
+                    }
+                    // Hold each chunk back one step so the *last* one can be
+                    // flagged final even when the clause split produces an
+                    // empty trailing chunk.
+                    if let Some(prev) = pending.replace(samples.to_vec()) {
+                        if stream_chunk(&shared, callback, &text, &prev, rate, false, &[]) {
+                            pending = None;
+                            return true;
+                        }
+                    }
+                    if is_final {
+                        let last = pending.take().unwrap_or_default();
+                        return stream_chunk(&shared, callback, &text, &last, rate, true, events);
+                    }
+                    false
+                });
             }
         }
 
@@ -185,29 +215,35 @@ fn worker_loop(
     }
 }
 
-/// Deliver one utterance's PCM in [`CHUNK_SAMPLES`]-sized chunks, honouring
-/// cancellation (checked between chunks) and callback-driven stop.
-fn stream_utterance(
+/// Deliver one clause's PCM in [`CHUNK_SAMPLES`]-sized pieces, honouring
+/// cancellation (checked between pieces) and callback-driven stop.
+///
+/// Returns `true` when synthesis should stop — either the caller cancelled or
+/// the callback asked to.
+fn stream_chunk(
     shared: &Shared,
     callback: &mut dyn FnMut(AsyncChunk) -> bool,
     text: &str,
     samples: &[i16],
     sample_rate: u32,
+    last: bool,
     events: &[SynthEvent],
-) {
+) -> bool {
     let n = samples.len();
-    let mut off = 0;
-    // An empty utterance still signals completion with one final empty chunk.
+    // An empty final chunk still signals completion (and carries the events).
     if n == 0 {
-        callback(AsyncChunk { text, samples: &[], sample_rate, is_final: true, events });
-        return;
+        if last {
+            return callback(AsyncChunk { text, samples: &[], sample_rate, is_final: true, events });
+        }
+        return false;
     }
+    let mut off = 0;
     while off < n {
         if shared.state.lock().unwrap().cancel {
-            break;
+            return true;
         }
         let end = (off + CHUNK_SAMPLES).min(n);
-        let is_final = end == n;
+        let is_final = last && end == n;
         let stop = callback(AsyncChunk {
             text,
             samples: &samples[off..end],
@@ -219,9 +255,10 @@ fn stream_utterance(
         if stop {
             // Callback asked to stop: drop the rest of the queue too.
             shared.state.lock().unwrap().queue.clear();
-            break;
+            return true;
         }
     }
+    false
 }
 
 #[cfg(test)]

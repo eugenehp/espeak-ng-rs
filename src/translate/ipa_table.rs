@@ -125,6 +125,12 @@ pub fn mnemonic_to_ipa(mnemonic: u32, is_vowel: bool) -> String {
 /// Derived by querying:
 ///   `espeak-ng -v en -q --ipa "[[<mnemonic>]]"`
 /// for all 165 active English phoneme codes.
+///
+/// These are *accent-neutral* fixups — mostly cases where the mnemonic loses
+/// information (syllabic `m-` → `m̩`) — so they apply to every English phoneme
+/// table.  Entries that encode en-GB's actual vowel qualities live in
+/// [`EN_GB_IPA_OVERRIDES`] instead, and phondata from the active table takes
+/// precedence over both (see [`en_ipa_override`]).
 pub static EN_IPA_OVERRIDES: &[(u8, &str)] = &[
     // Syllabic consonants
     (41, "m\u{0329}"),   // m- → m̩
@@ -138,8 +144,6 @@ pub static EN_IPA_OVERRIDES: &[(u8, &str)] = &[
     (130, "\u{0252}"),   // 0# → ɒ
     (131, "\u{0252}"),   // 02 → ɒ
     (132, "\u{0252}"),   // O2 → ɒ  (ipa1['O'] = ɔ, wrong)
-    (144, "\u{0259}\u{028a}"), // oU → əʊ (ipa1 gives oʊ)
-    (145, "\u{0259}\u{028a}"), // oU# → əʊ
     // Rhotic vowels
     (154, "a\u{026a}\u{0259}"), // aI3 → aɪə  (fire/hire/wire; mnemonic drops the
                                 // "3", giving a bare "aɪ" — the non-rhotic
@@ -148,6 +152,35 @@ pub static EN_IPA_OVERRIDES: &[(u8, &str)] = &[
     (156, "\u{0259}\u{0279}"), // IR  → əɹ
     (157, "\u{028c}\u{0279}"), // VR  → ʌɹ
 ];
+
+/// Overrides that encode **en-GB's** vowel qualities specifically, so they must
+/// not leak into `en-us` (or any other English table).
+///
+/// The GOAT vowel is the case that matters: `en` renders `oU` as `əʊ`, `en-us`
+/// as `oʊ`. The en-us table has no `i_IPA_NAME` for either code, so without
+/// this split the en-GB value would win there and every American voice would
+/// say "həlˈəʊ".  Scoped out, they fall through to the ipa1 fallback, which is
+/// `oʊ` — the correct American value.
+pub static EN_GB_IPA_OVERRIDES: &[(u8, &str)] = &[
+    (144, "\u{0259}\u{028a}"), // oU  → əʊ (ipa1 gives oʊ, which is en-us's value)
+    (145, "\u{0259}\u{028a}"), // oU# → əʊ
+];
+
+/// The override for `code`, if any, given the active phoneme table.
+///
+/// `table` is [`crate::phoneme::PhonemeData::active_table_name`]; `None`
+/// (no table selected) is treated as en-GB, the historical behaviour.
+pub fn en_ipa_override(code: u8, table: Option<&str>) -> Option<&'static str> {
+    if table.is_none_or(|t| t == "en") {
+        if let Some(&(_, ipa)) = EN_GB_IPA_OVERRIDES.iter().find(|&&(c, _)| c == code) {
+            return Some(ipa);
+        }
+    }
+    EN_IPA_OVERRIDES
+        .iter()
+        .find(|&&(c, _)| c == code)
+        .map(|&(_, ipa)| ipa)
+}
 
 /// Look up the IPA string for a phoneme code.
 ///
@@ -159,14 +192,16 @@ pub fn phoneme_ipa(code: u8, mnemonic: u32, is_vowel: bool) -> String {
     phoneme_ipa_lang(code, mnemonic, is_vowel, true)
 }
 
-/// IPA lookup with optional EN_IPA_OVERRIDES.
+/// IPA lookup with optional English overrides.
 /// `use_en_overrides` should be true only for English.
+///
+/// This is the table-*unaware* entry point, so it resolves accent-specific
+/// entries as en-GB — the historical behaviour. The translator itself calls
+/// [`en_ipa_override`] with the active table instead.
 pub fn phoneme_ipa_lang(code: u8, mnemonic: u32, is_vowel: bool, use_en_overrides: bool) -> String {
     if use_en_overrides {
-        for &(oc, ipa) in EN_IPA_OVERRIDES {
-            if oc == code {
-                return ipa.to_string();
-            }
+        if let Some(ipa) = en_ipa_override(code, None) {
+            return ipa.to_string();
         }
     }
     mnemonic_to_ipa(mnemonic, is_vowel)

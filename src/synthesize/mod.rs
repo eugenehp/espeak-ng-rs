@@ -45,6 +45,8 @@
 //
 // ## Formant Synthesis
 //
+pub mod envelopes;
+pub mod intonation;
 pub mod targets;
 pub mod engine;
 pub mod phondata;
@@ -56,6 +58,16 @@ pub mod klatt;
 pub mod tempo;
 
 use crate::error::{Error, Result};
+use crate::phoneme::{PH_PAUSE, PH_VOWEL};
+
+/// Extra duration a `:` length modifier adds to a vowel, in ms — C looks up
+/// `phoneme_tab[phonLENGTHEN]->std_length`, which is 50 in every shipped table.
+const LENGTHEN_MS: u16 = 50;
+
+/// eSpeak NG appends a fixed ~0.30 s of silence at the end of every clause.
+/// Tuned against the C reference via the wav-analysis harness; suppressed by
+/// `-z` (`no_final_pause`).
+const END_SILENCE_MS: f64 = 300.0;
 
 // ---------------------------------------------------------------------------
 // Frame – formant parameters for one time slice
@@ -87,7 +99,8 @@ pub struct Frame {
     pub bw: [u8; 4],
     /// Klatt parameters: AV, FNZ, Tilt, Aspr, Skew
     pub klattp: [u8; 5],
-    /// Extended Klatt parameters: AVp, Fric, FricBP, Turb, (spare)
+    /// Extended Klatt parameters, continuing `klattp` from index 5:
+    /// Kopen, AVp, Fric, FricBP, Turb
     pub klattp2: [u8; 5],
     /// Klatt parallel amplitudes, F0–F6
     pub klatt_ap: [u8; 7],
@@ -173,6 +186,17 @@ pub struct VoiceParams {
     pub pitch_hz: u32,
     /// Pitch range: 0 = monotone, 100 = normal
     pub pitch_range: u32,
+    /// The voice's pitch range in espeak's internal units — `(pitch2 - pitch1) *
+    /// 108` from the voice file's `pitch <base> <range>` line (default
+    /// `pitch 82 118` → 3888).  Scales the intonation module's 0–254 syllable
+    /// pitch values into Hz.
+    pub pitch_range_units: f64,
+    /// `stressLength <l0…l7>` from the language's voice file, in 1/128ths —
+    /// twenty shipped languages replace the built-in table this way
+    /// (upstream #1466: read the language configuration from data).
+    pub stress_lengths: Option<[u32; 8]>,
+    /// `langopts.intonation_group` — selects a row of `punct_to_tone`.
+    pub intonation_group: usize,
     /// Formant frequency scale factor (100 = normal)
     pub formant_scale: u32,
     /// Sample rate in Hz (always 22050 for espeak-ng)
@@ -181,6 +205,32 @@ pub struct VoiceParams {
     pub amplitude: u32,
     /// Suppress the end-of-utterance trailing silence (`-z`).
     pub no_final_pause: bool,
+    /// Seed for the unvoiced-noise generator (`espeak_ng_SetRandSeed`, the CLI's
+    /// `-D`).  `0` keeps the built-in default.
+    ///
+    /// The port is deterministic either way — unlike C, it never seeds from the
+    /// clock — so this exists to *choose* a noise sequence, not to make one
+    /// reproducible.
+    pub rand_seed: u32,
+    /// The utterance's own rate in words per minute (175 = normal), pitch
+    /// (0-100, 50 = normal) and volume (0-200, 100 = normal).
+    ///
+    /// Inline embedded commands (`\x01<n>S`) set these *absolutely*, so the
+    /// render loop needs the baseline to turn one into a relative change.
+    pub user_rate_wpm: u32,
+    pub user_pitch: u32,
+    pub user_volume: u32,
+    /// `voice->formant_factor` × 256: the nominal formant shift for a voice
+    /// pitched away from the default (`AdjustFormants` scales its F2 target by
+    /// it).  `256` = no shift.
+    pub formant_factor: i32,
+    /// The voice's `tone` curve: per-harmonic amplitude adjustment in 8 Hz
+    /// steps (`wvoice->tone_adjust`, built by `SetToneAdjust`).
+    ///
+    /// Every voice starts from `tone_points = 600 170 1200 135 2000 110
+    /// 3000 110` — flat to 600 Hz, then tilting down — and a `tone` line in a
+    /// voice or `+variant` file replaces it.
+    pub tone_adjust: [u8; wavegen::N_TONE_ADJUST],
     /// Render formant runs through the Klatt cascade (`klatt.rs`) instead of the
     /// harmonic path.  Opt-in; the default (harmonic) path is unchanged.
     pub klatt: bool,
@@ -239,11 +289,20 @@ impl Default for VoiceParams {
         VoiceParams {
             speed_percent:  100,
             pitch_hz:       118,  // male default
+            pitch_range_units: 3888.0, // espeak's default `pitch 82 118`
+            stress_lengths: None,
+            intonation_group: 1,
             pitch_range:    100,
             formant_scale:  100,
             sample_rate:    22050,
             amplitude:      80,
             no_final_pause: false,
+            rand_seed:      0,
+            user_rate_wpm:  175,
+            user_pitch:     50,
+            user_volume:    100,
+            formant_factor: 256,
+            tone_adjust:    wavegen::set_tone_adjust(&wavegen::DEFAULT_TONE_POINTS),
             klatt:          false,
             formant_freq_pct:   [100; 7],
             formant_height_pct: [100; 7],
@@ -368,6 +427,161 @@ impl Synthesizer {
         self.synthesize_codes_marked(codes, phdata, &mut Vec::new(), &mut Vec::new())
     }
 
+    /// Build the MBROLA phoneme list for a clause (`MbrolaTranslate`'s input).
+    ///
+    /// The same annotate + intonation passes as
+    /// [`synthesize_codes`](Self::synthesize_codes), but instead of rendering
+    /// audio each phoneme is described for the MBROLA handoff: its mnemonic,
+    /// type, stress, duration and the syllable's pitch envelope.  Durations come
+    /// from rendering the phoneme's own program and measuring it — C reaches
+    /// into `DoSample3`/`DoSpect2` for the same number.
+    ///
+    /// Feed the result to [`MbrolaTable::translate`](crate::mbrola::MbrolaTable::translate).
+    pub fn mbrola_phonemes(
+        &self,
+        codes: &[crate::translate::PhonemeCode],
+        phdata: &crate::phoneme::PhonemeData,
+    ) -> Vec<crate::mbrola::MbrPhoneme> {
+        use crate::mbrola::MbrPhoneme;
+
+        let speed_factor = 100.0 / self.voice.speed_percent.max(1) as f64;
+        let sr = self.voice.sample_rate as f64;
+        let ms = |samples: usize| -> u32 { (samples as f64 * 1000.0 / sr).round() as u32 };
+
+        let annotated = annotate_codes(codes, phdata);
+
+        // Clause intonation, exactly as the audio path computes it: one syllable
+        // per vowel, then the tune assigns each an envelope and pitch span.
+        let clause_type = match codes.iter().rev().find_map(|c| c.clause_char) {
+            Some('.') => 0usize,
+            Some(',') | Some(';') | Some(':') => 1,
+            Some('?') => 2,
+            Some('!') => 3,
+            _ => 0,
+        };
+        let mut syllables: Vec<intonation::Syllable> = annotated
+            .iter()
+            .filter_map(|a| match a {
+                AnnCode::Phoneme(info) if info.ph_type == PH_VOWEL => {
+                    Some(intonation::Syllable::new(info.stress_level))
+                }
+                _ => None,
+            })
+            .collect();
+        intonation::calc_pitches(
+            &mut syllables,
+            intonation::tone_for_clause(self.voice.intonation_group, clause_type),
+            None,
+        );
+
+        // The voice's pitch base/range in the units `SetPitch2` works in (Hz << 12).
+        let voice_pitch_base = (self.voice.pitch_hz as i32) << 12;
+        let voice_pitch_range = self.voice.pitch_range_units as i32;
+
+        let mut out: Vec<MbrPhoneme> = Vec::new();
+        let mut syllable_idx = 0usize;
+        // The next real phoneme starts a word (the first one always does).
+        let mut newword = true;
+        // Highest stress seen in the current word, for the "stressed syllable
+        // only" table rows.
+        let mut word_start = 0usize;
+
+        let push_pause = |out: &mut Vec<MbrPhoneme>, ms: u32| {
+            out.push(MbrPhoneme {
+                mnemonic: "_".into(),
+                ph_type: PH_PAUSE,
+                duration_ms: ms,
+                newword: true,
+                ..Default::default()
+            });
+        };
+
+        for ann in &annotated {
+            match ann {
+                AnnCode::Pause(d) | AnnCode::ClauseBoundary(d) => {
+                    push_pause(&mut out, (d * speed_factor).round() as u32);
+                    newword = true;
+                }
+                AnnCode::PrepauseSamples(n) => {
+                    push_pause(&mut out, ms(*n));
+                }
+                // An embedded rate/pitch change doesn't affect the `.pho`
+                // phoneme list (MBROLA gets explicit durations and pitch).
+                AnnCode::Embedded(_) => {}
+                AnnCode::WordBoundary => {
+                    // Close the word: every phoneme in it shares its top stress.
+                    let top = out[word_start..].iter().map(|p| p.stress_level).max().unwrap_or(0);
+                    for p in &mut out[word_start..] {
+                        p.word_stress = top;
+                    }
+                    word_start = out.len();
+                    newword = true;
+                }
+                AnnCode::Phoneme(info) => {
+                    let syllable = if info.ph_type == PH_VOWEL {
+                        let syl = syllables.get(syllable_idx).copied();
+                        syllable_idx += 1;
+                        syl
+                    } else {
+                        None
+                    };
+                    let syl = syllable.unwrap_or_default();
+                    let ph = phdata.get(info.code);
+                    let (samples, prepause) = match synthesize_phoneme_info(
+                        info, phdata, speed_factor, self.voice.formant_factor,
+                        self.voice.stress_lengths.as_ref(),
+                    )
+                    {
+                        PhonemeRender::Frames { frames, lead_silence, trail_silence, .. } => (
+                            frames.iter().map(|f| f.length as usize * 64).sum::<usize>()
+                                + trail_silence,
+                            lead_silence,
+                        ),
+                        PhonemeRender::Pcm(pcm) => (pcm.len(), 0),
+                    };
+                    out.push(MbrPhoneme {
+                        mnemonic: ph.map(|p| p.mnemonic_display()).unwrap_or_default(),
+                        ph_type: info.ph_type,
+                        stress_level: info.stress_level,
+                        word_stress: info.stress_level,
+                        newword,
+                        lengthen: info.lengthen,
+                        // `std_length` is in mS/2 units.
+                        std_length: u16::from(info.std_length) * 2,
+                        lengthen_ms: LENGTHEN_MS,
+                        length: 256,
+                        // A phoneme whose program renders nothing still needs a
+                        // duration in the `.pho` — fall back to C's pre-switch
+                        // default, `(80 * speed.wav_factor) / 256`.
+                        duration_ms: match ms(samples) {
+                            0 => (80.0 * speed_factor).round() as u32,
+                            d => d,
+                        },
+                        prepause_ms: ms(prepause) as u16,
+                        env: syl.env,
+                        pitch1: syl.pitch1,
+                        pitch2: syl.pitch2,
+                        voice_pitch_base,
+                        voice_pitch_range,
+                    });
+                    newword = false;
+                }
+            }
+        }
+        let top = out[word_start..].iter().map(|p| p.stress_level).max().unwrap_or(0);
+        for p in &mut out[word_start..] {
+            p.word_stress = top;
+        }
+
+        // End-of-utterance silence.  C's phoneme list carries it as a trailing
+        // pause phoneme; ours adds it at render time, so put it back here or
+        // MBROLA would cut the last phoneme off abruptly.
+        if !out.is_empty() && !self.voice.no_final_pause {
+            push_pause(&mut out, (END_SILENCE_MS * speed_factor).round() as u32);
+        }
+        out
+    }
+
     /// Like [`synthesize_codes`](Self::synthesize_codes), but also returns the
     /// sample offset at which each spoken **word** begins and at which each
     /// **sentence** (clause) begins — the timing needed for `EventKind::Word` and
@@ -392,19 +606,85 @@ impl Synthesizer {
         word_marks: &mut Vec<usize>,
         sentence_marks: &mut Vec<usize>,
     ) -> Result<PcmBuffer> {
+        self.render(codes, phdata, word_marks, sentence_marks, &mut None)
+    }
+
+    /// Render `codes` incrementally, handing each **clause**'s audio to `sink`
+    /// as soon as it is finished instead of accumulating the whole utterance.
+    ///
+    /// The rendering order and the samples produced are identical to
+    /// [`synthesize_codes`](Self::synthesize_codes) — only the delivery differs
+    /// — so a caller that concatenates every chunk gets the same buffer, but the
+    /// first clause is available after rendering just that clause.  `sink`
+    /// returns `true` to stop early.
+    pub fn synthesize_codes_streaming(
+        &self,
+        codes: &[crate::translate::PhonemeCode],
+        phdata: &crate::phoneme::PhonemeData,
+        sink: &mut dyn FnMut(&[i16], bool) -> bool,
+    ) -> Result<()> {
+        // `render` hands the trailing clause back rather than emitting it, so
+        // the sink sees exactly one `is_final` chunk — even for empty input,
+        // where there is no clause boundary at all.  A sink that asked to stop
+        // gets no further calls, final chunk included.
+        let mut stopped = false;
+        let (tail, _, _) = {
+            let mut watch = |chunk: &[i16], is_final: bool| -> bool {
+                let stop = sink(chunk, is_final);
+                stopped |= stop;
+                stop
+            };
+            self.synthesize_codes_streaming_with_marks(codes, phdata, &mut watch)?
+        };
+        if !stopped {
+            sink(&tail, true);
+        }
+        Ok(())
+    }
+
+    /// Like [`synthesize_codes_streaming`](Self::synthesize_codes_streaming),
+    /// but the **final** clause is returned instead of emitted, together with
+    /// the word and sentence sample offsets.
+    ///
+    /// This lets a caller that needs events (which are only known once the whole
+    /// utterance is rendered) still stream the earlier clauses: emit them as
+    /// they arrive, then deliver the returned tail as the final chunk with the
+    /// events attached.  `sink` is called with `is_final == false` throughout.
+    pub fn synthesize_codes_streaming_with_marks(
+        &self,
+        codes: &[crate::translate::PhonemeCode],
+        phdata: &crate::phoneme::PhonemeData,
+        sink: &mut dyn FnMut(&[i16], bool) -> bool,
+    ) -> Result<(PcmBuffer, Vec<usize>, Vec<usize>)> {
+        let mut word_marks = Vec::new();
+        let mut sentence_marks = Vec::new();
+        let mut sink = Some(sink);
+        let tail = self.render(codes, phdata, &mut word_marks, &mut sentence_marks, &mut sink)?;
+        Ok((tail, word_marks, sentence_marks))
+    }
+
+    /// The render loop shared by the buffered and streaming entry points.
+    ///
+    /// With `sink` present, every clause boundary flushes the audio produced so
+    /// far; the final clause is *returned* rather than emitted so the caller can
+    /// mark it as the last chunk.  Without a sink the whole utterance is
+    /// returned and nothing is emitted.
+    fn render(
+        &self,
+        codes: &[crate::translate::PhonemeCode],
+        phdata: &crate::phoneme::PhonemeData,
+        word_marks: &mut Vec<usize>,
+        sentence_marks: &mut Vec<usize>,
+        sink: &mut Option<&mut dyn FnMut(&[i16], bool) -> bool>,
+    ) -> Result<PcmBuffer> {
         if codes.is_empty() {
             return Ok(Vec::new());
         }
 
-        // The port's raw per-phoneme durations run ~1.20× the C oracle's at the
-        // default rate (a uniform offset measured across a diverse corpus with
-        // the built C reference), because the length pipeline omits eSpeak NG's
-        // `SetSpeed`/`CalcLengths` `len_speeds` speed scaling.  Until that full
-        // per-phoneme port lands, apply the measured calibration so the overall
-        // pace matches the oracle (geometric-mean duration ratio 1.20 → ~1.0).
-        const RATE_CALIBRATION: f64 = 0.836;
-        let speed_factor =
-            (100.0 / self.voice.speed_percent.max(1) as f64) * RATE_CALIBRATION;
+        // `VoiceParams::speed_percent` is derived from upstream's `speed_lookup`
+        // curve (`setlengths::speed_duration_factor`) and already carries the
+        // calibration against the C reference, so this is the whole factor.
+        let speed_factor = 100.0 / self.voice.speed_percent.max(1) as f64;
 
         // ── Pass 1: annotate each code with synthesis context ─────────────
         let annotated = annotate_codes(codes, phdata);
@@ -419,24 +699,50 @@ impl Synthesizer {
         let mut run_frames: Vec<phondata::SpectFrame> = Vec::new();
         let mut run_amps: Vec<f64> = Vec::new();
         let mut run_pitch: Vec<f64> = Vec::new();
+        // Per-frame duration multiplier from inline `\x01<n>S` commands.
+        let mut run_speed: Vec<f64> = Vec::new();
         // Absolute frame indices of each vowel's centre within the current run
         // (syllable anchors for SmoothSpect).
         let mut run_centres: Vec<usize> = Vec::new();
 
-        // Basic intonation: a falling pitch declination across the utterance
-        // (a rising tail for questions).  Mirrors the dominant behaviour of
-        // `CalcPitches` — pitch starts above the base and falls below it.
-        // Verified via the `wav-analysis` harness against the C reference.
+        // Clause intonation (`intonation.rs`, a port of `CalcPitches`): build the
+        // syllable table — one entry per vowel, carrying its stress — and let the
+        // tune assign each syllable a pitch span and contour.  This replaces the
+        // old approximation (one falling declination over the whole utterance).
         let total_phonemes = annotated
             .iter()
             .filter(|a| matches!(a, AnnCode::Phoneme(_)))
             .count();
-        let is_question = codes.iter().any(|c| c.clause_char == Some('?'));
+        let clause_type = match codes.iter().rev().find_map(|c| c.clause_char) {
+            Some('.') => 0usize,
+            Some(',') | Some(';') | Some(':') => 1,
+            Some('?') => 2,
+            Some('!') => 3,
+            _ => 0,
+        };
+        let mut syllables: Vec<intonation::Syllable> = annotated
+            .iter()
+            .filter_map(|a| match a {
+                AnnCode::Phoneme(info) if info.ph_type == 2 /* phVOWEL */ => {
+                    Some(intonation::Syllable::new(info.stress_level))
+                }
+                _ => None,
+            })
+            .collect();
+        intonation::calc_pitches(
+            &mut syllables,
+            intonation::tone_for_clause(self.voice.intonation_group, clause_type),
+            None,
+        );
+        let mut syllable_idx = 0usize;
         let mut phoneme_idx = 0usize;
         let base_pitch = self.voice.pitch_hz as f64;
+        // Pitch carried across consonants from the syllable around them.
+        let mut carried_pitch = base_pitch;
 
-        let sil_samples = |ms: f64| -> usize {
-            ((ms / 1000.0) * 22050.0 * speed_factor) as usize
+        // Silences follow the rate too, including an inline `\x01<n>S` change.
+        let sil_samples = |ms: f64, embed: f64| -> usize {
+            ((ms / 1000.0) * 22050.0 * speed_factor * embed) as usize
         };
 
         // Inter-word gap and end-of-utterance trailing silence.  eSpeak NG
@@ -444,7 +750,6 @@ impl Synthesizer {
         // Rust engine previously emitted none, making short utterances end
         // abruptly.  Tuned against the C reference via the wav-analysis harness.
         const WORD_GAP_MS: f64 = 10.0;
-        const END_SILENCE_MS: f64 = 300.0;
         // eSpeak lengthens the final word of a clause (and reduces the rest).
         // We don't model per-syllable final lengthening, but our base lengths
         // already match the *lengthened* value, so shorten non-final words to
@@ -460,13 +765,70 @@ impl Synthesizer {
         // Word 0 begins at the start of the audio; each later `WordBoundary`
         // records the first sample of the next word (for `EventKind::Word`).
         word_marks.push(0);
+        // Samples already handed to `sink`; marks are absolute, so they are
+        // offset by everything flushed so far.
+        let mut flushed = 0usize;
+        // Set when the sink asks to stop; the loop then unwinds cleanly.
+        let mut stopped = false;
+
+        // Inline embedded commands take effect from where they appear, so these
+        // run alongside the loop rather than being folded into `VoiceParams`.
+        // 1.0 = the utterance's own rate / pitch / amplitude.
+        let mut embed_speed = 1.0f64;
+        let mut embed_pitch = 1.0f64;
+        let mut embed_amp = 1.0f64;
+        let mut embed_rate = self.voice.user_rate_wpm as i32;
+        let mut embed_pitch_v = self.voice.user_pitch as i32;
+        let mut embed_volume = self.voice.user_volume as i32;
 
         for ann in &annotated {
             match ann {
+                AnnCode::Embedded(cmd) => {
+                    // The command carries an absolute (or `±` relative) value in
+                    // the same units as the `-s`/`-p`/`-a` parameters, so track
+                    // the running value and express it against the utterance's
+                    // own — and clamp to the parameter ranges, or `\x01 20S`
+                    // would stretch the audio 8× where C stops at 2.2×.
+                    let next = |cur: i32| -> i32 {
+                        let v = cmd.value.max(0);
+                        match cmd.relative {
+                            1 => cur + v,
+                            -1 => cur - v,
+                            _ => v,
+                        }
+                    };
+                    match cmd.letter {
+                        'S' => {
+                            embed_rate = next(embed_rate).clamp(80, 450);
+                            // Through the same `speed_lookup` curve the voice's
+                            // own rate uses, or a scoped `<prosody rate>` would
+                            // stretch further than the whole-utterance form.
+                            let f = setlengths::speed_duration_factor(embed_rate as u32);
+                            let base =
+                                setlengths::speed_duration_factor(self.voice.user_rate_wpm);
+                            embed_speed = if base > 0.0 { f / base } else { 1.0 };
+                        }
+                        'P' => {
+                            embed_pitch_v = next(embed_pitch_v).clamp(0, 100);
+                            let base = intonation::base_pitch_hz(82.0, self.voice.user_pitch);
+                            let now = intonation::base_pitch_hz(82.0, embed_pitch_v as u32);
+                            embed_pitch = if base > 0.0 { now / base } else { 1.0 };
+                        }
+                        'A' => {
+                            embed_volume = next(embed_volume).clamp(0, 200);
+                            embed_amp = if self.voice.user_volume > 0 {
+                                embed_volume as f64 / self.voice.user_volume as f64
+                            } else {
+                                1.0
+                            };
+                        }
+                        _ => {}
+                    }
+                }
                 AnnCode::Pause(ms) => {
-                    flush_run(&mut run_frames, &mut run_amps, &mut run_pitch, &mut run_centres,
+                    flush_run(&mut run_frames, &mut run_amps, &mut run_pitch, &mut run_speed, &mut run_centres,
                               &mut output_i16, &self.voice, &mut wavephase);
-                    let n = sil_samples(*ms);
+                    let n = sil_samples(*ms, embed_speed);
                     output_i16.extend(std::iter::repeat(0i16).take(n));
                 }
                 AnnCode::ClauseBoundary(ms) => {
@@ -475,54 +837,98 @@ impl Synthesizer {
                     // which drives non-final lengthening).  Only the *marks* are
                     // new: the following clause starts a new sentence and a new
                     // word.
-                    flush_run(&mut run_frames, &mut run_amps, &mut run_pitch, &mut run_centres,
+                    flush_run(&mut run_frames, &mut run_amps, &mut run_pitch, &mut run_speed, &mut run_centres,
                               &mut output_i16, &self.voice, &mut wavephase);
-                    let n = sil_samples(*ms);
+                    let n = sil_samples(*ms, embed_speed);
                     output_i16.extend(std::iter::repeat(0i16).take(n));
-                    let start = output_i16.len();
+                    let start = flushed + output_i16.len();
                     sentence_marks.push(start);
                     word_marks.push(start);
+                    // A clause is complete: stream it now rather than holding
+                    // the whole utterance in memory.  The echo post-pass rings
+                    // across clause boundaries, so a voice with echo is never
+                    // split — it emits one final chunk instead.
+                    if let Some(sink) = sink.as_mut().filter(|_| self.voice.echo_amp == 0) {
+                        if sink(&output_i16, false) {
+                            stopped = true;
+                            break;
+                        }
+                        flushed += output_i16.len();
+                        output_i16.clear();
+                    }
                 }
                 AnnCode::WordBoundary => {
                     // Small inter-word gap.  espeak lets words flow together
                     // (the perceived gap comes mostly from stop prepauses), so
                     // this is short; a large fixed gap over-lengthens sentences.
-                    flush_run(&mut run_frames, &mut run_amps, &mut run_pitch, &mut run_centres,
+                    flush_run(&mut run_frames, &mut run_amps, &mut run_pitch, &mut run_speed, &mut run_centres,
                               &mut output_i16, &self.voice, &mut wavephase);
-                    let n = sil_samples(WORD_GAP_MS);
+                    let n = sil_samples(WORD_GAP_MS, embed_speed);
                     output_i16.extend(std::iter::repeat(0i16).take(n));
                     word_idx += 1;
                     // Start sample of the word that follows this boundary.
-                    word_marks.push(output_i16.len());
+                    word_marks.push(flushed + output_i16.len());
                 }
                 AnnCode::PrepauseSamples(n) => {
-                    flush_run(&mut run_frames, &mut run_amps, &mut run_pitch, &mut run_centres,
+                    flush_run(&mut run_frames, &mut run_amps, &mut run_pitch, &mut run_speed, &mut run_centres,
                               &mut output_i16, &self.voice, &mut wavephase);
                     output_i16.extend(std::iter::repeat(0i16).take(*n));
                 }
                 AnnCode::Phoneme(info) => {
-                    // Position within the utterance, 0.0 (start) → 1.0 (end).
-                    let t = if total_phonemes > 1 {
-                        phoneme_idx as f64 / (total_phonemes - 1) as f64
-                    } else {
-                        0.0
-                    };
+                    let _ = total_phonemes;
                     phoneme_idx += 1;
-                    let factor = pitch_envelope(t, is_question);
+                    // A vowel takes its syllable's pitch contour; a consonant
+                    // carries the neighbouring syllable's pitch, as C does by
+                    // holding `wdata.pitch` between vowels.
+                    let syllable = if info.ph_type == 2 {
+                        let syl = syllables.get(syllable_idx).copied();
+                        syllable_idx += 1;
+                        syl
+                    } else {
+                        None
+                    };
+                    if let Some(syl) = syllable {
+                        carried_pitch = intonation::pitch_to_hz(
+                            syl.pitch_at(0.5),
+                            base_pitch,
+                            self.voice.pitch_range_units,
+                        );
+                    }
+                    // A vowel *glides* through its syllable's pitch envelope —
+                    // C advances `wdata.pitch` every STEPSIZE samples.  Holding
+                    // one value per syllable gave a stepped contour where the
+                    // oracle's falls smoothly (97→117→105→95→85 Hz over a
+                    // sentence, against flat plateaus here).
+                    let glide = syllable;
                     // `+variant` pitch flutter (no-op unless a variant set it).
-                    let ph_pitch = (base_pitch * factor).max(25.0)
-                        * flutter_factor(phoneme_idx, self.voice.flutter);
+                    let ph_pitch = carried_pitch.max(25.0)
+                        * flutter_factor(phoneme_idx, self.voice.flutter)
+                        * embed_pitch;
                     // Shorten non-final words (approximate final-word lengthening).
                     let ph_speed = if word_idx + 1 < total_words {
                         speed_factor * NONFINAL_LEN
                     } else {
                         speed_factor
-                    };
+                    } * embed_speed;
                     let is_vowel = info.ph_type == 2;
-                    match synthesize_phoneme_info(info, phdata, ph_speed) {
-                        PhonemeRender::Frames { frames, amp_factor } => {
+                    match synthesize_phoneme_info(
+                        info, phdata, ph_speed, self.voice.formant_factor,
+                        self.voice.stress_lengths.as_ref(),
+                    ) {
+                        PhonemeRender::Frames { frames, amp_factor, lead_silence, trail_silence } => {
+                            // `PauseBefore <ms>`: a real gap, so the formant run
+                            // ends here (German puts 15-30 ms before /r/ after a
+                            // stop).
+                            if lead_silence > 0 {
+                                flush_run(&mut run_frames, &mut run_amps, &mut run_pitch,
+                                          &mut run_speed, &mut run_centres, &mut output_i16,
+                                          &self.voice, &mut wavephase);
+                                output_i16.extend(std::iter::repeat(0i16).take(lead_silence));
+                            }
                             // `+variant` per-stress amplitude override (no-op by default).
-                            let amp_factor = amp_factor * self.voice.stress_amp_ratio(info.stress_level);
+                            let amp_factor = amp_factor
+                                * self.voice.stress_amp_ratio(info.stress_level)
+                                * embed_amp;
                             // A vowel is a syllable centre for SmoothSpect: anchor
                             // on its most stable (highest-RMS) frame.
                             if is_vowel && !frames.is_empty() {
@@ -534,11 +940,42 @@ impl Synthesizer {
                                 run_centres.push(run_frames.len() + rel);
                             }
                             run_amps.extend(std::iter::repeat(amp_factor).take(frames.len()));
-                            run_pitch.extend(std::iter::repeat(ph_pitch).take(frames.len()));
+                            match glide {
+                                Some(syl) if frames.len() > 1 => {
+                                    let last = (frames.len() - 1) as f64;
+                                    let scale = flutter_factor(phoneme_idx, self.voice.flutter)
+                                        * embed_pitch;
+                                    for i in 0..frames.len() {
+                                        let hz = intonation::pitch_to_hz(
+                                            syl.pitch_at(i as f64 / last),
+                                            base_pitch,
+                                            self.voice.pitch_range_units,
+                                        );
+                                        run_pitch.push(hz.max(25.0) * scale);
+                                    }
+                                    // Carry the syllable's *end* pitch into the
+                                    // following consonants, as C does by holding
+                                    // `wdata.pitch` between vowels.
+                                    carried_pitch = intonation::pitch_to_hz(
+                                        syl.pitch_at(1.0),
+                                        base_pitch,
+                                        self.voice.pitch_range_units,
+                                    );
+                                }
+                                _ => run_pitch
+                                    .extend(std::iter::repeat(ph_pitch).take(frames.len())),
+                            }
+                            run_speed.extend(std::iter::repeat(embed_speed).take(frames.len()));
                             run_frames.extend(frames);
+                            if trail_silence > 0 {
+                                flush_run(&mut run_frames, &mut run_amps, &mut run_pitch,
+                                          &mut run_speed, &mut run_centres, &mut output_i16,
+                                          &self.voice, &mut wavephase);
+                                output_i16.extend(std::iter::repeat(0i16).take(trail_silence));
+                            }
                         }
                         PhonemeRender::Pcm(pcm) => {
-                            flush_run(&mut run_frames, &mut run_amps, &mut run_pitch, &mut run_centres,
+                            flush_run(&mut run_frames, &mut run_amps, &mut run_pitch, &mut run_speed, &mut run_centres,
                                       &mut output_i16, &self.voice, &mut wavephase);
                             output_i16.extend_from_slice(&pcm);
                         }
@@ -547,13 +984,14 @@ impl Synthesizer {
             }
         }
         // Flush any trailing formant run.
-        flush_run(&mut run_frames, &mut run_amps, &mut run_pitch, &mut run_centres,
+        flush_run(&mut run_frames, &mut run_amps, &mut run_pitch, &mut run_speed, &mut run_centres,
                   &mut output_i16, &self.voice, &mut wavephase);
 
-        // End-of-utterance trailing silence (only when there was speech).
+        // End-of-utterance trailing silence (only when there was speech, and
+        // not when a streaming sink asked to stop early).
         // Suppressed by `-z` (`no_final_pause`).
-        if !output_i16.is_empty() && !self.voice.no_final_pause {
-            output_i16.extend(std::iter::repeat(0i16).take(sil_samples(END_SILENCE_MS)));
+        if (!output_i16.is_empty() || flushed > 0) && !self.voice.no_final_pause && !stopped {
+            output_i16.extend(std::iter::repeat(0i16).take(sil_samples(END_SILENCE_MS, embed_speed)));
         }
 
         // `+variant` echo post-pass (no-op unless a variant set it) — applied last
@@ -634,6 +1072,10 @@ enum AnnCode {
     PrepauseSamples(usize),
     /// A real phoneme with full context.
     Phoneme(PhonemeInfo),
+    /// An inline embedded command (`\x01[±]<value><letter>`): rate, pitch or
+    /// amplitude applies from here to the end of the utterance (or the next
+    /// command), rather than to the whole of it.
+    Embedded(crate::translate::EmbeddedCmd),
 }
 
 // ---------------------------------------------------------------------------
@@ -657,11 +1099,35 @@ fn annotate_codes(
         }
     };
 
+    // Markers are not phonemes.  Drop them all before the look-ahead window is
+    // built — a marker left in place is a spurious `code == 0` between two real
+    // phonemes, which breaks their coarticulation.  Embedded commands are kept
+    // aside, keyed by the index of the code they precede, so they can be
+    // re-inserted in order.
+    let mut pending_embedded: Vec<(usize, crate::translate::EmbeddedCmd)> = Vec::new();
+    let codes: Vec<crate::translate::PhonemeCode> = {
+        let mut kept = Vec::with_capacity(codes.len());
+        for c in codes {
+            match &c.marker {
+                Some(crate::translate::CodeMarker::Embedded(cmd)) => {
+                    pending_embedded.push((kept.len(), *cmd));
+                }
+                Some(_) => {}
+                None => kept.push(c.clone()),
+            }
+        }
+        kept
+    };
+    let codes = &codes[..];
+
     // Build a flat list of (code, is_boundary) for look-ahead
     let flat: Vec<(u8, bool)> = codes.iter().map(|c| (c.code, c.is_boundary)).collect();
     let n = flat.len();
 
     let mut i = 0;
+    // Re-insert the embedded-command markers in order as the loop reaches the
+    // codes they preceded.
+    let mut next_embedded = 0usize;
     let mut pending_stress: u8 = 0;
     let mut pending_lengthen = false;
     // Previous real phoneme (for coarticulation); reset to pause at silences.
@@ -674,6 +1140,10 @@ fn annotate_codes(
     let mut prev_wordstart = false;
 
     while i < n {
+        while pending_embedded.get(next_embedded).is_some_and(|(ix, _)| *ix <= i) {
+            result.push(AnnCode::Embedded(pending_embedded[next_embedded].1));
+            next_embedded += 1;
+        }
         let (code, is_boundary) = flat[i];
         i += 1;
 
@@ -812,6 +1282,9 @@ fn annotate_codes(
         }
     }
 
+    for &(_, cmd) in &pending_embedded[next_embedded..] {
+        result.push(AnnCode::Embedded(cmd));
+    }
     result
 }
 
@@ -847,24 +1320,6 @@ fn compute_prepause(
 // synthesize_phoneme_info — pass 2 workhorse
 // ---------------------------------------------------------------------------
 
-/// Synthesize one phoneme using its full annotation context.
-/// Pitch multiplier (relative to the base F0) at position `t` ∈ [0, 1] within
-/// an utterance.  Statements fall (declination); questions fall then rise.
-fn pitch_envelope(t: f64, is_question: bool) -> f64 {
-    const TOP: f64 = 1.25;
-    const BOTTOM: f64 = 0.60;
-    let t = t.clamp(0.0, 1.0);
-    if is_question {
-        if t < 0.7 {
-            TOP - (TOP - BOTTOM) * (t / 0.7)
-        } else {
-            // Rise through the final 30%, ending above the starting pitch.
-            BOTTOM + (TOP + 0.15 - BOTTOM) * ((t - 0.7) / 0.3)
-        }
-    } else {
-        TOP - (TOP - BOTTOM) * t
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Coarticulation — vowel/consonant formant transitions (GAPS §36, Stages 3–5)
@@ -910,12 +1365,17 @@ fn set_frame_rms(fr: &mut phondata::SpectFrame, new_rms: i32) {
 }
 
 /// Bend a frame's formants toward a target locus (C `AdjustFormants`).
+///
+/// `formant_factor` (×256) scales the F2 target for a voice pitched away from
+/// the default — a higher-pitched voice has a shorter vocal tract, so its
+/// formants sit higher.
 fn adjust_formants(
     fr: &mut phondata::SpectFrame,
     target: i32, min: i32, max: i32,
     f1_adj: i32, mut f3_adj: i32, hf_reduce: i32, flags: i32,
+    formant_factor: i32,
 ) {
-    // voice->formant_factor is 256 (1.0) for the default voice.
+    let target = target * formant_factor / 256;
     let mut x = (target - fr.ffreq[2] as i32) / 2;
     x = x.clamp(min, max);
     fr.ffreq[2] = (fr.ffreq[2] as i32 + x).clamp(0, i16::MAX as i32) as i16;
@@ -1023,7 +1483,13 @@ fn smooth_spect(frames: &mut [phondata::SpectFrame], centre: usize) {
 /// Apply a vowel entry (`which=1`) or exit (`which=2`) formant transition using
 /// the adjacent consonant's `vowel_transition` data.  Core of `FormantTransition2`
 /// (the glottal-stop and vowel-colour edge cases are not yet ported).
-fn apply_vowel_transition(frames: &mut Vec<phondata::SpectFrame>, data1: u32, data2: u32, which: u8) {
+fn apply_vowel_transition(
+    frames: &mut Vec<phondata::SpectFrame>,
+    data1: u32,
+    data2: u32,
+    which: u8,
+    formant_factor: i32,
+) {
     const RMS_START: i32 = 28;
     if frames.len() < 2 {
         return;
@@ -1037,7 +1503,8 @@ fn apply_vowel_transition(frames: &mut Vec<phondata::SpectFrame>, data1: u32, da
             if t.rms & 0x20 != 0 {
                 set_frame_rms(fr, next_rms * (t.rms & 0x1f) / 30);
             }
-            adjust_formants(fr, t.f2, t.f2_min, t.f2_max, t.f1, t.f3_adj, t.f3_amp, t.flags);
+            adjust_formants(fr, t.f2, t.f2_min, t.f2_max, t.f1, t.f3_adj, t.f3_amp, t.flags,
+                            formant_factor);
             if t.rms & 0x20 == 0 {
                 set_frame_rms(fr, t.rms * 2);
             }
@@ -1049,7 +1516,8 @@ fn apply_vowel_transition(frames: &mut Vec<phondata::SpectFrame>, data1: u32, da
         if t.f2 != 0 || t.flags != 0 {
             let mut fr = frames[frames.len() - 1].clone();
             if t.f2 != 0 {
-                adjust_formants(&mut fr, t.f2, t.f2_min, t.f2_max, t.f1, t.f3_adj, t.f3_amp, t.flags);
+                adjust_formants(&mut fr, t.f2, t.f2_min, t.f2_max, t.f1, t.f3_adj, t.f3_amp,
+                                t.flags, formant_factor);
             }
             set_frame_rms(&mut fr, t.rms * 2);
             frames.push(fr);
@@ -1063,8 +1531,14 @@ fn apply_vowel_transition(frames: &mut Vec<phondata::SpectFrame>, data1: u32, da
 /// yield PCM directly.
 enum PhonemeRender {
     /// Formant frames plus this phoneme's amplitude factor (applied per frame
-    /// when the run is rendered).
-    Frames { frames: Vec<phondata::SpectFrame>, amp_factor: f64 },
+    /// when the run is rendered), and any silence its program asked for on
+    /// either side (`PauseBefore` / `PauseAfter`, in samples).
+    Frames {
+        frames: Vec<phondata::SpectFrame>,
+        amp_factor: f64,
+        lead_silence: usize,
+        trail_silence: usize,
+    },
     /// Already-rendered PCM (WAV noise burst) or empty.
     Pcm(Vec<i16>),
 }
@@ -1077,6 +1551,7 @@ fn flush_run(
     run_frames: &mut Vec<phondata::SpectFrame>,
     run_amps: &mut Vec<f64>,
     run_pitch: &mut Vec<f64>,
+    run_speed: &mut Vec<f64>,
     run_centres: &mut Vec<usize>,
     output: &mut Vec<i16>,
     voice: &VoiceParams,
@@ -1104,22 +1579,27 @@ fn flush_run(
             }
         }
     }
-    // Route through the Klatt cascade when explicitly requested (`VoiceParams.klatt`)
-    // or when the run's frames are Klatt frames (`FRFLAG_KLATT`) — Klatt frames are
-    // meant for Klatt synthesis, not the harmonic path.  Voices with no Klatt frames
-    // (e.g. `en`) are unaffected.
-    let is_klatt_run = run_frames
-        .iter()
-        .any(|f| f.frflags & phondata::FRFLAG_KLATT != 0);
-    let raw = if voice.klatt || is_klatt_run {
+    // Route through the Klatt cascade only when the *voice* asks for it, as C
+    // does (`wcmd_spect = WCMD_KLATT` iff `voice->klattv[0]`).
+    //
+    // `FRFLAG_KLATT` on a frame is **not** that signal: it only means the frame
+    // carries the extra parallel-resonator parameters, and every shipped `en`
+    // frame has it.  Routing on the flag sent the standard voices through the
+    // Klatt engine; against the C oracle that cost 1.4 dB of spectral-envelope
+    // accuracy on average across an eight-sentence sweep (4.19 → 2.79 dB RMS,
+    // correlation 0.938 → 0.945), and 9.6 dB on "hello world" alone.
+    let raw = if voice.klatt {
         klatt::synthesize_frames_klatt(run_frames, run_amps, run_pitch, voice.sample_rate)
     } else {
-        wavegen::synthesize_frames_seq(run_frames, run_amps, run_pitch, voice, wavephase)
+        wavegen::synthesize_frames_seq(
+            run_frames, run_amps, run_pitch, run_speed, voice, wavephase,
+        )
     };
     output.extend_from_slice(&agc_clip(&raw));
     run_frames.clear();
     run_amps.clear();
     run_pitch.clear();
+    run_speed.clear();
     run_centres.clear();
 }
 
@@ -1127,6 +1607,11 @@ fn synthesize_phoneme_info(
     info: &PhonemeInfo,
     phdata: &crate::phoneme::PhonemeData,
     speed_factor: f64,
+    // `voice->formant_factor` × 256 — the vowel-transition targets are scaled
+    // by it, so a voice pitched away from the default shifts its formants too.
+    formant_factor: i32,
+    // The language's `stressLength` table, when its voice file declares one.
+    stress_lengths: Option<&[u32; 8]>,
 ) -> PhonemeRender {
     use setlengths::{calc_vowel_length_mod, length_mod_to_samples};
 
@@ -1152,6 +1637,10 @@ fn synthesize_phoneme_info(
         prev_wordstart: info.prev_wordstart,
         next_wordstart: info.next_wordstart,
         next2_wordstart: info.next2_wordstart,
+        // Synthesis stage: the phoneme list is already built, so the
+        // dictionary-vs-rules distinction no longer applies.
+        translation_given: false,
+        ..Default::default()
     };
     let mut extract = bytecode::interpret_phoneme(
         ph_tab.program,
@@ -1174,6 +1663,14 @@ fn synthesize_phoneme_info(
         }
     }
 
+    // `PauseBefore`/`PauseAfter <ms>` from the phoneme's own program (C keeps
+    // them in `phdata.pd_param[]` and `synthesize.c` adds them to the phoneme's
+    // prepause): German inserts 15-30 ms of silence before /r/ after a stop.
+    let lead_silence = (extract.pause_before_ms as f64 / 1000.0 * SAMPLERATE as f64
+        * speed_factor) as usize;
+    let trail_silence = (extract.pause_after_ms as f64 / 1000.0 * SAMPLERATE as f64
+        * speed_factor) as usize;
+
     // phSTOP(4) and phFRICATIVE(6): use WAV noise sample
     // phVSTOP(5) and phVFRICATIVE(7): fall through to formant synthesis
     if info.ph_type == 4 || info.ph_type == 6 {
@@ -1183,7 +1680,13 @@ fn synthesize_phoneme_info(
             if let Some(pcm) = sample::parse_wav_sample(
                 wav_addr, &phdata.phondata, speed_factor, extract.wav_param as i32,
             ) {
-                return PhonemeRender::Pcm(pcm);
+                if lead_silence == 0 && trail_silence == 0 {
+                    return PhonemeRender::Pcm(pcm);
+                }
+                let mut out = vec![0i16; lead_silence];
+                out.extend_from_slice(&pcm);
+                out.extend(std::iter::repeat(0i16).take(trail_silence));
+                return PhonemeRender::Pcm(out);
             }
         }
         // Fallback: short silence if no WAV data
@@ -1306,7 +1809,7 @@ fn synthesize_phoneme_info(
                 .map(|pe| pe.vowel_transition)
                 .unwrap_or([0; 4]);
             if (prev_vt[0] != 0 || prev_vt[1] != 0) && seq.frames.len() >= 2 {
-                apply_vowel_transition(&mut seq.frames, prev_vt[0], prev_vt[1], 1);
+                apply_vowel_transition(&mut seq.frames, prev_vt[0], prev_vt[1], 1, formant_factor);
             }
         }
 
@@ -1351,7 +1854,7 @@ fn synthesize_phoneme_info(
                     .map(|ne| ne.vowel_transition)
                     .unwrap_or([0; 4]);
                 if next_vt[2] != 0 || next_vt[3] != 0 {
-                    apply_vowel_transition(&mut seq.frames, next_vt[2], next_vt[3], 2);
+                    apply_vowel_transition(&mut seq.frames, next_vt[2], next_vt[3], 2, formant_factor);
                 }
             }
         }
@@ -1361,13 +1864,22 @@ fn synthesize_phoneme_info(
     // For vowels (typ=2): use CalcLengths formula.
     // For others: use raw frame lengths from the SPECT_SEQ.
     if info.ph_type == 2 /* phVOWEL */ {
+        // A `length <n>` (or `LengthAdd <n>`) instruction inside the phoneme's
+        // program overrides its declared `std_length` for this context — C seeds
+        // `pd_param[i_SET_LENGTH]` with `std_length` and lets the program change
+        // it.  German uses this on most of its vowels.
+        let std_length = extract
+            .set_length
+            .unwrap_or(info.std_length)
+            .saturating_add_signed(extract.add_length);
         let length_mod = calc_vowel_length_mod(
             info.stress_level,
             info.next_lm,
             info.next2_lm,
             info.more_syllables,
             info.end_of_clause,
-            info.std_length,
+            std_length,
+            stress_lengths,
         );
 
         // Extra lengthening from `:` modifier
@@ -1476,7 +1988,12 @@ fn synthesize_phoneme_info(
 
     // Return the finalised frames; the caller batches consecutive formant
     // phonemes into a run and renders them together (cross-phoneme continuity).
-    PhonemeRender::Frames { frames: seq.frames, amp_factor }
+    PhonemeRender::Frames {
+        frames: seq.frames,
+        amp_factor,
+        lead_silence,
+        trail_silence,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1620,25 +2137,11 @@ mod tests {
         let mut out = Vec::new();
         let mut phase = i32::MAX;
         let voice = VoiceParams::default(); // klatt = false → relies on auto-select
-        flush_run(&mut frames, &mut amps, &mut pitch, &mut centres, &mut out, &voice, &mut phase);
+        flush_run(&mut frames, &mut amps, &mut pitch, &mut Vec::new(), &mut centres, &mut out, &voice, &mut phase);
         assert!(!out.is_empty(), "Klatt-flagged run produced no audio");
     }
 
-    #[test]
-    fn pitch_envelope_falls_for_statements() {
-        // Declination: pitch decreases monotonically from start to end.
-        assert!(pitch_envelope(0.0, false) > pitch_envelope(0.5, false));
-        assert!(pitch_envelope(0.5, false) > pitch_envelope(1.0, false));
-        assert!(pitch_envelope(0.0, false) > 1.0); // starts above base
-        assert!(pitch_envelope(1.0, false) < 1.0); // ends below base
-    }
 
-    #[test]
-    fn pitch_envelope_rises_at_end_for_questions() {
-        // Falls through the body, then rises on the final stretch.
-        assert!(pitch_envelope(0.6, true) < pitch_envelope(0.0, true));
-        assert!(pitch_envelope(1.0, true) > pitch_envelope(0.7, true));
-    }
 
     #[test]
     fn resonator_tick_accumulates() {

@@ -171,13 +171,28 @@ pub const FLAG_PREFIX_REMOVED:u32 = 0x0080_0000;
 pub const FLAG_SUFFIX_REMOVED:u32 = 0x0000_2000;
 pub const FLAG_UNPRON_TEST:  u32 = 0x8000_0000;
 pub const FLAG_NO_TRACE:     u32 = 0x1000_0000;
+/// `$abbrev` (bit 13) — "use this pronunciation rather than split into
+/// letters".  With *no* pronunciation given it means the opposite: speak the
+/// word as individual letters (English `usa  $abbrev` → `j,u:,Es'eI`).
+pub const FLAG_ABBREV:       u32 = 0x0000_2000;
+/// `$pause` (bit 8) — insert a pause *before* this word.  Skipped at the start
+/// and end of a clause, and after the clause's first word.
+pub const FLAG_PREPAUSE:     u32 = 0x0000_0100;
+/// `$brk` (bit 28) — a shorter pre-pause than `$pause`.
+pub const FLAG_PAUSE1:       u32 = 0x1000_0000;
 
 pub const SUFX_E:   u32 = 0x0100;
 pub const SUFX_I:   u32 = 0x0200;
 pub const SUFX_P:   u32 = 0x0400;
 pub const SUFX_V:   u32 = 0x0800;
 pub const SUFX_D:   u32 = 0x1000;
+/// `q` — "don't retranslate": keep the phonemes the *whole word* produced
+/// rather than re-running the rules on the stem.  Italian `casa` matches
+/// `@C) a (_S1q`, and retranslating the stem loses the intervocalic `s` → `z`.
+pub const SUFX_Q:   u32 = 0x4000;
 pub const SUFX_A:   u32 = 0x40000;
+/// Bit 19 — "allow multiple suffixes before this suffix" (C `SUFX_M`).
+pub const SUFX_M:   u32 = 0x80000;
 pub const SUFX_S:   u32 = 0x0008; // FLAG_SUFX_S
 pub const SUFX_UNPRON: u32 = 0x8000;
 

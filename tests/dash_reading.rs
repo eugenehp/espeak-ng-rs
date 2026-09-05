@@ -32,7 +32,7 @@ fn english_number_hyphen_reads_dash() {
 fn german_uses_strich() {
     let Some(t) = tr("de") else { return };
     let ipa = t.text_to_ipa("5-10").unwrap();
-    assert!(ipa.contains("ʃtrˈɪç"), "de 5-10 → 'Strich': {ipa}");
+    assert!(ipa.contains("ʃtɾˈɪç"), "de 5-10 → 'Strich': {ipa}");
 }
 
 #[test]

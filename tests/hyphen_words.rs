@@ -13,10 +13,16 @@ fn hyphen_between_letters_splits_words() {
         return;
     };
     let ipa = |s: &str| t.text_to_ipa(s).unwrap();
-    // The hyphenated form reads identically to the space-separated words.
-    assert_eq!(ipa("well-known"), ipa("well known"));
-    assert_eq!(ipa("X-ray"), ipa("X ray"));
-    assert_eq!(ipa("mother-in-law"), ipa("mother in law"));
-    // Each part is a separate word (interior space, > 1 stress region).
-    assert!(ipa("state-of-the-art").contains(' '), "should split: {}", ipa("state-of-the-art"));
+    // A hyphen between two letters breaks the word for *lookup* — each part is
+    // translated on its own, so "well" and "known" get their own stress — but
+    // the parts are spoken as one word, with no space between them.  That is
+    // upstream's reading: `wˈɛlnˈəʊn`, not `wˈɛl nˈəʊn`.
+    let joined = |s: &str| ipa(s).replace(' ', "");
+    assert_eq!(ipa("well-known"), joined("well known"));
+    assert_eq!(ipa("X-ray"), joined("X ray"));
+    assert_eq!(ipa("mother-in-law"), joined("mother in law"));
+    assert_eq!(ipa("well-known"), "wˈɛlnˈəʊn");
+    assert!(!ipa("state-of-the-art").contains(' '), "one word: {}", ipa("state-of-the-art"));
+    // …and each part still carries its own stress mark.
+    assert_eq!(ipa("state-of-the-art").matches('ˈ').count(), 2);
 }

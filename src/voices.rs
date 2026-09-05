@@ -33,9 +33,39 @@ pub struct VoiceEntry {
     pub gender: char,
     /// Age in years from the `age` line; `0` when unspecified.
     pub age: u8,
+    /// `intonation <n>` — selects a row of `punct_to_tone`, i.e. which tunes a
+    /// clause's punctuation maps to.  Twenty-two shipped languages set it.
+    pub intonation: Option<u8>,
+    /// `stressLength <l0…l7>` — per-stress-level durations in mS/2, replacing
+    /// the built-in `stress_lengths` table for this language.
+    pub stress_length: Option<Vec<i32>>,
+    /// `stressOpt <bit…>` — each number sets that bit of `langopts.stress_flags`
+    /// (C's `ReadNumbers`).  Finnish and Estonian configure their whole stress
+    /// behaviour this way: `stressOpt 1 2 4 6` is
+    /// `S_FINAL_DIM_ONLY | S_FINAL_NO_2 | S_2_TO_HEAVY`.
+    pub stress_opt: Option<u32>,
+    /// `pitch <base> <range>` from the voice file — the two numbers C turns into
+    /// `pitch_base = (base - 9) << 12` and `pitch_range = (range - base) * 108`,
+    /// and from which it derives the voice's `formant_factor`.
+    pub pitch: Option<(i32, i32)>,
     /// `dictionary <name>` directive — the dict stem to load when it differs from
     /// the language code (e.g. Norwegian Bokmål `nb` → `no`).  `None` = use the code.
     pub dictionary: Option<String>,
+    /// `stressRule <rule> [unstressed_wd1] [unstressed_wd2]` — the language's
+    /// stress placement, for the ~15 languages configured through their voice
+    /// file rather than C's `tr_languages.c` (Basque, Quechua, Cherokee, Latin,
+    /// Finnish, Estonian, Arabic, …).
+    pub stress_rule: Option<Vec<i32>>,
+    /// `words <word_gap> [vowel_pause]` — the inter-word pause the language
+    /// asks for and, optionally, its vowel-pause bits.  Latin's `words 2` is
+    /// what puts a short pause after every word (`s'alwE_ m'UndE_`).
+    pub words: Option<Vec<i32>>,
+    /// `replace <flags> <old> <new>` — phoneme substitutions the voice applies to
+    /// the finished list.  Bit 0 = only at a word end, bit 1 = not in a stressed
+    /// syllable, bit 2 = only at a word start; `NULL` as the new phoneme deletes
+    /// it.  Russian's `replace 03 a a#` is what makes a word-final unstressed
+    /// `a` into `a#`.
+    pub replace: Vec<(u8, String, String)>,
     /// `phonemes <name>` directive — the phoneme table to select when it differs
     /// from the language code (e.g. `nb` → `no`).  `None` = use the code.
     pub phonemes: Option<String>,
@@ -172,6 +202,13 @@ fn parse_voice_file(root: &Path, path: &Path) -> Option<VoiceEntry> {
     let mut gender = '-';
     let mut age = 0u8;
     let mut dictionary = None;
+    let mut pitch: Option<(i32, i32)> = None;
+    let mut intonation: Option<u8> = None;
+    let mut stress_length: Option<Vec<i32>> = None;
+    let mut stress_opt: Option<u32> = None;
+    let mut stress_rule: Option<Vec<i32>> = None;
+    let mut words: Option<Vec<i32>> = None;
+    let mut replace: Vec<(u8, String, String)> = Vec::new();
     let mut phonemes = None;
     let mut dict_rules: Vec<u8> = Vec::new();
 
@@ -210,6 +247,51 @@ fn parse_voice_file(root: &Path, path: &Path) -> Option<VoiceEntry> {
             }
             // A voice may borrow another language's dictionary / phoneme table.
             "dictionary" => dictionary = it.next().map(str::to_string),
+            "pitch" => {
+                let n: Vec<i32> = it.by_ref().filter_map(|x| x.parse().ok()).collect();
+                if n.len() >= 2 {
+                    pitch = Some((n[0], n[1]));
+                }
+            }
+            "intonation" => intonation = it.next().and_then(|x| x.parse().ok()),
+            "stressopt" | "stressOpt" => {
+                let bits = it
+                    .by_ref()
+                    .take_while(|t| !t.starts_with("//"))
+                    .filter_map(|x| x.parse::<u32>().ok())
+                    .filter(|&b| b < 32)
+                    .fold(0u32, |acc, b| acc | (1 << b));
+                if bits != 0 {
+                    stress_opt = Some(bits);
+                }
+            }
+            "stresslength" | "stressLength" => {
+                let n: Vec<i32> = it.by_ref().filter_map(|x| x.parse().ok()).collect();
+                if !n.is_empty() {
+                    stress_length = Some(n);
+                }
+            }
+            "stressrule" | "stressRule" => {
+                let nums: Vec<i32> = it.filter_map(|n| n.parse::<i32>().ok()).collect();
+                if !nums.is_empty() {
+                    stress_rule = Some(nums);
+                }
+            }
+            "replace" => {
+                // `%d %s %s` in C, so the flags are decimal ("03" is 3).
+                let flags = it.next().and_then(|n| n.parse::<u8>().ok());
+                let old = it.next().map(str::to_string);
+                let new = it.next().unwrap_or("NULL").to_string();
+                if let (Some(f), Some(o)) = (flags, old) {
+                    replace.push((f, o, new));
+                }
+            }
+            "words" => {
+                let nums: Vec<i32> = it.filter_map(|n| n.parse::<i32>().ok()).collect();
+                if !nums.is_empty() {
+                    words = Some(nums);
+                }
+            }
             "phonemes" => phonemes = it.next().map(str::to_string),
             // Condition numbers selecting variant dict/rule groups (`dictrules 2`).
             "dictrules" => dict_rules.extend(it.filter_map(|n| n.parse::<u8>().ok())),
@@ -226,8 +308,84 @@ fn parse_voice_file(root: &Path, path: &Path) -> Option<VoiceEntry> {
     let file = path.strip_prefix(root).ok()?.to_string_lossy().replace('\\', "/");
     Some(VoiceEntry {
         priority, language, other_languages, languages, name, file, gender, age,
-        dictionary, phonemes, dict_rules,
+        intonation, stress_length, stress_opt, pitch, dictionary, stress_rule, words, replace,
+        phonemes,
+        dict_rules,
     })
+}
+
+/// The `stressRule` numbers from a language's voice file, if it sets them.
+///
+/// About fifteen languages are configured this way instead of in C's
+/// `tr_languages.c` — Basque (`stressRule 15`), Cherokee, Latin, Quechua,
+/// Finnish, Estonian, Arabic and friends — so the placement rule has to come
+/// from the data, not from a table in the port.
+pub fn voice_stress_rule(data_dir: &Path, lang: &str) -> Option<Vec<i32>> {
+    list_voices(data_dir)
+        .into_iter()
+        .find(|v| v.language.eq_ignore_ascii_case(lang))
+        .and_then(|v| v.stress_rule)
+}
+
+/// The `replace <flags> <old> <new>` lines a language's voice file declares.
+pub fn voice_replacements(data_dir: &Path, lang: &str) -> Vec<(u8, String, String)> {
+    list_voices(data_dir)
+        .into_iter()
+        .find(|v| v.language.eq_ignore_ascii_case(lang))
+        .map(|v| v.replace)
+        .unwrap_or_default()
+}
+
+/// The `words <word_gap> [vowel_pause]` a language's voice file declares.
+///
+/// `word_gap & 7` indexes C's `pause_phonemes[]` for the pause inserted at every
+/// word boundary; the second number, when present, replaces
+/// `langopts.vowel_pause`.
+pub fn voice_words(data_dir: &Path, lang: &str) -> Option<Vec<i32>> {
+    list_voices(data_dir)
+        .into_iter()
+        .find(|v| v.language.eq_ignore_ascii_case(lang))
+        .and_then(|v| v.words)
+}
+
+/// The `pitch <base> <range>` a language's voice file declares, if any.
+///
+/// C turns it into `pitch_base`/`pitch_range` *and* a `formant_factor` — a
+/// voice pitched away from the default gets its formants shifted with it.
+pub fn voice_pitch(data_dir: &Path, lang: &str) -> Option<(i32, i32)> {
+    list_voices(data_dir)
+        .into_iter()
+        .find(|v| v.language.eq_ignore_ascii_case(lang))
+        .and_then(|v| v.pitch)
+}
+
+/// The `intonation <n>` group a language's voice file selects, if any.
+///
+/// Part of reading the language configuration from data rather than a
+/// transcribed table (upstream #1466): twenty-two shipped languages set it, and
+/// it decides which tune each clause terminator maps to.
+pub fn voice_intonation(data_dir: &Path, lang: &str) -> Option<u8> {
+    list_voices(data_dir)
+        .into_iter()
+        .find(|v| v.language.eq_ignore_ascii_case(lang))
+        .and_then(|v| v.intonation)
+}
+
+/// The `stressOpt` bits a language's voice file sets, if any — these *replace*
+/// the built-in `stress_flags` for that language, as they do in C.
+pub fn voice_stress_opt(data_dir: &Path, lang: &str) -> Option<u32> {
+    list_voices(data_dir)
+        .into_iter()
+        .find(|v| v.language.eq_ignore_ascii_case(lang))
+        .and_then(|v| v.stress_opt)
+}
+
+/// The `stressLength <l0…l7>` table a language's voice file declares, if any.
+pub fn voice_stress_length(data_dir: &Path, lang: &str) -> Option<Vec<i32>> {
+    list_voices(data_dir)
+        .into_iter()
+        .find(|v| v.language.eq_ignore_ascii_case(lang))
+        .and_then(|v| v.stress_length)
 }
 
 /// Look up a voice by its primary language code and return `(dictionary,
@@ -253,6 +411,70 @@ pub fn voice_dict_condition(data_dir: &Path, lang: &str) -> u32 {
         .find(|v| v.language.eq_ignore_ascii_case(lang))
         .map(|v| v.dict_rules.iter().fold(0u32, |acc, &n| acc | (1u32 << n)))
         .unwrap_or(0)
+}
+
+/// An MBROLA voice: the `voices/mb/mb-<db>` file's `language` and its
+/// `mbrola <database> <phtrans>` directive.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MbrolaVoice {
+    /// The eSpeak language this voice speaks — `mb-en1` → `en`.
+    pub language: String,
+    /// The voice file's own `pitch <base> <range>`, if it has one — the MBROLA
+    /// voices set their own (`mb-la1` is `82 117`, the female ones `140 220`),
+    /// and the `.pho` pitch targets have to follow it.
+    pub pitch: Option<(i32, i32)>,
+    /// Diphone database name, e.g. `en1`.
+    pub database: String,
+    /// Phoneme-translation table file name, e.g. `en1_phtrans`.
+    pub phtrans: String,
+}
+
+/// Load an MBROLA voice definition by name (`mb-en1`, `mb/en1`, or `en1`).
+///
+/// Reads `<data>/voices/mb/mb-<name>`: `mbrola <db> <phtrans>` names the diphone
+/// database and the phoneme-name translation table, and the `language <code>
+/// [priority]` lines give the language to translate with.  A voice usually
+/// lists several — `mb-en1` has `en-uk 3`, `en-gb 3`, `en 2` — and the *lowest*
+/// priority number is the best match, so `en` wins.
+pub fn load_mbrola_voice(data_dir: &Path, name: &str) -> Option<MbrolaVoice> {
+    let db = name.strip_prefix("mb-").or_else(|| name.strip_prefix("mb/")).unwrap_or(name);
+    let text = std::fs::read_to_string(data_dir.join("voices").join("mb").join(format!("mb-{db}")))
+        .ok()?;
+
+    let mut best: Option<(i32, String)> = None;
+    let mut voice = None;
+    let mut pitch = None;
+    for line in text.lines() {
+        let line = line.split("//").next().unwrap_or("").trim();
+        let mut f = line.split_whitespace();
+        match f.next() {
+            Some("language") => {
+                if let Some(code) = f.next() {
+                    let pty = f.next().and_then(|p| p.parse().ok()).unwrap_or(5);
+                    if best.as_ref().is_none_or(|(b, _)| pty < *b) {
+                        best = Some((pty, code.to_string()));
+                    }
+                }
+            }
+            Some("pitch") => {
+                let n: Vec<i32> = f.by_ref().filter_map(|x| x.parse().ok()).collect();
+                if n.len() >= 2 {
+                    pitch = Some((n[0], n[1]));
+                }
+            }
+            Some("mbrola") => {
+                let database = f.next()?.to_string();
+                let phtrans = f.next().unwrap_or("").to_string();
+                let phtrans =
+                    if phtrans.is_empty() { format!("{database}_phtrans") } else { phtrans };
+                voice = Some((database, phtrans));
+            }
+            _ => {}
+        }
+    }
+    let (database, phtrans) = voice?;
+    let language = best.map(|(_, c)| c).unwrap_or_else(|| "en".into());
+    Some(MbrolaVoice { language, pitch, database, phtrans })
 }
 
 /// One `formant <index> <freq%> <height%> [width%]` line from a variant file.
@@ -292,6 +514,10 @@ pub struct VariantParams {
     pub echo: Option<(i32, i32)>,
     /// `formant <i> <freq%> <height%> [width%]` lines.
     pub formants: Vec<VariantFormant>,
+    /// `tone <freq> <height> …` — up to six `(frequency, amplitude)` points
+    /// shaping the harmonic spectrum (`ReadTonePoints`).  `128` is "no change";
+    /// the default curve is `600 170 1200 135 2000 110 3000 110`.
+    pub tone: Option<[i32; 12]>,
     /// `stressAmp …` (per stress level).
     pub stress_amp: Vec<i32>,
     /// `stressAdd …`.
@@ -370,6 +596,19 @@ fn parse_variant(text: &str) -> Option<VariantParams> {
                         width: n.get(3).copied().unwrap_or(100),
                     });
                 }
+            }
+            "tone" => {
+                // `ReadTonePoints`: up to six freq/height pairs, `-1` ending
+                // the list so the last height extends to the top of the range.
+                let n = ints(it);
+                let mut pts = [-1i32; 12];
+                for (i, &x) in n.iter().take(12).enumerate() {
+                    pts[i] = x;
+                }
+                if n.len() < 12 {
+                    pts[n.len().min(11)] = -1;
+                }
+                v.tone = Some(pts);
             }
             "stressamp" | "stressAmp" => v.stress_amp = ints(it),
             "stressadd" | "stressAdd" => v.stress_add = ints(it),

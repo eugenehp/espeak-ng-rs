@@ -20,7 +20,7 @@ use super::{
     RULE_DOUBLE, RULE_DOLLAR, RULE_SYLLABLE, RULE_NOVOWELS, RULE_SKIPCHARS,
     RULE_INC_SCORE, RULE_DEC_SCORE, RULE_DEL_FWD, RULE_ENDING, RULE_NO_SUFFIX,
     RULE_STRESSED, RULE_CAPITAL, RULE_IFVERB, RULE_SPELLING,
-    RULE_SPACE,
+    RULE_SPACE, RULE_LAST_RULE,
     DOLLAR_UNPR, DOLLAR_NOPREFIX, DOLLAR_LIST,
     BITNUM_FLAG_ALT,
     SUFX_UNPRON, SUFX_P,
@@ -69,12 +69,70 @@ pub fn is_letter(letter_bits: &[u8; 256], c: u32, group: usize) -> bool {
 ///
 /// Use this instead of `is_letter` when you have a raw Unicode codepoint
 /// and the dictionary's `letter_bits_offset`.
+
+/// `remove_accent` — a rough 7-bit ASCII equivalent for every accented letter
+/// from U+00C0 up to U+025D (schwa), transcribed from `dictionary.c`.
+///
+/// Letter-group membership is tested on the *base* letter: Spanish `í` counts
+/// as a vowel because `i` does.  Without this, a rule like `d (A` ("d before a
+/// vowel") never matched an accented vowel, and `es "día"` came out as `d`.
+/// `0` means the character has no ASCII equivalent.
+const REMOVE_ACCENT: [u8; 414] = [
+    97, 97, 97, 97, 97, 97, 97, 99, 101, 101, 101, 101, 105, 105, 105, 105, // U+00C0
+    100, 110, 111, 111, 111, 111, 111, 0, 111, 117, 117, 117, 117, 121, 116, 115, // U+00D0
+    97, 97, 97, 97, 97, 97, 97, 99, 101, 101, 101, 101, 105, 105, 105, 105, // U+00E0
+    100, 110, 111, 111, 111, 111, 111, 0, 111, 117, 117, 117, 117, 121, 116, 121, // U+00F0
+    97, 97, 97, 97, 97, 97, 99, 99, 99, 99, 99, 99, 99, 99, 100, 100, // U+0100
+    100, 100, 101, 101, 101, 101, 101, 101, 101, 101, 101, 101, 103, 103, 103, 103, // U+0110
+    103, 103, 103, 103, 104, 104, 104, 104, 105, 105, 105, 105, 105, 105, 105, 105, // U+0120
+    105, 105, 105, 105, 106, 106, 107, 107, 107, 108, 108, 108, 108, 108, 108, 108, // U+0130
+    108, 108, 108, 110, 110, 110, 110, 110, 110, 110, 110, 110, 111, 111, 111, 111, // U+0140
+    111, 111, 111, 111, 114, 114, 114, 114, 114, 114, 115, 115, 115, 115, 115, 115, // U+0150
+    115, 115, 116, 116, 116, 116, 116, 116, 117, 117, 117, 117, 117, 117, 117, 117, // U+0160
+    117, 117, 117, 117, 119, 119, 121, 121, 121, 122, 122, 122, 122, 122, 122, 115, // U+0170
+    98, 98, 98, 98, 0, 0, 111, 99, 99, 100, 100, 100, 100, 100, 101, 101, // U+0180
+    101, 102, 102, 103, 103, 104, 105, 105, 107, 107, 108, 108, 109, 110, 110, 111, // U+0190
+    111, 111, 111, 111, 112, 112, 121, 0, 0, 115, 115, 116, 116, 116, 116, 117, // U+01A0
+    117, 117, 118, 121, 121, 122, 122, 122, 122, 122, 122, 122, 0, 0, 0, 119, // U+01B0
+    116, 116, 116, 107, 100, 100, 100, 108, 108, 108, 110, 110, 110, 97, 97, 105, // U+01C0
+    105, 111, 111, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 101, 97, 97, // U+01D0
+    97, 97, 97, 97, 103, 103, 103, 103, 107, 107, 111, 111, 111, 111, 122, 122, // U+01E0
+    106, 100, 100, 100, 103, 103, 119, 119, 110, 110, 97, 97, 97, 97, 111, 111, // U+01F0
+    97, 97, 97, 97, 101, 101, 101, 101, 105, 105, 105, 105, 111, 111, 111, 111, // U+0200
+    114, 114, 114, 114, 117, 117, 117, 117, 115, 115, 116, 116, 121, 121, 104, 104, // U+0210
+    110, 100, 111, 111, 122, 122, 97, 97, 101, 101, 111, 111, 111, 111, 111, 111, // U+0220
+    111, 111, 121, 121, 108, 110, 116, 106, 100, 113, 97, 99, 99, 108, 116, 115, // U+0230
+    122, 0, 0, 98, 117, 118, 101, 101, 106, 106, 113, 113, 114, 114, 121, 121, // U+0240
+    97, 97, 97, 98, 111, 99, 100, 100, 101, 101, 101, 101, 101, 101, // U+0250
+];
+
+/// The unaccented base of a Latin letter (`í` → `i`), via C's `remove_accent`
+/// table.  Characters outside the table are returned unchanged.
+pub fn fold_accent(c: char) -> char {
+    let wc = c as u32;
+    if (0xc0..0xc0 + REMOVE_ACCENT.len() as u32).contains(&wc) {
+        match REMOVE_ACCENT[(wc - 0xc0) as usize] {
+            0 => c,
+            base => base as char,
+        }
+    } else {
+        c
+    }
+}
+
 pub fn is_letter_wc(letter_bits: &[u8; 256], wc: u32, letter_bits_offset: u32, group: usize) -> bool {
     let idx = if letter_bits_offset > 0 {
         if wc < letter_bits_offset { return false; }
         let ix = wc - letter_bits_offset;
         if ix >= 128 { return false; }
         ix as usize
+    } else if (0xc0..0xc0 + REMOVE_ACCENT.len() as u32).contains(&wc) {
+        // An accented letter is tested through its unaccented base (C's
+        // `IsLetter`), so `í` is a vowel wherever `i` is.
+        match REMOVE_ACCENT[(wc - 0xc0) as usize] {
+            0 => return false,
+            base => base as usize,
+        }
     } else {
         if wc >= 256 { return false; }
         wc as usize
@@ -772,7 +830,11 @@ pub fn match_rule(
         }
 
         // ── Evaluate this rule ────────────────────────────────────────────────
-        if failed == 2 && !unpron_ignore {
+        // In unpron-test mode only rules that explicitly match the start of a
+        // word count, and `RULE_PRE_ATSTART` is what clears the flag — so the
+        // *local* copy is the one to test.  Reading the outer one instead made
+        // every word unpronounceable.
+        if failed == 2 && !unpron_ignore_local {
             let at_word_start = !check_atstart || (pre_ptr == 0 || word[pre_ptr.saturating_sub(1)] == b' ');
             if at_word_start {
                 if check_atstart { match_.points += 4; }
@@ -797,6 +859,42 @@ pub fn match_rule(
                     }
                     best = match_.clone();
                     total_consumed = consumed;
+                }
+
+                // `-X`: record every rule that matched here, with its score,
+                // exactly where C's `option_phonemes & espeakPHONEMES_TRACE`
+                // block sits.
+                if trace_enabled() && match_.points > 0 {
+                    let rule_end = rules[_rule_start..]
+                        .iter()
+                        .position(|&b| b == 0)
+                        .map(|rel| _rule_start + rel)
+                        .unwrap_or(rules.len());
+                    let phonemes = if match_.phonemes_offset == usize::MAX {
+                        Vec::new()
+                    } else {
+                        let start = match_.phonemes_offset;
+                        let end = dict.data[start..]
+                            .iter()
+                            .position(|&b| b == 0)
+                            .map(|rel| start + rel)
+                            .unwrap_or(dict.data.len());
+                        dict.data[start..end].to_vec()
+                    };
+                    trace_push(RuleTrace {
+                        word_pos: ctx.word_pos,
+                        // C adds 35 for a two-letter group.
+                        points: match_.points + if group_length > 1 { 35 } else { 0 },
+                        rule: decode_rule(
+                            // The group's own letters, at the current position.
+                            word
+                                .get(ctx.word_pos..(ctx.word_pos + group_length).min(word.len()))
+                                .unwrap_or(&[]),
+                            &rules[_rule_start..rule_end],
+                            ctx.unpron_test,
+                        ),
+                        phonemes,
+                    });
                 }
             }
         }
@@ -882,6 +980,33 @@ pub fn translate_rules_phdata(
     word_vowel_count: &mut i32,
     word_stressed_count: &mut i32,
     phdata: Option<&crate::phoneme::load::PhonemeData>,
+) -> RulesResult {
+    translate_rules_ext(
+        dict, word_buf, word_start, word_flags, dict_flags, letter_bits,
+        dict_condition, word_vowel_count, word_stressed_count, phdata, true,
+    )
+}
+
+/// As [`translate_rules_phdata`], with C's `end_phonemes == NULL` mode available.
+///
+/// `want_ending == true` mirrors a non-NULL `end_phonemes`: `TranslateRules`
+/// **returns as soon as a standard prefix/suffix matches**, leaving the rest of
+/// the word for the caller to re-translate after removing it.  `false` mirrors
+/// the second call C makes when the ending can't be used, translating the whole
+/// word straight through.
+#[allow(clippy::too_many_arguments)]
+pub fn translate_rules_ext(
+    dict: &Dictionary,
+    word_buf: &[u8],
+    word_start: usize,
+    word_flags: u32,
+    dict_flags: u32,
+    letter_bits: &[u8; 256],
+    dict_condition: u32,
+    word_vowel_count: &mut i32,
+    word_stressed_count: &mut i32,
+    phdata: Option<&crate::phoneme::load::PhonemeData>,
+    want_ending: bool,
 ) -> RulesResult {
     if dict.rules().is_empty() {
         return RulesResult::default();
@@ -1060,16 +1185,33 @@ pub fn translate_rules_phdata(
                 }
                 let before_len = out_phonemes.len();
                 out_phonemes.extend_from_slice(&dict.data[ph_start..ph_end]);
-                // If this rule has RULE_ENDING, record stem/suffix split
-                if match1.end_type != 0 && out_end_type == 0 {
+                // Capture the ending's phonemes.  A *prefix* match (SUFX_P)
+                // always wins — C returns from `TranslateRules` right there — but
+                // for suffixes keep the first match, which is what the rest of
+                // this port's suffix handling expects.
+                if match1.end_type != 0
+                    && want_ending
+                    && (out_end_type == 0 || match1.end_type & SUFX_P != 0)
+                {
                     out_stem_ph_len = before_len;
-                    let suffix_slice = &out_phonemes[before_len..];
-                    out_end_phonemes.extend_from_slice(suffix_slice);
+                    out_end_phonemes.clear();
+                    out_end_phonemes.extend_from_slice(&out_phonemes[before_len..]);
                 }
             }
-            if match1.end_type != 0 {
+            if match1.end_type != 0 && want_ending {
                 out_end_type = match1.end_type;
                 out_suffix_start = pos; // pos points to start of suffix in word_buf
+                // C returns from `TranslateRules` as soon as a standard
+                // prefix/suffix matches; the caller removes it and re-translates
+                // the stem.  Doing that for a **prefix** is what makes German
+                // `be-` verbs work: previously the scan continued, a later
+                // suffix overwrote `end_type`, and the prefix rule's phonemes
+                // stayed in `end_phonemes` — so "beachten" read `b'@b@` instead
+                // of `b@'axt@n`.  Suffix matches keep scanning, which is what the
+                // rest of this port's suffix handling is built around.
+                if match1.end_type & SUFX_P != 0 {
+                    break;
+                }
             }
         }
 
@@ -1268,5 +1410,305 @@ mod tests {
         // (Even if imperfect — we're testing it doesn't crash)
         assert!(!result.spellword,
             "hello should not trigger spellword; phonemes={:?}", result.phonemes);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Rule tracing (`-X`)
+// ---------------------------------------------------------------------------
+
+/// One rule that matched at the current letter position, as `-X` reports it.
+#[derive(Debug, Clone)]
+pub struct RuleTrace {
+    /// Letter position in the word this rule matched at — `-X` separates
+    /// positions with a blank line.
+    pub word_pos: usize,
+    /// The rule's score (C adds 35 for a two-letter group, to account for the
+    /// extra letter matching).
+    pub points: i32,
+    /// The rule rendered back to source form (`h) i (_`).
+    pub rule: String,
+    /// The rule's phoneme bytes, for the caller to decode into mnemonics.
+    pub phonemes: Vec<u8>,
+}
+
+/// One entry in a `-X` trace.
+#[derive(Debug, Clone)]
+pub enum TraceEvent {
+    /// A new word is being translated (`Translate 'hi'`).
+    Word(String),
+    /// The word was found in the dictionary, so no rules ran
+    /// (`Found: 'hello' [h@loU]`): the word, its phoneme bytes, and its flags.
+    Found(String, Vec<u8>, [u32; 2]),
+    /// A rule matched.
+    Rule(RuleTrace),
+}
+
+thread_local! {
+    /// Collected trace events; `Some` while tracing is enabled.
+    static TRACE: std::cell::RefCell<Option<Vec<TraceEvent>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Start collecting rule matches on this thread (`espeakPHONEMES_TRACE`).
+pub fn trace_begin() {
+    TRACE.with(|t| *t.borrow_mut() = Some(Vec::new()));
+}
+
+/// Stop collecting and return everything gathered since [`trace_begin`].
+pub fn trace_take() -> Vec<TraceEvent> {
+    TRACE.with(|t| t.borrow_mut().take()).unwrap_or_default()
+}
+
+/// Record the start of a word's translation, if tracing is on.
+pub fn trace_word(word: &str) {
+    TRACE.with(|t| {
+        if let Some(v) = t.borrow_mut().as_mut() {
+            v.push(TraceEvent::Word(word.to_string()));
+        }
+    });
+}
+
+/// Record a dictionary hit (C's `Found:` trace line).
+pub fn trace_found(word: &str, phonemes: &[u8], flags: [u32; 2]) {
+    TRACE.with(|t| {
+        if let Some(v) = t.borrow_mut().as_mut() {
+            v.push(TraceEvent::Found(word.to_string(), phonemes.to_vec(), flags));
+        }
+    });
+}
+
+/// Render dictionary flags the way `print_dictionary_flags` does
+/// (`$nounf $only`), for the `Found:` trace line.
+pub fn decode_dict_flags(flags: [u32; 2]) -> String {
+    // `mnem_flags` from `compiledict.c`, keyed by bit number.
+    const NAMES: [(u32, &str); 44] = [
+        (8, "$pause"), (9, "$strend"), (10, "$strend2"), (11, "$unstressend"),
+        (12, "$accent_before"), (13, "$abbrev"), (14, "$double"), (15, "$alt"),
+        (16, "$alt2"), (17, "$alt3"), (18, "$alt4"), (19, "$alt5"), (20, "$alt6"),
+        (21, "$alt7"), (23, "$combine"), (24, "$dot"), (25, "$hasdot"),
+        (27, "$max3"), (28, "$brk"), (29, "$text"),
+        (0x20, "$verbf"), (0x21, "$verbsf"), (0x22, "$nounf"), (0x23, "$pastf"),
+        (0x24, "$verb"), (0x25, "$noun"), (0x26, "$past"), (0x28, "$verbextend"),
+        (0x29, "$capital"), (0x2a, "$allcaps"), (0x2b, "$accent"),
+        (0x2d, "$sentence"), (0x2e, "$only"), (0x2f, "$onlys"), (0x30, "$stem"),
+        (0x31, "$atend"), (0x32, "$atstart"), (0x33, "$native"),
+        // padding so the array length is a constant the compiler accepts
+        (64, ""), (65, ""), (66, ""), (67, ""), (68, ""), (69, ""),
+    ];
+    const STRESS: [&str; 16] = [
+        "", "$1", "$2", "$3", "$4", "$5", "$6", "$7",
+        "$u", "$u1", "$u2", "$u3", "$u+", "$u1+", "$u2+", "$u3+",
+    ];
+
+    let mut out = String::new();
+    let stress = (flags[0] & 0xf) as usize;
+    if stress != 0 {
+        out.push_str(STRESS[stress]);
+    }
+    for (bit, name) in NAMES {
+        if name.is_empty() {
+            continue;
+        }
+        let set = if bit < 30 {
+            flags[0] & (1 << bit) != 0
+        } else if bit >= 0x20 {
+            flags[1] & (1 << (bit - 0x20)) != 0
+        } else {
+            false
+        };
+        if set {
+            out.push(' ');
+            out.push_str(name);
+        }
+    }
+    out
+}
+
+/// True while tracing is on — checked before doing the decoding work.
+pub fn trace_enabled() -> bool {
+    TRACE.with(|t| t.borrow().is_some())
+}
+
+fn trace_push(entry: RuleTrace) {
+    TRACE.with(|t| {
+        if let Some(v) = t.borrow_mut().as_mut() {
+            v.push(TraceEvent::Rule(entry));
+        }
+    });
+}
+
+/// Render a compiled rule back to its source form — a port of `DecodeRule`
+/// (`compiledict.c`), which is what `-X` prints for each matching rule.
+///
+/// `group_chars` is the letter group the rule lives under, `rule` the compiled
+/// bytes from just after the group header up to (not including) `RULE_PHONEMES`.
+pub fn decode_rule(group_chars: &[u8], rule: &[u8], unpron_test: bool) -> String {
+    const SYMBOLS: [u8; 32] = [
+        b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ',
+        b'&', b'%', b'+', b'#', b'S', b'D', b'Z', b'A', b'L', b'!',
+        b' ', b'@', b'?', b'J', b'N', b'K', b'V', b'?', b'T', b'X',
+        b'?', b'W',
+    ];
+    const SYMBOLS_LG: [u8; 7] = [b'A', b'B', b'C', b'H', b'F', b'G', b'Y'];
+
+    let mut buf: Vec<u8> = group_chars.to_vec();
+    let mut buf_pre: Vec<u8> = Vec::new();
+    // Which buffer the decoded characters go into.
+    let mut in_pre = false;
+    let mut match_type = 0u8;
+    let mut linenum = 0i32;
+    let mut condition_num = 0u8;
+    let mut at_start = false;
+
+    let mut i = 0usize;
+    while i < rule.len() {
+        let rb = rule[i];
+        i += 1;
+
+        if rb <= RULE_LINENUM {
+            match rb {
+                0 | RULE_PHONEMES => break,
+                RULE_PRE_ATSTART => {
+                    at_start = true;
+                    match_type = RULE_PRE;
+                    in_pre = true;
+                }
+                RULE_PRE => {
+                    match_type = RULE_PRE;
+                    in_pre = true;
+                }
+                RULE_POST => {
+                    match_type = RULE_POST;
+                    // Back to the main buffer: the post-context is printed
+                    // after the group, not reversed like the pre-context.
+                    in_pre = false;
+                    buf.extend_from_slice(b" (");
+                }
+                RULE_PH_COMMON => {}
+                RULE_CONDITION => {
+                    condition_num = rule.get(i).copied().unwrap_or(0);
+                    i += 1;
+                }
+                RULE_LINENUM => {
+                    let lo = rule.get(i).copied().unwrap_or(0) as i32;
+                    let hi = rule.get(i + 1).copied().unwrap_or(0) as i32;
+                    linenum = lo - 1 + (hi - 1) * 255;
+                    i += 2;
+                }
+                _ => {}
+            }
+            continue;
+        }
+
+        let target: &mut Vec<u8> = if in_pre { &mut buf_pre } else { &mut buf };
+        let c: u8;
+        if rb == RULE_DOLLAR {
+            let value = rule.get(i).copied().unwrap_or(0);
+            i += 1;
+            if value != 0x01 || unpron_test {
+                target.push(b'$');
+                target.extend_from_slice(dollar_rule_name(value).as_bytes());
+            }
+            c = b' ';
+        } else if rb == RULE_ENDING {
+            const FLAG_CHARS: &[u8] = b"eipvdfq tba ";
+            let f0 = rule.get(i).copied().unwrap_or(0) as u32 & 0x7f;
+            let f1 = rule.get(i + 1).copied().unwrap_or(0) as u32 & 0x7f;
+            let mut flags = (f0 << 8) + f1;
+            let n = rule.get(i + 2).copied().unwrap_or(0) & 0x7f;
+            i += 3;
+            // `SUFX_P >> 8` is 0x80 in the packed flag word.
+            let suffix_char = if flags & 0x80 != 0 { b'P' } else { b'S' };
+            target.push(suffix_char);
+            target.extend_from_slice(n.to_string().as_bytes());
+            for &fc in FLAG_CHARS.iter().take(9) {
+                if flags & 1 != 0 {
+                    target.push(fc);
+                }
+                flags >>= 1;
+            }
+            c = b' ';
+        } else if rb == RULE_LETTERGP {
+            let v = rule.get(i).copied().unwrap_or(b'A');
+            i += 1;
+            c = SYMBOLS_LG
+                .get(v.wrapping_sub(b'A') as usize)
+                .copied()
+                .unwrap_or(b'?');
+        } else if rb == RULE_LETTERGP2 {
+            let value = rule.get(i).copied().unwrap_or(b'A').wrapping_sub(b'A') as usize;
+            i += 1;
+            let (a, b) = (b'L', (value / 10) as u8 + b'0');
+            let last = (value % 10) as u8 + b'0';
+            // In a PRE context the rule reads backwards, so the marker trails.
+            if match_type == RULE_PRE {
+                target.push(last);
+                target.push(b);
+                c = a;
+            } else {
+                target.push(a);
+                target.push(b);
+                c = last;
+            }
+        } else if rb <= RULE_LAST_RULE {
+            c = SYMBOLS[rb as usize];
+        } else if rb == RULE_SPACE {
+            c = b'_';
+        } else {
+            c = rb;
+        }
+        target.push(c);
+    }
+
+    // Assemble: optional line number, optional condition, reversed pre-context,
+    // then the group + post-context; padded to at least 8 columns like C.
+    let mut out = String::new();
+    if linenum > 0 {
+        out.push_str(&format!("{linenum:5}:\t"));
+    }
+    if condition_num > 0 {
+        out.push_str(&format!("?{condition_num} "));
+    }
+    if !buf_pre.is_empty() || at_start {
+        if at_start {
+            out.push('_');
+        }
+        // The pre-context is matched backwards, so print it reversed.
+        for &b in buf_pre.iter().rev() {
+            out.push(b as char);
+        }
+        out.push_str(") ");
+    }
+    out.push_str(&String::from_utf8_lossy(&buf));
+    while out.len() < 8 {
+        out.push(' ');
+    }
+    out
+}
+
+/// `$name` rule attributes, in the order `mnem_rules` lists them.
+fn dollar_rule_name(value: u8) -> &'static str {
+    match value {
+        0x01 => "alt",
+        0x02 => "alt2",
+        0x03 => "alt3",
+        0x04 => "alt4",
+        0x05 => "alt5",
+        0x06 => "alt6",
+        0x07 => "alt7",
+        0x11 => "pause",
+        0x12 => "strend",
+        0x13 => "strend2",
+        0x14 => "unstressend",
+        0x15 => "atstart",
+        0x16 => "atend",
+        0x24 => "accent",
+        0x25 => "sentence",
+        0x28 => "text",
+        0x2a => "noun",
+        0x2b => "verb",
+        0x2c => "past",
+        _ => "?",
     }
 }

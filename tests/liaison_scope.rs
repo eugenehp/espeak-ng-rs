@@ -19,8 +19,11 @@ fn hungarian_numbers_keep_final_consonant() {
     assert_eq!(ipa("6"), "hˈɑt", "hu 6 = hat");
     assert_eq!(ipa("7"), "hˈeːt", "hu 7 = hét");
     assert!(ipa("15").ends_with("øt"), "hu 15 = tizenöt: {}", ipa("15"));
-    // In a decimal the final digit keeps its consonant too.
-    assert!(ipa("3,5").ends_with("øt"), "hu 3,5 ends in öt: {}", ipa("3,5"));
+    // In a decimal the final digit keeps its consonant too.  Hungarian reads the
+    // fraction as a number plus its scale word ("három egész öt tized"), so "öt"
+    // is followed by "tized" rather than ending the clause.
+    assert!(ipa("3,5").contains("øt"), "hu 3,5 contains öt: {}", ipa("3,5"));
+    assert!(ipa("3,5").contains("tiz"), "hu 3,5 names the tenths: {}", ipa("3,5"));
 }
 
 #[test]
@@ -31,7 +34,7 @@ fn french_liaison_still_works() {
     };
     let ipa = |s: &str| t.text_to_ipa(s).unwrap();
     // Liaison consonant is pronounced before a vowel, silent before a consonant.
-    assert!(ipa("les amis").contains("lez"), "liaison z before vowel: {}", ipa("les amis"));
+    assert!(ipa("les amis").contains("le-z"), "liaison z before vowel: {}", ipa("les amis"));
     assert!(!ipa("les chats").contains('z'), "no liaison before consonant: {}", ipa("les chats"));
     assert!(ipa("deux ans").contains("øz"), "deux+ans liaison: {}", ipa("deux ans"));
     assert!(!ipa("deux chats").contains('z'), "deux+chats no liaison: {}", ipa("deux chats"));

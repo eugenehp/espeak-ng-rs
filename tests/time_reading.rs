@@ -34,12 +34,12 @@ fn german_time_inserts_uhr_for_valid_hours_only() {
     let Some(t) = tr("de") else { return };
     let ipa = |s: &str| t.text_to_ipa(s).unwrap();
     // "uhr" connector present for a valid hour (0–23) …
-    assert!(ipa("10:30").contains("uːr"), "de 10:30 → 'uhr': {}", ipa("10:30"));
-    assert!(ipa("23:30").contains("uːr"), "de 23:30 → 'uhr': {}", ipa("23:30"));
+    assert!(ipa("10:30").contains("uːɾ"), "de 10:30 → 'uhr': {}", ipa("10:30"));
+    assert!(ipa("23:30").contains("uːɾ"), "de 23:30 → 'uhr': {}", ipa("23:30"));
     assert!(!ipa("10:30").contains('\n'), "de 10:30 must not break");
     // … absent for an out-of-range hour.
-    assert!(!ipa("24:30").contains("uːr"), "de 24:30 → no 'uhr': {}", ipa("24:30"));
-    assert!(!ipa("100:30").contains("uːr"), "de 100:30 → no 'uhr': {}", ipa("100:30"));
+    assert!(!ipa("24:30").contains("uːɾ"), "de 24:30 → no 'uhr': {}", ipa("24:30"));
+    assert!(!ipa("100:30").contains("uːɾ"), "de 100:30 → no 'uhr': {}", ipa("100:30"));
 }
 
 #[test]

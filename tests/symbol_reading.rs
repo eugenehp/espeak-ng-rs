@@ -52,7 +52,9 @@ fn math_and_degree_symbols_are_spoken() {
     assert!(t.text_to_ipa("∞").unwrap().contains("ɪnfˈɪnɪti"), "∞ → infinity");
     assert!(t.text_to_ipa("√4").unwrap().contains("skwˈeə ɹˈuːt"), "√ → square root");
     assert!(t.text_to_ipa("3≠4").unwrap().contains("nˌɒt ˈiːkwəl"), "≠ → not equal to");
-    assert!(t.text_to_ipa("x≤5").unwrap().contains("lˈɛs ðɐn ɔː ˈiːkwəl"), "≤ → less than or equal");
+    // "or" links into the following vowel with the English linking r
+    // (`IfNextVowelAppend(r-)` in the phoneme's own program), as upstream does.
+    assert!(t.text_to_ipa("x≤5").unwrap().contains("ɔːɹ ˈiːkwəl"), "≤ → less than or equal");
     // Temperature symbols (multi-word readings).
     let cel = t.text_to_ipa("20℃").unwrap();
     assert!(cel.contains("dɪɡɹˈiːz") && cel.contains("sˈɛlsɪəs"), "℃ → degrees celsius: {cel}");
@@ -82,20 +84,20 @@ fn arithmetic_and_degree_symbols_read_in_other_languages() {
     let cases: &[(&str, &str, &str)] = &[
         ("de", "5+3", "plˈʊs"),   // plus
         ("de", "5−2", "mˈiːnʊs"), // minus
-        ("de", "20°", "ɡrˈɑːt"),  // grad
+        ("de", "20°", "ɡɾˈɑːt"),  // grad
         ("fr", "5+3", "ply"),     // plus
         ("fr", "20°", "dəɡʁ"),    // degrés
         ("es", "5+3", "mˈas"),    // más
-        ("es", "20°", "ɡɾˈaðos"), // grados
-        ("it", "20°", "ɡəɾˈadi"), // gradi
+        ("es", "20°", "ɣɾˈaðos"), // grados
+        ("it", "20°", "ɡrˈad"), // gradi
         ("nl", "20°", "ɣrˈɑdən"), // graden
         ("de", "5×3", "mˈɑːl"),   // mal (times)
         ("fr", "5×3", "fwˈa"),    // fois
         ("es", "5×3", "poɾ"),     // por
         ("de", "6÷2", "ɡətˈaɪlt"), // geteilt durch
-        ("fr", "6÷2", "divisˈe"),  // divisé par
+        ("fr", "6÷2", "divizˈe"),  // divisé par
         ("ru", "50%", "prʌtsˈɛnt"), // процент (was garbage "f")
-        ("bg", "50%", "protsʲˈent"),
+        ("bg", "50%", "protsˈent"),
     ];
     for (lang, text, want) in cases {
         let Some(t) = Translator::new(lang, None).ok() else {
@@ -252,7 +254,9 @@ fn unit_abbreviations_are_spelled_out() {
     }
     // A non-unit word after a number, or a unit with no number, is untouched.
     assert!(ipa("5 cats").contains("kˈats"), "5 cats unchanged");
-    assert!(ipa("km").contains("kˈəm"), "bare km unchanged: {}", ipa("km"));
+    // A bare "km" has no vowel, so it is spelled out ("kay em") — upstream reads
+    // it the same way.
+    assert_eq!(ipa("km"), "kˌeɪˈɛm", "bare km is spelled");
 }
 
 #[test]
@@ -337,7 +341,7 @@ fn punct_reaches_the_code_stream() {
     // The `-x` / synthesis path (`translate_to_codes`) must also emit punct names.
     let Some(mut t) = en() else { return };
     let count = |t: &Translator, s: &str| {
-        t.translate_to_codes(s).unwrap().iter().filter(|c| !c.is_boundary).count()
+        t.translate_to_codes(s).unwrap().iter().filter(|c| !c.is_boundary && c.marker.is_none()).count()
     };
     let plain = count(&t, "a, b.");
     t.options.punct = Some(Vec::new());
@@ -355,7 +359,7 @@ fn spoken_symbols_reach_the_code_stream() {
         t.translate_to_codes(s)
             .expect("codes")
             .iter()
-            .filter(|c| !c.is_boundary)
+            .filter(|c| !c.is_boundary && c.marker.is_none())
             .count()
     };
     assert!(n("a & b") > n("a b"), "spoken '&' added no codes");

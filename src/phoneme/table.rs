@@ -57,6 +57,19 @@ impl PhonemeTab {
         s
     }
 
+    /// The mnemonic as espeak *prints* it: a `/` starts a "phoneme variant
+    /// indicator" and everything from it is dropped, so the dark-l `l/2` shows
+    /// as `l` and Spanish's unstressed `a/` as `a` (C `WritePhMnemonic`:
+    /// "discard phoneme variant indicator").  Use this for display only —
+    /// lookups need the full mnemonic.
+    pub fn mnemonic_display(&self) -> String {
+        let full = self.mnemonic_str();
+        match full.find('/') {
+            Some(i) => full[..i].to_string(),
+            None => full,
+        }
+    }
+
     /// Pack up to 4 ASCII bytes into a mnemonic `u32` (first char in LSByte).
     pub fn pack_mnemonic(s: &str) -> u32 {
         let b = s.as_bytes();

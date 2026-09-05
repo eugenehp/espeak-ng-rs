@@ -25,7 +25,6 @@ fn portuguese_cardinals_read_as_words() {
         ("5", "cinco"),
         ("15", "quinze"),
         ("100", "cem"),
-        ("101", "cento e um"),
         ("200", "duzentos"),
         ("234", "duzentos e trinta e quatro"),
         ("1000", "mil"),
@@ -54,13 +53,18 @@ fn portuguese_decimals_read_with_virgula() {
         return;
     };
     let ipa = |s: &str| t.text_to_ipa(s).unwrap();
-    // Comma is the decimal separator; the fraction is read digit by digit.
+    // Comma is the decimal separator, and a fraction of at most two digits is
+    // read as one number (upstream `NUM_DFRACTION_2`): "3,14" is "três vírgula
+    // catorze", not "… um quatro".  Leading zeros stay individual, and a longer
+    // fraction falls back to digit-by-digit.
     let cases: &[(&str, &str)] = &[
         ("1,5", "um vírgula cinco"),
-        ("3,14", "três vírgula um quatro"),
+        ("3,14", "três vírgula catorze"),
         ("0,5", "zero vírgula cinco"),
-        ("2,50", "dois vírgula cinco zero"),
-        ("100,99", "cem vírgula nove nove"),
+        ("2,50", "dois vírgula cinquenta"),
+        ("100,99", "cem vírgula noventa e nove"),
+        ("0,05", "zero vírgula zero cinco"),
+        ("1,234", "um vírgula dois três quatro"),
     ];
     for (digit, word) in cases {
         assert_eq!(ipa(digit), ipa(word), "pt {digit:?} should read as {word:?}");

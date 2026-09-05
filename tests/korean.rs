@@ -19,7 +19,7 @@ fn hangul_syllables_are_read() {
 
     // Consonant-initial syllables read directly.
     assert_eq!(ipa("한"), "hˈɐn"); // han
-    assert_eq!(ipa("사랑"), "sˈɐɾɐŋ"); // sarang (love)
+    assert_eq!(ipa("사랑"), "sɐɾˈɐŋ"); // sarang (love) — 2LLH puts the stress on the heavy 2nd syllable
 
     // Vowel-initial syllables: the silent leading ㅇ must NOT voice — 안 is "an",
     // not "iɯŋan".

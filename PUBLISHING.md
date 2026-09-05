@@ -7,64 +7,99 @@ crates, those aggregate crates must be published before `espeak-ng`.
 
 ## Publish order
 
-```bash
-# 1. Core phoneme tables, language definitions, voice definitions (~374 KB)
-cargo publish -p espeak-ng-data-phonemes
+The workspace is ~126 crates, which is far past what crates.io will accept in
+one sitting, so publishing is driven by `scripts/publish.sh` rather than by
+hand. It resolves the order from `cargo metadata`:
 
-# 2. Russian language dictionary (~4.5 MB)
-cargo publish -p espeak-ng-data-dict-ru
-
-# 3. Optional: publish any language-specific dictionary crates you want to expose
-#    individually, for example:
-# cargo publish -p espeak-ng-data-dict-en
-# cargo publish -p espeak-ng-data-dict-uk
-
-# 4. Aggregate crate for all non-Russian language dictionaries (~3.8 MB)
-cargo publish -p espeak-ng-data-dicts
-
-# 5. Main library (after data crates are live on crates.io, remove the
-#    [patch.crates-io] section from the root Cargo.toml)
-cargo publish -p espeak-ng
-```
-
-## Automated publish script
-
-Use the helper script to publish all workspace crates in order:
-
-In `--execute` mode, the script runs required preflight checks first and
-aborts publishing if any check fails:
-
-- `cargo test`
-- `cargo test --features "c-oracle,bundled-espeak" -- --test-threads=1`
-- `cargo test --features "c-oracle,bundled-espeak" --test oracle_comparison -- --nocapture --test-threads=1`
-
-`--test-threads=1` is required for the c-oracle checks because libespeak-ng
-uses global process state; parallel test threads can corrupt it even though
-the Rust `Mutex` serialises access at the Rust level.
+1. `espeak-ng-data-phonemes` — phoneme tables, language and voice definitions
+2. `espeak-ng-data-dict-<lang>` — the per-language dictionaries
+3. `espeak-ng-data-dicts` — the aggregate of all non-Russian dictionaries
+4. `espeak-ng` — the library, last, once its dependencies resolve
 
 ```bash
-# Preview the publish order and commands only
-python3 scripts/publish_all_crates.py
-
-# Execute publishing for all crates (fails on espeak-ng if [patch.crates-io] is still present)
-python3 scripts/publish_all_crates.py --execute
-
-# Execute only data crates (skip main crate)
-python3 scripts/publish_all_crates.py --execute --no-main
-
-# Execute with cargo --dry-run for every crate
-# Uses `cargo package` (fully offline) instead of `cargo publish --dry-run`
-# to avoid crates.io network calls that hang without credentials.
-# Skips preflight checks since nothing is actually published.
-# Note: [patch.crates-io] is allowed during dry-run.
-python3 scripts/publish_all_crates.py --execute --dry-run
-
-# Local dry-run when working tree is not committed
-python3 scripts/publish_all_crates.py --execute --dry-run --allow-dirty
-
-# Emergency override: skip preflight checks
-python3 scripts/publish_all_crates.py --execute --skip-preflight
+./scripts/publish.sh                  # plan: preflight, order, ETA. No writes.
+./scripts/publish.sh package          # cargo package every crate, offline
+./scripts/publish.sh publish          # the real thing
 ```
+
+### Rate limits
+
+crates.io meters publishing in two separate buckets:
+
+| Action | Burst | Sustained rate |
+|--------|-------|----------------|
+| Publishing a **new** crate | 10 | 1 per 10 minutes |
+| Publishing a **new version** of an existing crate | 30 | 1 per minute |
+
+The script paces itself with a GCRA token bucket, one per bucket, so it spends
+the burst immediately and then settles into the sustained rate. Time spent
+building and uploading counts against the interval, so the verification step is
+effectively free. A full release of ~100 crates takes a little over an hour;
+`plan` mode prints the estimate up front.
+
+If crates.io returns 429 anyway — most often because an earlier run already
+drained the bucket — the script parses the `try again after <timestamp>` out of
+the error and sleeps until exactly that instant rather than guessing at a
+backoff curve. `--max-wait` caps how long a single sleep may be.
+
+Rate limits are per-user and outlive the process, so if a run is interrupted
+part-way, restart it with `--assume-drained` to pace from an empty bucket
+instead of eating a 429 first.
+
+### Resuming
+
+Every step is idempotent. Before publishing anything the script asks the sparse
+index whether that exact `name@version` already exists, and skips it if so, so
+re-running after a failure costs nothing but the index lookups. After each
+upload it polls the index until the new version is visible, because the CDN in
+front of it lags by a few seconds and the next crate may depend on what was
+just published.
+
+A failed crate stops the run and prints the exact resume command:
+
+```bash
+./scripts/publish.sh publish --from espeak-ng-data-dict-fr
+```
+
+Progress is appended to `target/publish-state.tsv` and the full cargo output to
+`target/publish-logs/<timestamp>.log`.
+
+### Preflight
+
+`publish` mode refuses to start unless these pass (`plan` reports them but does
+not abort):
+
+- the working tree is clean (or `--allow-dirty`)
+- `[patch.crates-io]` is absent from the root `Cargo.toml`
+- crates.io credentials are available
+- **every data crate matches `espeak-ng-data/`**
+
+That last check exists because of a failure mode specific to this workspace.
+The data crates are snapshots of `espeak-ng-data/`. If a snapshot drifts from
+its source it usually still carries its old version number — so it is already
+on crates.io, so the publish step skips it as "already published", and the
+drift reaches users silently while every other crate is refreshed. The
+freshness check turns that silent skip into a hard failure.
+
+Add `--test` to run the test suite as part of preflight.
+
+### Selecting a subset
+
+```bash
+./scripts/publish.sh publish --only 'dict-(en|de|fr)$'   # a few crates
+./scripts/publish.sh publish --exclude 'dict-ru$'        # all but one
+./scripts/publish.sh publish --no-main                   # data crates only
+./scripts/publish.sh publish --limit 10                  # stop after 10
+```
+
+`--limit` is useful for spreading a release across sessions: it stops cleanly
+and prints the `--from` command to pick up where it left off.
+
+### Legacy script
+
+`scripts/publish_all_crates.py` predates `publish.sh` and does the same job
+with a fixed 10-second inter-crate delay and no freshness or index checks. It
+is kept for reference; prefer the shell script.
 
 ## Before publishing the main crate
 

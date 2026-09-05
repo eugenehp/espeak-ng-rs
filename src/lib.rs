@@ -82,6 +82,8 @@ pub mod synthesize;
 pub mod soundicon;
 pub mod voices;
 pub mod async_synth;
+#[cfg(feature = "tokio-runtime")]
+pub mod tokio_synth;
 pub mod mbrola;
 pub mod error;
 pub mod engine;

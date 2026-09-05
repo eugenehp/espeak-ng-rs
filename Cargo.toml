@@ -15,7 +15,7 @@ resolver = "2"
 # ---------------------------------------------------------------------------
 [package]
 name        = "espeak-ng"
-version     = "0.1.3"
+version     = "0.1.4"
 edition     = "2021"
 description = "Pure Rust port of eSpeak NG text-to-speech"
 license     = "GPL-3.0-or-later"
@@ -62,6 +62,22 @@ install-espeak-ng-shim = []
 # Dev/testing only — pulls in no extra dependencies.
 wav-analysis = []
 
+# Parallel batch synthesis via rayon: `EspeakNg::synth_many` renders a slice of
+# utterances across the rayon thread pool.  Each utterance is independent, so
+# the audio is identical to synthesizing them one at a time.
+#
+# Usage:
+#   cargo build --features parallel
+parallel = ["dep:rayon"]
+
+# Async synthesis on a tokio runtime (`espeak_ng::tokio_synth`): `synth` awaits
+# a whole utterance and `synth_stream` returns an mpsc receiver fed clause by
+# clause, both off the async executor via `spawn_blocking`.
+#
+# Usage:
+#   cargo build --features tokio-runtime
+tokio-runtime = ["dep:tokio"]
+
 # Enables the oracle module: links libespeak-ng and exposes a thin FFI wrapper
 # used by integration tests and benchmarks to compare Rust output against C.
 # This requires libespeak-ng to be installed (pkg-config: espeak-ng).
@@ -92,6 +108,7 @@ bundled-data = [
 ]
 
 # BEGIN generated per-language features
+bundled-data-ab = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-ab"]
 bundled-data-af = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-af"]
 bundled-data-am = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-am"]
 bundled-data-an = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-an"]
@@ -107,6 +124,7 @@ bundled-data-bs = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-bs"]
 bundled-data-ca = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-ca"]
 bundled-data-chr = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-chr"]
 bundled-data-cmn = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-cmn"]
+bundled-data-crh = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-crh"]
 bundled-data-cs = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-cs"]
 bundled-data-cv = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-cv"]
 bundled-data-cy = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-cy"]
@@ -120,6 +138,7 @@ bundled-data-et = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-et"]
 bundled-data-eu = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-eu"]
 bundled-data-fa = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-fa"]
 bundled-data-fi = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-fi"]
+bundled-data-fo = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-fo"]
 bundled-data-fr = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-fr"]
 bundled-data-ga = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-ga"]
 bundled-data-gd = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-gd"]
@@ -142,6 +161,7 @@ bundled-data-it = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-it"]
 bundled-data-ja = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-ja"]
 bundled-data-jbo = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-jbo"]
 bundled-data-ka = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-ka"]
+bundled-data-kaa = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-kaa"]
 bundled-data-kk = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-kk"]
 bundled-data-kl = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-kl"]
 bundled-data-kn = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-kn"]
@@ -152,11 +172,13 @@ bundled-data-ky = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-ky"]
 bundled-data-la = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-la"]
 bundled-data-lb = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-lb"]
 bundled-data-lfn = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-lfn"]
+bundled-data-lij = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-lij"]
 bundled-data-lt = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-lt"]
 bundled-data-lv = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-lv"]
 bundled-data-mi = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-mi"]
 bundled-data-mk = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-mk"]
 bundled-data-ml = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-ml"]
+bundled-data-mn = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-mn"]
 bundled-data-mr = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-mr"]
 bundled-data-ms = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-ms"]
 bundled-data-mt = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-mt"]
@@ -173,6 +195,7 @@ bundled-data-pa = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-pa"]
 bundled-data-pap = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-pap"]
 bundled-data-piqd = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-piqd"]
 bundled-data-pl = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-pl"]
+bundled-data-ps = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-ps"]
 bundled-data-pt = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-pt"]
 bundled-data-py = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-py"]
 bundled-data-qdb = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-qdb"]
@@ -181,6 +204,7 @@ bundled-data-quc = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-quc"
 bundled-data-qya = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-qya"]
 bundled-data-ro = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-ro"]
 bundled-data-ru = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-ru"]
+bundled-data-rup = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-rup"]
 bundled-data-sd = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-sd"]
 bundled-data-shn = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-shn"]
 bundled-data-si = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-si"]
@@ -205,6 +229,7 @@ bundled-data-uk = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-uk"]
 bundled-data-ur = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-ur"]
 bundled-data-uz = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-uz"]
 bundled-data-vi = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-vi"]
+bundled-data-xex = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-xex"]
 bundled-data-yue = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-yue"]
 # END generated per-language features
 
@@ -215,12 +240,15 @@ bundled-data-yue = ["dep:espeak-ng-data-phonemes", "dep:espeak-ng-data-dict-yue"
 bitflags  = "2.11.0"
 thiserror = "1.0.69"
 libc      = { version = "0.2", optional = true }
+rayon     = { version = "1.11", optional = true }
+tokio     = { version = "1", features = ["rt", "rt-multi-thread", "sync"], default-features = false, optional = true }
 
 espeak-ng-data-phonemes = { version = "0.1.0", path = "data-crates/espeak-ng-data-phonemes", optional = true }
 espeak-ng-data-dict-ru  = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-ru",  optional = true }
 espeak-ng-data-dicts    = { version = "0.1.0", path = "data-crates/espeak-ng-data-dicts",    optional = true }
 
 # BEGIN generated per-language dependencies
+espeak-ng-data-dict-ab = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-ab", optional = true }
 espeak-ng-data-dict-af = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-af", optional = true }
 espeak-ng-data-dict-am = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-am", optional = true }
 espeak-ng-data-dict-an = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-an", optional = true }
@@ -236,6 +264,7 @@ espeak-ng-data-dict-bs = { version = "0.1.0", path = "data-crates/espeak-ng-data
 espeak-ng-data-dict-ca = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-ca", optional = true }
 espeak-ng-data-dict-chr = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-chr", optional = true }
 espeak-ng-data-dict-cmn = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-cmn", optional = true }
+espeak-ng-data-dict-crh = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-crh", optional = true }
 espeak-ng-data-dict-cs = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-cs", optional = true }
 espeak-ng-data-dict-cv = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-cv", optional = true }
 espeak-ng-data-dict-cy = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-cy", optional = true }
@@ -249,6 +278,7 @@ espeak-ng-data-dict-et = { version = "0.1.0", path = "data-crates/espeak-ng-data
 espeak-ng-data-dict-eu = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-eu", optional = true }
 espeak-ng-data-dict-fa = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-fa", optional = true }
 espeak-ng-data-dict-fi = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-fi", optional = true }
+espeak-ng-data-dict-fo = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-fo", optional = true }
 espeak-ng-data-dict-fr = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-fr", optional = true }
 espeak-ng-data-dict-ga = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-ga", optional = true }
 espeak-ng-data-dict-gd = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-gd", optional = true }
@@ -271,6 +301,7 @@ espeak-ng-data-dict-it = { version = "0.1.0", path = "data-crates/espeak-ng-data
 espeak-ng-data-dict-ja = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-ja", optional = true }
 espeak-ng-data-dict-jbo = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-jbo", optional = true }
 espeak-ng-data-dict-ka = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-ka", optional = true }
+espeak-ng-data-dict-kaa = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-kaa", optional = true }
 espeak-ng-data-dict-kk = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-kk", optional = true }
 espeak-ng-data-dict-kl = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-kl", optional = true }
 espeak-ng-data-dict-kn = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-kn", optional = true }
@@ -281,11 +312,13 @@ espeak-ng-data-dict-ky = { version = "0.1.0", path = "data-crates/espeak-ng-data
 espeak-ng-data-dict-la = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-la", optional = true }
 espeak-ng-data-dict-lb = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-lb", optional = true }
 espeak-ng-data-dict-lfn = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-lfn", optional = true }
+espeak-ng-data-dict-lij = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-lij", optional = true }
 espeak-ng-data-dict-lt = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-lt", optional = true }
 espeak-ng-data-dict-lv = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-lv", optional = true }
 espeak-ng-data-dict-mi = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-mi", optional = true }
 espeak-ng-data-dict-mk = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-mk", optional = true }
 espeak-ng-data-dict-ml = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-ml", optional = true }
+espeak-ng-data-dict-mn = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-mn", optional = true }
 espeak-ng-data-dict-mr = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-mr", optional = true }
 espeak-ng-data-dict-ms = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-ms", optional = true }
 espeak-ng-data-dict-mt = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-mt", optional = true }
@@ -302,6 +335,7 @@ espeak-ng-data-dict-pa = { version = "0.1.0", path = "data-crates/espeak-ng-data
 espeak-ng-data-dict-pap = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-pap", optional = true }
 espeak-ng-data-dict-piqd = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-piqd", optional = true }
 espeak-ng-data-dict-pl = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-pl", optional = true }
+espeak-ng-data-dict-ps = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-ps", optional = true }
 espeak-ng-data-dict-pt = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-pt", optional = true }
 espeak-ng-data-dict-py = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-py", optional = true }
 espeak-ng-data-dict-qdb = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-qdb", optional = true }
@@ -309,6 +343,7 @@ espeak-ng-data-dict-qu = { version = "0.1.0", path = "data-crates/espeak-ng-data
 espeak-ng-data-dict-quc = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-quc", optional = true }
 espeak-ng-data-dict-qya = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-qya", optional = true }
 espeak-ng-data-dict-ro = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-ro", optional = true }
+espeak-ng-data-dict-rup = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-rup", optional = true }
 espeak-ng-data-dict-sd = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-sd", optional = true }
 espeak-ng-data-dict-shn = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-shn", optional = true }
 espeak-ng-data-dict-si = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-si", optional = true }
@@ -333,6 +368,7 @@ espeak-ng-data-dict-uk = { version = "0.1.0", path = "data-crates/espeak-ng-data
 espeak-ng-data-dict-ur = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-ur", optional = true }
 espeak-ng-data-dict-uz = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-uz", optional = true }
 espeak-ng-data-dict-vi = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-vi", optional = true }
+espeak-ng-data-dict-xex = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-xex", optional = true }
 espeak-ng-data-dict-yue = { version = "0.1.0", path = "data-crates/espeak-ng-data-dict-yue", optional = true }
 # END generated per-language dependencies
 

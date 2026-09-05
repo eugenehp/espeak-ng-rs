@@ -15,6 +15,84 @@
 // English default stress parameters  (tr_languages.c, NewTranslator)
 // ---------------------------------------------------------------------------
 
+/// `speed_lookup` — words-per-minute (80–359) to eSpeak's internal speed
+/// factor, transcribed from `setlengths.c`.  A *larger* value means *longer*
+/// phonemes; 175 wpm (the default) maps to 87.
+pub const SPEED_LOOKUP: [u8; 280] = [
+    255, 255, 255, 255, 255, 253, 249, 245, 242, 238, // 80
+    235, 232, 228, 225, 222, 218, 216, 213, 210, 207, // 90
+    204, 201, 198, 196, 193, 191, 188, 186, 183, 181, // 100
+    179, 176, 174, 172, 169, 168, 165, 163, 161, 159, // 110
+    158, 155, 153, 152, 150, 148, 146, 145, 143, 141, // 120
+    139, 137, 136, 135, 133, 131, 130, 129, 127, 126, // 130
+    124, 123, 122, 120, 119, 118, 117, 115, 114, 113, // 140
+    112, 111, 110, 109, 107, 106, 105, 104, 103, 102, // 150
+    101, 100, 99, 98, 97, 96, 95, 94, 93, 92, // 160
+    91, 90, 89, 89, 88, 87, 86, 85, 84, 83, // 170
+    82, 82, 81, 80, 80, 79, 78, 77, 76, 76, // 180
+    75, 75, 74, 73, 72, 71, 71, 70, 69, 69, // 190
+    68, 67, 67, 66, 66, 65, 64, 64, 63, 62, // 200
+    62, 61, 61, 60, 59, 59, 58, 58, 57, 57, // 210
+    56, 56, 55, 54, 54, 53, 53, 52, 52, 52, // 220
+    51, 50, 50, 49, 49, 48, 48, 47, 47, 46, // 230
+    46, 46, 45, 45, 44, 44, 44, 43, 43, 42, // 240
+    41, 40, 40, 40, 39, 39, 39, 38, 38, 38, // 250
+    37, 37, 37, 36, 36, 35, 35, 35, 35, 34, // 260
+    34, 34, 33, 33, 33, 32, 32, 31, 31, 31, // 270
+    30, 30, 30, 29, 29, 29, 29, 28, 28, 27, // 280
+    27, 27, 27, 26, 26, 26, 26, 25, 25, 25, // 290
+    24, 24, 24, 24, 23, 23, 23, 23, 22, 22, // 300
+    22, 21, 21, 21, 21, 20, 20, 20, 20, 19, // 310
+    19, 19, 18, 18, 17, 17, 17, 16, 16, 16, // 320
+    16, 16, 16, 15, 15, 15, 15, 14, 14, 14, // 330
+    13, 13, 13, 12, 12, 12, 12, 11, 11, 11, // 340
+    11, 10, 10, 10, 9, 9, 9, 8, 8, 8, // 350
+];
+
+/// `SetSpeedMultiplier` — the internal speed factor for a rate in wpm.
+pub fn speed_multiplier(wpm: u32) -> u32 {
+    const MIN: u32 = 80;
+    let wpm = wpm.min(450);
+    let ix = wpm.clamp(MIN, 359) - MIN;
+    let mut x = SPEED_LOOKUP[ix as usize] as u32;
+    if wpm >= 380 {
+        x = 7;
+    }
+    if wpm >= 400 {
+        x = 6;
+    }
+    x.max(1)
+}
+
+/// The duration multiplier for `wpm` relative to the 175 wpm default.
+///
+/// This is the port's whole rate model: `1.0` would be "no scaling at all", and
+/// the default 175 wpm returns ~0.808.  It replaces the old linear `175 / wpm`
+/// (times a fixed calibration), which over-stretched below ~100 wpm — upstream's
+/// curve flattens towards its 80 wpm floor.
+///
+/// Upstream's `speed_lookup` scales only the *length-modifier* part of an
+/// utterance; recorded consonants and the fixed pauses don't follow it, so the
+/// total duration is affine in `x`, not proportional to it.  Fitting the C
+/// binary's measured durations over 80–400 wpm gives a rate-independent share
+/// of about 40 %:
+///
+/// ```text
+/// duration(wpm) ∝ 0.47 + 0.33 · x(wpm)/x(175)
+/// ```
+///
+/// which lands within a few percent of upstream from 80 wpm to 300 (400 wpm,
+/// upstream's own extreme, is ~19 % long).
+pub fn speed_duration_factor(wpm: u32) -> f64 {
+    // Fitted against the C binary over 80–400 wpm: a rate-independent offset
+    // plus a term proportional to upstream's speed factor.  The constants
+    // subsume the old `RATE_CALIBRATION` — at 175 wpm this returns 0.808, where
+    // the port used to use 0.836 with a second, separate scaling in `wavegen`.
+    const FIXED: f64 = 0.502;
+    const SCALED: f64 = 0.3546;
+    let ratio = speed_multiplier(wpm) as f64 / speed_multiplier(175) as f64;
+    FIXED + SCALED * ratio
+}
 /// stress_lengths2[stress] — stress-level length multiplier, units 1/128.
 /// Indexed 0..7.  After the CalcLengths swap (stress 0↔1), stress=0 means
 /// "diminished" and stress=1 means "unstressed".
@@ -102,6 +180,10 @@ pub fn calc_vowel_length_mod(
     more_syllables: bool,
     end_of_clause: bool,
     std_length: u8,
+    // The language's own `stressLength` table, when its voice file declares one
+    // (upstream #1466 — twenty shipped languages do).  `None` = the built-in
+    // English defaults.
+    stress_lengths: Option<&[u32; 8]>,
 ) -> u32 {
     let stress = (stress as usize).min(7);
 
@@ -112,7 +194,7 @@ pub fn calc_vowel_length_mod(
     let base_mod = table[n2 * 10 + n1] as u32;
 
     // Apply stress-length factor
-    let stress_len = STRESS_LENGTHS_EN[stress];
+    let stress_len = stress_lengths.unwrap_or(&STRESS_LENGTHS_EN)[stress];
     let mut length_mod = base_mod * stress_len / 128;
 
     // Tonic syllable: add constant component (lengthen_tonic)
@@ -197,7 +279,7 @@ mod tests {
     #[test]
     fn primary_stress_eoc_gives_long_vowel() {
         // oU at end of clause, stress=7 (tonic), std_length=110
-        let length_mod = calc_vowel_length_mod(7, 1, 1, false, true, 110);
+        let length_mod = calc_vowel_length_mod(7, 1, 1, false, true, 110, None);
         // Expected: >= 300 (several hundred ms)
         assert!(length_mod >= 300, "tonic EOC vowel should be long: {length_mod}");
         let samp = length_mod_to_samples(length_mod, 22050, 1.0);
@@ -207,7 +289,7 @@ mod tests {
     #[test]
     fn unstressed_vowel_is_short() {
         // @ schwa, stress=1 (after swap = 0), not last syllable, not EOC
-        let length_mod = calc_vowel_length_mod(1, 7, 0, true, false, 60);
+        let length_mod = calc_vowel_length_mod(1, 7, 0, true, false, 60, None);
         let samp = length_mod_to_samples(length_mod, 22050, 1.0);
         // Should be < 100ms
         assert!(samp < 2205, "unstressed schwa should be short: {samp}");

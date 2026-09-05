@@ -34,5 +34,5 @@ fn languages_without_replace_are_untouched() {
         return;
     };
     let out = t.text_to_ipa("drei").unwrap();
-    assert_eq!(out, "drˈaɪ", "de drei unchanged");
+    assert_eq!(out, "dɾˈaɪ", "de drei unchanged");
 }

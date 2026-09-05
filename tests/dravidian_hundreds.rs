@@ -24,7 +24,7 @@ fn tamil_standalone_vs_combining_hundred() {
     assert_eq!(ipa("100"), "nˈuːrʉ");
     assert!(ipa("100").ends_with("nˈuːrʉ") && !ipa("100").contains("ʈʈ"),
             "ta 100 is standalone 'nūru': {}", ipa("100"));
-    assert!(ipa("200").ends_with("nˈuːrʉ"), "ta 200 = 'irunūru': {}", ipa("200"));
+    assert!(ipa("200").ends_with("nˌuːrʉ"), "ta 200 = 'irunūru': {}", ipa("200"));
     // A remainder switches to the combining "நூற்று" form.
     assert!(ipa("101").contains("ʈʈri"), "ta 101 uses combining 'nūṭṭri': {}", ipa("101"));
 }

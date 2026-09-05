@@ -136,6 +136,18 @@ impl PhonemeData {
         Ok(idx)
     }
 
+    /// Name of the currently selected phoneme table, if one is selected.
+    ///
+    /// English voices share a dictionary but not a phoneme table — `en` is
+    /// en-GB, `en-us` is a separate table — so accent-specific IPA fixups have
+    /// to know which one is active.
+    pub fn active_table_name(&self) -> Option<&str> {
+        usize::try_from(self.current_table)
+            .ok()
+            .and_then(|i| self.tables.get(i))
+            .map(|t| t.name.as_str())
+    }
+
     /// Find a table index by name without selecting it.
     pub fn find_table(&self, name: &str) -> Result<usize> {
         self.tables

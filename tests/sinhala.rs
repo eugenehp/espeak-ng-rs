@@ -19,8 +19,8 @@ fn sinhala_words_read_with_vowel_signs_and_virama() {
     let ipa = |s: &str| t.text_to_ipa(s).unwrap();
 
     // Consonant + inherent vowel.
-    assert_eq!(ipa("කම"), "kˈɐmɐ"); // kama
-    assert_eq!(ipa("මම"), "mˈɐmɐ"); // mama (I)
+    assert_eq!(ipa("කම"), "kˈɐmə"); // kama
+    assert_eq!(ipa("මම"), "mˈɐmə"); // mama (I)
 
     // A dependent vowel sign replaces the inherent vowel (no stray "pilla" name).
     for (word, want) in [("කි", "kˈi"), ("කු", "kˈu"), ("කො", "kˈo")] {
@@ -30,7 +30,7 @@ fn sinhala_words_read_with_vowel_signs_and_virama() {
     assert_eq!(ipa("ක්"), "k");
 
     // Real words read cleanly (no diacritic names leaking in).
-    for (word, want) in [("ආයුබෝවන්", "ˌaːjubˈoːwɐn"), ("ලංකා", "lˈɐŋkaː")] {
+    for (word, want) in [("ආයුබෝවන්", "ˈaːjubˌoːwən"), ("ලංකා", "lˈɐŋkaː")] {
         assert_eq!(ipa(word), want, "si {word}");
     }
     // Sanity: no leftover Sinhala combining marks and non-empty.

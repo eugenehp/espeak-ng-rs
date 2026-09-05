@@ -24,9 +24,10 @@ fn verb_form_after_to_and_modals() {
             "'to {w}' should switch to the verb form (default was {default})"
         );
     }
-    // Specific expected verb forms.
-    assert_eq!(ipa("to record"), "tuː ɹɪkˈɔːd");
-    assert_eq!(ipa("to use"), "tuː jˈuːz");
+    // Specific expected verb forms.  ("to" reduces to "tə" in running text —
+    // its `tuː` entry is `$atend`, so it only applies at a clause end.)
+    assert_eq!(ipa("to record"), "tə ɹɪkˈɔːd");
+    assert_eq!(ipa("to use"), "tə jˈuːz");
     assert_eq!(ipa("will record"), "wɪl ɹɪkˈɔːd");
     // Subject pronouns are verb triggers too.
     assert!(ipa("I live here").contains("lˈɪv"), "I live → lɪv: {}", ipa("I live here"));
@@ -45,8 +46,9 @@ fn past_form_after_auxiliary_and_defaults() {
     // "have read" → past "rˈɛd"; present "read" stays "rˈiːd".
     assert!(ipa("I have read it").contains("ɹˈɛd"), "have read → red: {}", ipa("I have read it"));
     assert!(ipa("I read books").contains("ɹˈiːd"), "read (pres) → reed: {}", ipa("I read books"));
-    // No trigger → the default noun/adjective form is kept.
-    assert_eq!(ipa("a record"), ipa("a") + " " + &ipa("record"));
+    // No trigger → the default noun/adjective form is kept.  ("a" alone is the
+    // letter name `ˈeɪ`; in running text it reduces, so the two don't compose.)
+    assert_eq!(ipa("a record"), "ɐ ɹˈɛkɔːd");
     assert_eq!(ipa("record"), "ɹˈɛkɔːd");
     assert!(ipa("a live show").contains("lˈaɪv"), "live (adj) stays: {}", ipa("a live show"));
 }

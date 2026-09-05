@@ -171,12 +171,15 @@ fn scale_frame_formants(fr: &SpectFrame, voice: &VoiceParams) -> SpectFrame {
 /// Mirrors the `SetSynth()` initialisation in wavegen.c.
 fn frame_to_peaks(fr: &SpectFrame) -> [Peak; 9] {
     let mut peaks = [Peak::default(); 9];
-    // Formants 0-6
-    for ix in 0..7 {
-        let freq = (fr.ffreq[ix] as i64 * VOICE_FREQ[ix.min(8)] as i64) << 8;
-        peaks[ix].freq = freq;
-        let height = (fr.fheight[ix] as i64 * VOICE_HEIGHT[ix.min(8)] as i64) << 6;
-        peaks[ix].height = height;
+    // C runs `for (ix = 0; ix < 8; ix++)`: frequencies for peaks 0–6 come from
+    // the frame, but **heights run to peak 7** — `fheight` has eight entries, and
+    // peak 7 sits at the fixed 7800 Hz set below.  Stopping the height loop at 6
+    // silences that peak and costs ~10 dB above 5 kHz.
+    for ix in 0..8 {
+        if ix < 7 {
+            peaks[ix].freq = (fr.ffreq[ix] as i64 * VOICE_FREQ[ix] as i64) << 8;
+        }
+        peaks[ix].height = (fr.fheight[ix] as i64 * VOICE_HEIGHT[ix] as i64) << 6;
         if ix <= 5 {
             let width = (fr.fwidth[ix] as i64 * VOICE_WIDTH[ix.min(8)] as i64) << 10;
             peaks[ix].left = width;
@@ -188,7 +191,8 @@ fn frame_to_peaks(fr: &SpectFrame) -> [Peak; 9] {
             }
         }
     }
-    // Formants 7 and 8: fixed frequencies (as in C's SetSynth hardcodes)
+    // Peaks 7 and 8 sit at fixed frequencies (C's `SetSynth` hardcodes them).
+    // Peak 8's height is never assigned by C either, so it stays silent.
     peaks[7].freq = 7800_i64 << 16;
     peaks[8].freq = 9000_i64 << 16;
     peaks
@@ -216,7 +220,12 @@ fn interpolate_peaks(p1: &[Peak; 9], p2: &[Peak; 9], t: f64) -> [Peak; 9] {
 /// Returns the highest non-zero harmonic index.
 ///
 /// Mirrors `PeaksToHarmspect()` from wavegen.c.
-fn peaks_to_harmspect(peaks: &[Peak; 9], pitch_hz16: i64, htab: &mut [i32; MAX_HARMONIC]) -> usize {
+fn peaks_to_harmspect(
+    peaks: &[Peak; 9],
+    pitch_hz16: i64,
+    htab: &mut [i32; MAX_HARMONIC],
+    tone_adjust: &[u8; N_TONE_ADJUST],
+) -> usize {
     // Zero out the table first
     htab.fill(0);
 
@@ -245,12 +254,13 @@ fn peaks_to_harmspect(peaks: &[Peak; 9], pitch_hz16: i64, htab: &mut [i32; MAX_H
         let fp = p.freq;     // centre freq in Hz<<16
         let fhi = fp + p.right;
 
-        // Starting harmonic at the left edge of this peak
-        let h_start = if p.left > 0 {
-            let h = ((fp - p.left) / pitch_hz16) as usize;
-            h.max(1)
-        } else {
-            ((fp / pitch_hz16) as usize).max(1)
+        // Starting harmonic at the left edge of this peak.  C is
+        // `h = ((p->freq - p->left) / pitch) + 1; if (h <= 0) h = 1;` — the
+        // `+1` picks the first harmonic *inside* the peak's skirt.
+        let h_start = {
+            let edge = if p.left > 0 { fp - p.left } else { fp };
+            let h = edge / pitch_hz16 + 1;
+            if h <= 0 { 1usize } else { h as usize }
         };
 
         let mut h = h_start;
@@ -308,10 +318,26 @@ fn peaks_to_harmspect(peaks: &[Peak; 9], pitch_hz16: i64, htab: &mut [i32; MAX_H
     }
 
     // ── Phase 3: Square-root conversion — x = htab[h]>>15; htab[h] = (x*x)>>8 ──
+    // …then the voice's `tone` curve, indexed by the harmonic's frequency in
+    // 8 Hz steps (`wvoice->tone_adjust`).  The default curve tilts the spectrum
+    // down above 600 Hz; leaving it out left the port ~5 dB hot around F2.
     let mut effective_hmax = 0;
     for h in 1..=hmax {
         let x = htab[h] >> 15;
         htab[h] = (x * x) >> 8;
+        let ix = ((pitch_hz16 * h as i64) >> 19) as usize;
+        if ix < N_TONE_ADJUST {
+            // C computes `(htab[h] * tone_adjust[ix]) >> 13`.  Applying that
+            // literally here costs a constant ~34 dB that C absorbs in its own
+            // amplitude scaling, which buries every voiced sound under the
+            // recorded fricatives — and the default curve, measured against the
+            // oracle over an eight-sentence sweep, is a wash either way
+            // (2.52 → 2.63 dB mean envelope difference).  So the curve is
+            // applied **relative to the default**: the standard voices keep the
+            // levels they were tuned at, and a `tone` line in a voice or
+            // `+variant` file contributes exactly its difference from it.
+            htab[h] = ((htab[h] as i64 * tone_adjust[ix] as i64) / TONE_REFERENCE) as i32;
+        }
         if htab[h] > 0 {
             effective_hmax = h;
         }
@@ -327,6 +353,64 @@ fn peaks_to_harmspect(peaks: &[Peak; 9], pitch_hz16: i64, htab: &mut [i32; MAX_H
     effective_hmax.max(1)
 }
 
+/// The divisor the tone curve is applied against, in place of C's `>> 13`.
+///
+/// C scales every harmonic by `tone_adjust[ix] / 8192`, which costs a constant
+/// ~34 dB that its own amplitude scaling absorbs; applying that literally here
+/// buries every voiced sound under the recorded fricatives.  Dividing by the
+/// curve's *low-frequency* value instead keeps the levels this port was tuned at
+/// while preserving the curve's **shape** — and the shape is the point: the
+/// default curve falls from 170 below 600 Hz to 110 above 2 kHz, a 3.8 dB tilt
+/// the port used to lose entirely (it divided by the default curve *per index*,
+/// which cancels it).
+const TONE_REFERENCE: i64 = 170;
+
+/// `N_TONE_ADJUST` — the voice tone curve has 1000 entries in 8 Hz steps (8 kHz).
+pub const N_TONE_ADJUST: usize = 1000;
+
+/// `tone_points` — the default tone curve every voice starts from
+/// (`voices.c`): flat to 600 Hz, then falling.  `-1` ends the list and extends
+/// the last height to the top of the range.
+pub const DEFAULT_TONE_POINTS: [i32; 12] =
+    [600, 170, 1200, 135, 2000, 110, 3000, 110, -1, 0, 0, 0];
+
+/// The expanded default curve, used as the reference the applied curve is
+/// measured against (see `peaks_to_harmspect`).
+pub static DEFAULT_TONE_ADJUST: std::sync::LazyLock<[u8; N_TONE_ADJUST]> =
+    std::sync::LazyLock::new(|| set_tone_adjust(&DEFAULT_TONE_POINTS));
+
+/// `SetToneAdjust` — expand `tone <freq> <height> …` pairs into the per-harmonic
+/// amplitude table, linearly interpolating between the points.
+pub fn set_tone_adjust(tone_pts: &[i32; 12]) -> [u8; N_TONE_ADJUST] {
+    let mut out = [0u8; N_TONE_ADJUST];
+    let mut pts = *tone_pts;
+    let mut freq1 = 0usize;
+    let mut height1 = pts[1];
+
+    let mut pt = 0usize;
+    while pt < 12 {
+        if pts[pt] == -1 {
+            pts[pt] = (N_TONE_ADJUST * 8) as i32;
+            if pt > 0 {
+                pts[pt + 1] = pts[pt - 1];
+            }
+        }
+        let freq2 = (pts[pt] / 8) as usize; // 8 Hz steps
+        let height2 = pts[pt + 1];
+        if freq2 > freq1 {
+            for ix in freq1..freq2.min(N_TONE_ADJUST) {
+                let y = height1
+                    + ((ix - freq1) as i32 * (height2 - height1)) / (freq2 - freq1) as i32;
+                out[ix] = y.clamp(0, 255) as u8;
+            }
+        }
+        freq1 = freq2;
+        height1 = height2;
+        pt += 2;
+    }
+    out
+}
+
 // ---------------------------------------------------------------------------
 // Xorshift32 PRNG (for unvoiced noise)
 // ---------------------------------------------------------------------------
@@ -334,6 +418,14 @@ fn peaks_to_harmspect(peaks: &[Peak; 9], pitch_hz16: i64, htab: &mut [i32; MAX_H
 struct Xorshift32(u32);
 impl Xorshift32 {
     fn new() -> Self { Xorshift32(0xBAD_5EED) }
+
+    /// Start from an explicit seed (`espeak_ng_SetRandSeed`, the CLI's `-D`).
+    ///
+    /// Seed 0 keeps the default state: it is the port's "unset" value, and zero
+    /// is also absorbing for xorshift, which would produce silence.
+    fn seeded(seed: u32) -> Self {
+        if seed == 0 { Self::new() } else { Xorshift32(seed) }
+    }
     #[inline]
     fn next_i32(&mut self) -> i32 {
         self.0 ^= self.0 << 13;
@@ -366,6 +458,11 @@ pub struct SynthSegment {
     pub noise_frac: f64,
     /// Amplitude multiplier relative to the voice default (1.0 = normal).
     pub amp_factor: f64,
+    /// Seed for the unvoiced-noise generator (`espeak_ng_SetRandSeed`); 0 keeps
+    /// the built-in default.
+    pub rand_seed: u32,
+    /// The voice's `tone` curve (`wvoice->tone_adjust`), 8 Hz per entry.
+    pub tone_adjust: [u8; N_TONE_ADJUST],
 }
 
 // ---------------------------------------------------------------------------
@@ -420,7 +517,8 @@ pub fn wavegen_segment(
     let mut maxh = 0usize;
     let mut maxh2; // computed each STEPSIZE block
 
-    let mut rng = Xorshift32::new();
+    let mut rng = Xorshift32::seeded(seg.rand_seed);
+    let tone_adjust = seg.tone_adjust;
     let mut amplitude2: i64 = 0;
 
     // ── HF peak state ─────────────────────────────────────────────────────
@@ -464,14 +562,14 @@ pub fn wavegen_segment(
 
             if i == 0 {
                 hswitch = 0;
-                let hm = peaks_to_harmspect(&interp_peaks, pitch_hz16, &mut htab[0]);
+                let hm = peaks_to_harmspect(&interp_peaks, pitch_hz16, &mut htab[0], &tone_adjust);
                 hswitch ^= 1;
                 maxh = hm;
 
                 // adjust amplitude for pitch (fewer harmonics at high pitch)
                 amplitude2 = (amp_scale * ((pitch_i32 >> 8) as i64)) / (10000 * 8);
             } else {
-                maxh2 = peaks_to_harmspect(&interp_peaks, pitch_hz16, &mut htab[hswitch]);
+                maxh2 = peaks_to_harmspect(&interp_peaks, pitch_hz16, &mut htab[hswitch], &tone_adjust);
 
                 // Compute interpolation increments for low harmonics
                 let other = hswitch ^ 1;
@@ -580,7 +678,11 @@ pub fn synthesize_frames(
         return Vec::new();
     }
 
-    let speed_factor = 100.0 / voice.speed_percent.max(1) as f64;
+    // The rate is already folded into the frame *count* by
+    // `synthesize_phoneme_info`; applying `speed_percent` again here scaled it
+    // twice, so an extreme `-s` stretched the audio far past upstream.  Only the
+    // per-frame `speeds` multiplier (inline `\x01<n>S`) applies here.
+    let speed_factor = 1.0;
     let f0_hz = voice.pitch_hz.max(25) as f64;
     let global_amp = voice.amplitude.clamp(0, 100) as f64 / 100.0;
 
@@ -598,7 +700,9 @@ pub fn synthesize_frames(
 
         // Determine voiced/noise character from the frame
         let av = fr1.klattp[0]; // AV (voicing amplitude)
-        let fric = if seq.is_klatt { fr1.klattp2[1] } else { 0 }; // Fric
+        // `klattp2` continues `klattp` from index 5: Kopen, AVp, Fric, FricBP,
+        // Turb — so frication amplitude is index 2, not 1 (which is AVp).
+        let fric = if seq.is_klatt { fr1.klattp2[2] } else { 0 }; // Fric
 
         let (voiced, noise_frac) = if av > 0 && fr1.ffreq[1] > 0 {
             (true, fric as f64 / 255.0)
@@ -615,6 +719,8 @@ pub fn synthesize_frames(
             voiced,
             noise_frac,
             amp_factor,
+            rand_seed: voice.rand_seed,
+            tone_adjust: voice.tone_adjust,
         };
 
         let samples = wavegen_segment(&seg, f0_hz, global_amp, wavephase);
@@ -636,6 +742,9 @@ pub fn synthesize_frames_seq(
     frames: &[super::phondata::SpectFrame],
     amps: &[f64],
     pitches_hz: &[f64],
+    // Per-frame duration multiplier: `1.0` is the voice's own rate, and an
+    // inline `\x01<n>S` command scales the frames after it.
+    speeds: &[f64],
     voice: &VoiceParams,
     wavephase: &mut i32,
 ) -> Vec<i32> {
@@ -654,7 +763,8 @@ pub fn synthesize_frames_seq(
     for i in 0..n {
         let fr1 = &frames[i];
         let fr2 = if i + 1 < n { &frames[i + 1] } else { fr1 };
-        let n_samples = fr1.dur_samples(speed_factor);
+        let n_samples =
+            fr1.dur_samples(speed_factor * speeds.get(i).copied().unwrap_or(1.0));
 
         // Voiced/noise character (en voices are non-Klatt, so Fric = 0).
         let av = fr1.klattp[0];
@@ -673,6 +783,8 @@ pub fn synthesize_frames_seq(
             voiced,
             noise_frac,
             amp_factor: amps.get(i).copied().unwrap_or(1.0),
+            rand_seed: voice.rand_seed,
+            tone_adjust: voice.tone_adjust,
         };
         let f0 = pitches_hz.get(i).copied().unwrap_or(120.0).max(25.0);
         let samples = wavegen_segment(&seg, f0, global_amp, wavephase);
@@ -792,7 +904,7 @@ mod tests {
         let probe_energy = |pct: [i32; 7], f_hz: f64| -> f64 {
             let voice = VoiceParams { formant_freq_pct: pct, ..VoiceParams::default() };
             let mut phase = i32::MAX;
-            let s = synthesize_frames_seq(&frames, &amps, &pitch, &voice, &mut phase);
+            let s = synthesize_frames_seq(&frames, &amps, &pitch, &[], &voice, &mut phase);
             let total: f64 = s.iter().map(|&x| (x as f64).powi(2)).sum::<f64>().max(1.0);
             goertzel_power(&s, f_hz, SR) / total
         };
@@ -818,7 +930,7 @@ mod tests {
         let power = |height: [i32; 7]| -> f64 {
             let voice = VoiceParams { formant_height_pct: height, ..VoiceParams::default() };
             let mut phase = i32::MAX;
-            let s = synthesize_frames_seq(&frames, &amps, &pitch, &voice, &mut phase);
+            let s = synthesize_frames_seq(&frames, &amps, &pitch, &[], &voice, &mut phase);
             goertzel_power(&s, 1400.0, SR)
         };
 
@@ -846,7 +958,7 @@ mod tests {
         let frame = voiced_frame(500, 1500, 2500, 4);
         let peaks = frame_to_peaks(&frame);
         let mut htab = [0i32; MAX_HARMONIC];
-        let hmax = peaks_to_harmspect(&peaks, 118_i64 << 16, &mut htab);
+        let hmax = peaks_to_harmspect(&peaks, 118_i64 << 16, &mut htab, &set_tone_adjust(&DEFAULT_TONE_POINTS));
         // Should produce non-zero harmonics
         assert!(hmax > 0);
         let total: i32 = htab[1..].iter().sum();
@@ -863,6 +975,8 @@ mod tests {
             voiced: true,
             noise_frac: 0.0,
             amp_factor: 1.0,
+            rand_seed: 0,
+            tone_adjust: set_tone_adjust(&DEFAULT_TONE_POINTS)
         };
         let mut phase = i32::MAX;
         let samples = wavegen_segment(&seg, 118.0, 0.8, &mut phase);
@@ -881,6 +995,8 @@ mod tests {
             voiced: false,
             noise_frac: 0.0,
             amp_factor: 1.0,
+            rand_seed: 0,
+            tone_adjust: set_tone_adjust(&DEFAULT_TONE_POINTS)
         };
         let mut phase = i32::MAX;
         let samples = wavegen_segment(&seg, 118.0, 0.8, &mut phase);
@@ -934,6 +1050,8 @@ mod tests {
             voiced: true,
             noise_frac: 0.0,
             amp_factor: 1.0,
+            rand_seed: 0,
+            tone_adjust: set_tone_adjust(&DEFAULT_TONE_POINTS)
         };
         let mut phase = i32::MAX;
         let _ = wavegen_segment(&seg, 118.0, 0.8, &mut phase);
@@ -942,5 +1060,48 @@ mod tests {
         // Phase should have advanced (not reset)
         assert_ne!(phase, phase_after_first,
             "phase should evolve between calls");
+    }
+
+    /// `SetToneAdjust` interpolates between the `tone` points and extends the
+    /// last height to the top of the range (the `-1` sentinel).
+    #[test]
+    fn tone_curve_interpolates_between_points() {
+        let t = set_tone_adjust(&DEFAULT_TONE_POINTS);
+        // Flat at the first height below the first point (600 Hz = index 75).
+        assert_eq!(t[0], 170);
+        assert_eq!(t[74], 170);
+        // 1200 Hz = index 150 → the second height.
+        assert_eq!(t[150], 135);
+        // Halfway between 600 and 1200 Hz, halfway between the two heights.
+        assert_eq!(t[112] as i32, 170 + (112 - 75) * (135 - 170) / (150 - 75));
+        // 2000 Hz = index 250 → 110, and `-1` holds it to the end.
+        assert_eq!(t[250], 110);
+        assert_eq!(t[N_TONE_ADJUST - 1], 110);
+    }
+
+    /// A voice's own curve is applied *relative* to the default, so the standard
+    /// voices are unchanged and a `tone` line contributes only its difference.
+    #[test]
+    fn default_tone_curve_is_a_no_op() {
+        let peaks = frame_to_peaks(&SpectFrame {
+            ffreq: [100, 700, 1200, 2500, 3300, 3700, 7000],
+            fheight: [200; 8],
+            fwidth: [40; 6],
+            fright: [40; 3],
+            ..Default::default()
+        });
+        let mut with_default = [0i32; MAX_HARMONIC];
+        let mut without = [0i32; MAX_HARMONIC];
+        let flat = [128u8; N_TONE_ADJUST];
+        peaks_to_harmspect(&peaks, 118_i64 << 16, &mut with_default,
+                           &set_tone_adjust(&DEFAULT_TONE_POINTS));
+        peaks_to_harmspect(&peaks, 118_i64 << 16, &mut without, &DEFAULT_TONE_ADJUST);
+        assert_eq!(with_default, without, "the default curve must not change the spectrum");
+
+        // A flat curve *does* change it: it undoes the default's tilt, so the
+        // harmonics above 600 Hz gain relative to those below.
+        let mut flattened = [0i32; MAX_HARMONIC];
+        peaks_to_harmspect(&peaks, 118_i64 << 16, &mut flattened, &flat);
+        assert_ne!(flattened, with_default, "a different curve must reshape the spectrum");
     }
 }

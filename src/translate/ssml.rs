@@ -238,7 +238,6 @@ fn interpret_mode(ia: &str) -> Option<SayAs> {
 }
 
 /// Mutable state for one pass over an SSML fragment.
-#[derive(Default)]
 struct Walker {
     segments: Vec<Segment>,
     cur: String,
@@ -257,6 +256,40 @@ struct Walker {
     phoneme_stack: Vec<bool>,
     spell_depth: usize,
     suppress_depth: usize,
+    /// One entry per open `<prosody>`: the rate / volume / pitch in force when
+    /// it opened, so `</prosody>` can restore them.
+    ///
+    /// Upstream keeps the same stack (`PARAM_STACK`) and writes the resulting
+    /// values into the text as embedded commands, which is how a prosody span
+    /// affects only the words inside it.
+    prosody_stack: Vec<(i32, i32, i32)>,
+    /// Current rate (wpm), volume (0-200) and pitch (0-100).
+    prosody: (i32, i32, i32),
+}
+
+/// The engine's own rate / volume / pitch, which a `<prosody>` percentage is
+/// taken against (upstream's `param_stack[0]`).
+const PROSODY_BASE: (i32, i32, i32) = (175, 100, 50);
+
+impl Default for Walker {
+    fn default() -> Self {
+        Walker {
+            segments: Vec::new(),
+            cur: String::new(),
+            marks: Vec::new(),
+            voice_stack: Vec::new(),
+            sayas_stack: Vec::new(),
+            interpret: SayAs::default(),
+            sub_stack: Vec::new(),
+            phoneme_stack: Vec::new(),
+            spell_depth: 0,
+            suppress_depth: 0,
+            prosody_stack: Vec::new(),
+            // Start at the engine's own parameters, so a span that changes
+            // nothing emits nothing.
+            prosody: PROSODY_BASE,
+        }
+    }
 }
 
 impl Walker {
@@ -298,6 +331,28 @@ impl Walker {
         }
     }
 
+    /// Emit `\x01<value><letter>` for each parameter a `<prosody>` element
+    /// changed — the same embedded commands upstream writes, so the change
+    /// applies from here to the closing tag rather than to the whole utterance.
+    fn emit_prosody(&mut self, next: (i32, i32, i32)) {
+        if self.suppress_depth > 0 {
+            self.prosody = next;
+            return;
+        }
+        for (cur, new, letter) in [
+            (self.prosody.0, next.0, 'S'),
+            (self.prosody.1, next.1, 'A'),
+            (self.prosody.2, next.2, 'P'),
+        ] {
+            if cur != new {
+                self.cur.push(crate::translate::CTRL_EMBEDDED);
+                self.cur.push_str(&new.max(0).to_string());
+                self.cur.push(letter);
+            }
+        }
+        self.prosody = next;
+    }
+
     fn emit_break(&mut self) {
         if self.suppress_depth == 0 {
             self.cur.push(SSML_BREAK);
@@ -322,6 +377,30 @@ impl Walker {
         let attrs = &t[name_end..];
 
         match name.as_str() {
+            "prosody" => {
+                // Percentages and the named steps (`x-slow`, `loud`, …) are
+                // taken against the engine's own parameters, as upstream's
+                // `SetProsodyParameter` does with `param_stack[0]`.
+                if is_close {
+                    if let Some(prev) = self.prosody_stack.pop() {
+                        self.emit_prosody(prev);
+                    }
+                } else if !self_close {
+                    self.prosody_stack.push(self.prosody);
+                    let scale = |attr: &str, base: i32, cur: i32| -> i32 {
+                        match get_attr(attrs, attr).as_deref().and_then(parse_prosody_value) {
+                            Some(m) => (base as f32 * m).round() as i32,
+                            None => cur,
+                        }
+                    };
+                    let next = (
+                        scale("rate", PROSODY_BASE.0, self.prosody.0),
+                        scale("volume", PROSODY_BASE.1, self.prosody.1),
+                        scale("pitch", PROSODY_BASE.2, self.prosody.2),
+                    );
+                    self.emit_prosody(next);
+                }
+            }
             "break" => self.emit_break(),
             "p" | "s" => self.emit_break(),
             "mark" => {

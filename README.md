@@ -233,15 +233,17 @@ The crate reads compiled eSpeak NG data files at runtime.  The data resolution o
 3. `espeak-ng-data/` in the current working directory
 4. `/usr/share/espeak-ng-data` (system installation)
 
-A complete copy of the compiled data directory (from eSpeak NG 1.52.0 + additional
-language files from 1.52.0.1) is bundled at `espeak-ng-data/` in this repository.
-This makes the crate fully self-contained without requiring a system eSpeak NG
-installation.
+A complete copy of the compiled data directory, built from upstream eSpeak NG
+`master` (`f135499`, 1.53.0-dev), is bundled at `espeak-ng-data/` in this
+repository. This makes the crate fully self-contained without requiring a system
+eSpeak NG installation.
 
 The bundle contains:
-- **114 compiled dictionaries** (`*_dict` files) for 114 languages
-- **145 language definition files** (`lang/`) — includes ps, rup, crh, mn not in 1.52.0
-- **200 voice definition files** (`voices/`) — includes asia/ps, ps voices
+- **123 compiled dictionaries** (`*_dict` files) — adds ab, crh, fo, kaa, lij,
+  mn, ps, rup and xex over the 1.52.0 release
+- **151 language definition files** (`lang/`)
+- **MBROLA voice definitions** (`voices/mb/`) and phoneme translation tables
+  (`mbrola_ph/`), carried over from the 1.52.0 bundle
 - **Binary phoneme data** (`phondata`, `phonindex`, `phontab`, `intonations`)
 
 For selective embedding, the repository also contains per-language dictionary

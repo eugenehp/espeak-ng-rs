@@ -53,8 +53,8 @@ fn armenian_and_georgian_read_words() {
     // Both needed their script offset (OFFSET_ARMENIAN=0x530, OFFSET_GEORGIAN=
     // 0x10A0) so the rules could find the multi-byte rule chains via groups3.
     let cases: &[(&str, &str, &str)] = &[
-        ("hy", "բարեւ", "bˈaɹev"),
-        ("hy", "Հայաստան", "haɪˈastan"),
+        ("hy", "բարեւ", "baɹˈev"),
+        ("hy", "Հայաստան", "hˌaɪastˈan"),
         ("ka", "გამარჯობა", "ɡˈamardʒˌoba"),
         ("ka", "საქართველო", "sˈakʰartʰvˌelo"),
     ];

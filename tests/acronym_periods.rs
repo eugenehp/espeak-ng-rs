@@ -66,5 +66,5 @@ fn period_between_digits_in_comma_decimal_locale() {
     let ipa = t.text_to_ipa("3.14").unwrap();
     assert!(!ipa.contains('\n'), "de 3.14 must not break: {ipa:?}");
     assert!(ipa.contains("pˈʊŋkt"), "de 3.14 reads '.' as punkt: {ipa:?}");
-    assert!(ipa.contains("fˈɪrtseːn"), "de 3.14 reads 14 as vierzehn: {ipa:?}");
+    assert!(ipa.contains("fˈɪɾtseːn"), "de 3.14 reads 14 as vierzehn: {ipa:?}");
 }

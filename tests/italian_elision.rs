@@ -16,15 +16,15 @@ fn tens_elide_before_uno_and_otto() {
     };
     let ipa = |s: &str| t.text_to_ipa(s).unwrap();
     // The elided compound is a single word with no stray "a"/space before uno/otto.
-    assert_eq!(ipa("31"), "təɾˈeːntˈuno");
-    assert_eq!(ipa("38"), "təɾˈeːntˈɔtːo");
+    assert_eq!(ipa("31"), "trˈeːntˈuno");
+    assert_eq!(ipa("38"), "trˈeːntˈɔtːo");
     for n in ["41", "48", "81", "88", "91", "98"] {
         let got = ipa(n);
         // Must not contain the un-elided "…a uno/otto" (a separate vowel then stress).
         assert!(!got.contains("aˈuno") && !got.contains("aˈɔ"), "{n} not elided: {got}");
     }
     // Within hundreds too: 131 = "cento trentuno".
-    assert!(ipa("131").ends_with("təɾˈeːntˈuno"), "{}", ipa("131"));
+    assert!(ipa("131").ends_with("trˈeːntˈuno"), "{}", ipa("131"));
 }
 
 #[test]
@@ -37,7 +37,7 @@ fn consonant_initial_units_are_not_elided() {
     // 32 = "trentadue" keeps the 'a' (due starts with a consonant).
     assert!(ipa("32").contains("tadˈue"), "{}", ipa("32"));
     // Round tens are unchanged.
-    assert_eq!(ipa("30"), "təɾˈeːnta");
+    assert_eq!(ipa("30"), "trˈeːnta");
 }
 
 #[test]

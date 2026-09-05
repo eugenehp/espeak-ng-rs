@@ -40,6 +40,10 @@ struct Cli {
     punct:         Option<Vec<char>>,
     /// `-z`: no final sentence pause (suppress end-of-utterance silence).
     no_final_pause: bool,
+    /// `-D`: deterministic random mode — pin the noise seed to upstream's value.
+    deterministic: bool,
+    /// `-X`: trace the translation rules that match each letter.
+    trace_rules: bool,
     /// `-b <n>`: input text encoding for `-f`/`--stdin` (1=UTF-8, 2=8-bit, 4=16-bit).
     input_encoding: Option<u32>,
     /// `--compile[=<lang>]` / `--compile-debug[=<lang>]`: compile `<lang>`'s
@@ -49,6 +53,12 @@ struct Cli {
     /// `--compile-phonemes[=<source>]`: compile a phoneme-table source file into
     /// the binary `phontab`.  `Some("")` = the data dir's `phonemes` file.
     compile_phonemes: Option<String>,
+    /// `--compile-mbrola=<source>`: compile an MBROLA phoneme-translation source
+    /// into `<data>/mbrola_ph/<name>_phtrans`.
+    compile_mbrola: Option<String>,
+    /// `--pho`: write the MBROLA `.pho` phoneme/duration/pitch script instead of
+    /// speaking.
+    pho: bool,
     positionals:   Vec<OsString>,
     had_unknown:   Option<String>,
 }
@@ -99,6 +109,9 @@ fn run() -> std::io::Result<()> {
     if let Some(src_arg) = cli.compile_phonemes.clone() {
         return run_compile_phonemes(&src_arg, &cli);
     }
+    if let Some(src_arg) = cli.compile_mbrola.clone() {
+        return run_compile_mbrola(&src_arg, &cli);
+    }
     // Resolve a voice *name* (e.g. "French (France)") to a language tag; a plain
     // language tag is left unchanged.
     {
@@ -116,6 +129,16 @@ fn run() -> std::io::Result<()> {
 
     let text = gather_text(&cli)?;
 
+    if cli.trace_rules {
+        trace_output(&cli, &text)?;
+        return Ok(());
+    }
+
+    if cli.pho {
+        pho_output(&cli, &text)?;
+        return Ok(());
+    }
+
     if cli.ipa || cli.x_mnem {
         phoneme_output(&cli, &text)?;
         return Ok(());
@@ -126,6 +149,30 @@ fn run() -> std::io::Result<()> {
     }
 
     let data_dir = resolved_data_dir(cli.path_override.as_deref());
+
+    // An `mb-*` voice synthesizes through the external MBROLA binary.  Neither
+    // the binary nor the diphone databases ship here, so fall back to the
+    // built-in formant synthesizer on the voice's own language when either is
+    // missing — with a warning, rather than refusing to speak.
+    if let Some(mb) = espeak_ng::voices::load_mbrola_voice(&data_dir, &cli.voice) {
+        match speak_mbrola(&cli, &data_dir, &mb, &text) {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                eprintln!(
+                    "{}: MBROLA voice '{}' unavailable ({e}); using the built-in \
+                     synthesizer for '{}'",
+                    argv0_display(),
+                    mb.database,
+                    mb.language
+                );
+                // The voice file may name a locale the port has no dict for
+                // (`en-uk`); fall back to whatever stem actually has data.
+                cli.voice = espeak_ng::translate::resolve_dict_stem(&data_dir, &mb.language)
+                    .unwrap_or_else(|| mb.language.clone());
+            }
+        }
+    }
+
     let mut b = EspeakNg::builder().voice(&cli.voice).data_dir(&data_dir);
     if let Some(r) = cli.rate {
         b = b.rate(r);
@@ -169,6 +216,79 @@ fn run() -> std::io::Result<()> {
         return Ok(());
     }
 
+    eprintln!(
+        "espeak-ng (Rust): speech playback is not implemented; use --stdout or -w <file.wav>"
+    );
+    Ok(())
+}
+
+/// Speak through the external MBROLA binary: translate, build the `.pho`, hand
+/// it to `mbrola <database>`, and write the PCM it returns.
+///
+/// Errors (a missing binary or database) are the caller's cue to fall back.
+fn speak_mbrola(
+    cli: &Cli,
+    data_dir: &Path,
+    mb: &espeak_ng::voices::MbrolaVoice,
+    text: &str,
+) -> std::io::Result<()> {
+    use espeak_ng::mbrola::{self, write_pho, MbrolaTable};
+    use espeak_ng::synthesize::{Synthesizer, VoiceParams};
+
+    let ioerr = |e: espeak_ng::Error| std::io::Error::other(format!("{e}"));
+    let database = mbrola::find_database(data_dir, &mb.database).map_err(ioerr)?;
+    let bytes = std::fs::read(data_dir.join("mbrola_ph").join(&mb.phtrans))?;
+    let table = MbrolaTable::parse(&bytes).map_err(ioerr)?;
+
+    let mut translator = Translator::new(&mb.language, Some(data_dir)).map_err(ioerr)?;
+    if let Some(g) = cli.word_gap {
+        translator.options.word_gap = g as i32;
+    }
+    let codes = translator.translate_to_codes(text).map_err(ioerr)?;
+    let mut phdata = PhonemeData::load(data_dir).map_err(ioerr)?;
+    espeak_ng::translate::select_phoneme_table(
+        &mut phdata,
+        data_dir,
+        translator.options.lang.as_str(),
+    )
+    .map_err(ioerr)?;
+
+    let mut voice = VoiceParams::default();
+    if let Some(r) = cli.rate {
+        // Same mapping the engine uses (upstream's `speed_lookup` curve).
+        let f = espeak_ng::synthesize::setlengths::speed_duration_factor(r);
+        voice.speed_percent = ((100.0 / f).round() as u32).clamp(20, 800);
+    }
+    // Follow the MBROLA voice's own `pitch <base> <range>` (or the language's).
+    if let Some((p1, p2)) = mb
+        .pitch
+        .or_else(|| espeak_ng::voices::voice_pitch(data_dir, &mb.language))
+    {
+        voice.pitch_hz = espeak_ng::synthesize::intonation::base_pitch_hz(
+            p1 as f64,
+            cli.pitch.unwrap_or(50),
+        )
+        .round() as u32;
+        voice.pitch_range_units = (p2 - p1) as f64 * 108.0;
+    }
+    let rate = voice.sample_rate;
+    let synth = Synthesizer::new(voice);
+    let pho = write_pho(&table.translate(&synth.mbrola_phonemes(&codes, &phdata)));
+    let pcm = mbrola::synthesize(&pho, &database).map_err(ioerr)?;
+    if pcm.is_empty() {
+        return Err(std::io::Error::other("mbrola produced no audio"));
+    }
+
+    if cli.stdout_wav || cli.wave_out.is_some() {
+        let mut buf = Vec::new();
+        write_wav_16_mono(&mut buf, &pcm, rate).map_err(std::io::Error::other)?;
+        if cli.stdout_wav {
+            std::io::stdout().write_all(&buf)?;
+        } else if let Some(ref p) = cli.wave_out {
+            std::fs::write(p, &buf)?;
+        }
+        return Ok(());
+    }
     eprintln!(
         "espeak-ng (Rust): speech playback is not implemented; use --stdout or -w <file.wav>"
     );
@@ -298,6 +418,43 @@ fn run_compile_phonemes(src_arg: &str, cli: &Cli) -> std::io::Result<()> {
     Ok(())
 }
 
+/// `--compile-mbrola=<source>`: compile an MBROLA phoneme-translation source
+/// (`phsource/mbrola/<db>`) into the binary `<data>/mbrola_ph/<db>_phtrans` —
+/// `espeak-ng.c`'s `--compile-mbrola` via `espeak_ng_CompileMbrolaVoice`.
+///
+/// The output file is named after the source file, as in C.
+fn run_compile_mbrola(src_arg: &str, cli: &Cli) -> std::io::Result<()> {
+    use espeak_ng::mbrola::MbrolaTable;
+
+    let src_path = PathBuf::from(src_arg);
+    if !src_path.exists() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("mbrola source not found: {}", src_path.display()),
+        ));
+    }
+    let name = src_path
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+
+    let source = std::fs::read_to_string(&src_path)?;
+    let table = MbrolaTable::compile(&source);
+
+    let data_dir = resolved_data_dir(cli.path_override.as_deref());
+    let out_dir = data_dir.join("mbrola_ph");
+    std::fs::create_dir_all(&out_dir)?;
+    let out = out_dir.join(format!("{name}_phtrans"));
+    let bytes = table.to_bytes();
+    std::fs::write(&out, &bytes)?;
+    eprintln!(
+        "Mbrola translation file: {} -- {} phonemes",
+        out.display(),
+        table.entries.len()
+    );
+    Ok(())
+}
+
 /// `--voices` / `--voices=<lang>`: print the available voices as a table,
 /// optionally filtered to those whose language code starts with the argument.
 fn print_voices(cli: &Cli) {
@@ -365,9 +522,180 @@ fn apply_runtime_params(engine: &mut EspeakNg, cli: &Cli) {
     if cli.no_final_pause {
         engine.set_no_final_pause(true);
     }
+    if cli.deterministic {
+        // Upstream's `-D` pins `espeak_srand` to 1 (it otherwise seeds from the
+        // clock).  This port never seeds from the clock, so `-D` only selects
+        // the same noise sequence upstream's deterministic mode uses.
+        engine.set_rand_seed(1);
+    }
     // `-m` / `--markup`: interpret SSML in synthesis (currently the `<audio>`
     // sound-icon tag).
     engine.set_markup(cli.markup);
+}
+
+/// `DecodePhonemes` — phoneme codes to mnemonics, for the `-X` trace.
+///
+/// A stress phoneme prints as one of `= , '` rather than its mnemonic (C's
+/// `stress_chars`), and the level-1 "unstressed" marker prints as nothing.
+fn decode_phonemes(codes: &[u8], phdata: &PhonemeData) -> String {
+    const STRESS_CHARS: [char; 8] = ['=', '=', ',', ',', '\'', '*', ' ', ' '];
+    let mut out = String::new();
+    for &c in codes {
+        if c == 0 || c == 255 {
+            continue;
+        }
+        let Some(ph) = phdata.get(c) else { continue };
+        // `phSTRESS` == 1
+        if ph.typ == 1 && ph.std_length <= 4 && ph.program == 0 {
+            if ph.std_length > 1 {
+                out.push(STRESS_CHARS[ph.std_length as usize]);
+            }
+        } else {
+            out.push_str(&ph.mnemonic_str());
+        }
+    }
+    out
+}
+
+/// `-X`: print the letter-to-sound rules that match each letter, with their
+/// scores — `espeak-ng.c`'s `-X` (`option_phonemes |= espeakPHONEMES_TRACE`).
+///
+/// Each word gets a `Translate '<word>'` header, then one line per matching
+/// rule: `<score>\t<rule> [<phonemes>]`, with a blank line between letter
+/// positions.  The rule is rendered back to source form by `DecodeRule`.
+fn trace_output(cli: &Cli, text: &str) -> std::io::Result<()> {
+    use espeak_ng::dictionary::rules::{trace_begin, trace_take, TraceEvent};
+
+    let ioerr = |e: espeak_ng::Error| std::io::Error::other(format!("{e}"));
+    let data_dir = resolved_data_dir(cli.path_override.as_deref());
+    let translator = Translator::new(&cli.voice, Some(&data_dir)).map_err(ioerr)?;
+    let mut phdata = PhonemeData::load(&data_dir).map_err(ioerr)?;
+    espeak_ng::translate::select_phoneme_table(
+        &mut phdata,
+        &data_dir,
+        translator.options.lang.as_str(),
+    )
+    .map_err(ioerr)?;
+
+    trace_begin();
+    let _ = translator.text_to_ipa(text);
+    let events = trace_take();
+
+    let mut out = String::new();
+    let mut last_pos: Option<usize> = None;
+    // C emits the blank line before the phoneme output only when rules ran; a
+    // dictionary hit prints `Found:` and goes straight to the phonemes.
+    let mut rules_ran = false;
+    for ev in events {
+        match ev {
+            TraceEvent::Word(w) => {
+                out.push_str(&format!("Translate '{w}'\n"));
+                last_pos = None;
+            }
+            TraceEvent::Found(w, ph, flags) => {
+                // A dictionary hit short-circuits the rules, so C prints this
+                // *instead* of a `Translate` header and any rule lines.
+                let flags = espeak_ng::dictionary::rules::decode_dict_flags(flags);
+                out.push_str(&format!(
+                    "Found: '{w}' [{}]  {flags}\n",
+                    decode_phonemes(&ph, &phdata)
+                ));
+                last_pos = None;
+            }
+            TraceEvent::Rule(r) => {
+                // C prints a blank line when it moves on to the next letter.
+                if last_pos.is_some_and(|p| p != r.word_pos) {
+                    out.push('\n');
+                }
+                last_pos = Some(r.word_pos);
+                rules_ran = true;
+                let mnemonics = decode_phonemes(&r.phonemes, &phdata);
+                out.push_str(&format!("{:3}\t{} [{}]\n", r.points, r.rule, mnemonics));
+            }
+        }
+    }
+
+    // C follows the trace with a blank line and the resulting phonemes.
+    let codes = translator.translate_to_codes(text).map_err(ioerr)?;
+    if rules_ran {
+        out.push('\n');
+    }
+    out.push_str(&format_x(&codes, &phdata, cli.sep, &data_dir, translator.options.lang.as_str()));
+    out.push('\n');
+
+    if let Some(ref path) = cli.phonout {
+        std::fs::write(path, &out)?;
+    } else {
+        std::io::stdout().write_all(out.as_bytes())?;
+    }
+    Ok(())
+}
+
+/// `--pho`: write the MBROLA `.pho` script (phoneme, duration, pitch targets)
+/// instead of speaking — `espeak-ng.c`'s `--pho`, via `MbrolaTranslate`.
+///
+/// With an `mb-*` voice the eSpeak phoneme names are translated through that
+/// diphone database's `_phtrans` table.  C only produces `.pho` for an MBROLA
+/// voice; here any voice works, and a non-MBROLA one simply keeps eSpeak's own
+/// phoneme names (an empty translation table is the identity mapping).
+fn pho_output(cli: &Cli, text: &str) -> std::io::Result<()> {
+    use espeak_ng::mbrola::{write_pho, MbrolaTable};
+    use espeak_ng::synthesize::Synthesizer;
+
+    let ioerr = |e: espeak_ng::Error| std::io::Error::other(format!("{e}"));
+    let data_dir = resolved_data_dir(cli.path_override.as_deref());
+
+    // An `mb-<db>` voice speaks the language its voice file names and maps
+    // phoneme names through that database's translation table.
+    let mb = espeak_ng::voices::load_mbrola_voice(&data_dir, &cli.voice);
+    let (lang, table) = match &mb {
+        Some(v) => {
+            let bytes = std::fs::read(data_dir.join("mbrola_ph").join(&v.phtrans))?;
+            (v.language.clone(), MbrolaTable::parse(&bytes).map_err(ioerr)?)
+        }
+        None => (cli.voice.clone(), MbrolaTable::default()),
+    };
+
+    let mut translator = Translator::new(&lang, Some(&data_dir)).map_err(ioerr)?;
+    if let Some(g) = cli.word_gap {
+        translator.options.word_gap = g as i32;
+    }
+    let codes = translator.translate_to_codes(text).map_err(ioerr)?;
+    let mut phdata = PhonemeData::load(&data_dir).map_err(ioerr)?;
+    espeak_ng::translate::select_phoneme_table(
+        &mut phdata,
+        &data_dir,
+        translator.options.lang.as_str(),
+    )
+    .map_err(ioerr)?;
+
+    let mut voice = espeak_ng::synthesize::VoiceParams::default();
+    if let Some(r) = cli.rate {
+        // Same mapping the engine uses (upstream's `speed_lookup` curve).
+        let f = espeak_ng::synthesize::setlengths::speed_duration_factor(r);
+        voice.speed_percent = ((100.0 / f).round() as u32).clamp(20, 800);
+    }
+    // The `.pho` pitch targets follow the voice's own `pitch <base> <range>` —
+    // the MBROLA voice file's if it has one, else the language's.
+    let pitch_line = mb
+        .as_ref()
+        .and_then(|v| v.pitch)
+        .or_else(|| espeak_ng::voices::voice_pitch(&data_dir, &lang));
+    if let Some((p1, p2)) = pitch_line {
+        voice.pitch_hz =
+            espeak_ng::synthesize::intonation::base_pitch_hz(p1 as f64, cli.pitch.unwrap_or(50))
+                .round() as u32;
+        voice.pitch_range_units = (p2 - p1) as f64 * 108.0;
+    }
+    let synth = Synthesizer::new(voice);
+    let out = write_pho(&table.translate(&synth.mbrola_phonemes(&codes, &phdata)));
+
+    if let Some(ref path) = cli.phonout {
+        std::fs::write(path, &out)?;
+    } else {
+        std::io::stdout().write_all(out.as_bytes())?;
+    }
+    Ok(())
 }
 
 fn phoneme_output(cli: &Cli, text: &str) -> std::io::Result<()> {
@@ -410,10 +738,16 @@ fn phoneme_output(cli: &Cli, text: &str) -> std::io::Result<()> {
         let mut phdata = PhonemeData::load(&data_dir).map_err(|e| {
             std::io::Error::new(std::io::ErrorKind::Other, format!("{e}"))
         })?;
-        phdata.select_table_by_name(translator.options.lang.as_str()).map_err(|e| {
-            std::io::Error::new(std::io::ErrorKind::Other, format!("{e}"))
-        })?;
-        format_x(&codes, &phdata, cli.sep)
+        // Same resolution as the library path (voice `phonemes` directive, then
+        // the primary subtag) so a regional locale without its own table — pt-br,
+        // fr-ca, en-gb — doesn't fail here after working in `--ipa`.
+        espeak_ng::translate::select_phoneme_table(
+            &mut phdata,
+            &data_dir,
+            translator.options.lang.as_str(),
+        )
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{e}")))?;
+        format_x(&codes, &phdata, cli.sep, &data_dir, translator.options.lang.as_str())
     };
 
     let line_with_nl = format!("{line}\n");
@@ -479,9 +813,23 @@ fn is_combining_mark(c: char) -> bool {
     )
 }
 
-fn format_x(codes: &[PhonemeCode], phdata: &PhonemeData, sep: Option<char>) -> String {
+/// Render phoneme codes as eSpeak mnemonics (`-x`).
+///
+/// A `phonSWITCH` marker in the stream opens `(lang)` and swaps the phoneme
+/// table used to resolve the mnemonics that follow, so a mid-clause language
+/// switch prints `(en)h@l'oU(ru)` as upstream does instead of leaking the raw
+/// marker phoneme.
+fn format_x(
+    codes: &[PhonemeCode],
+    phdata: &PhonemeData,
+    sep: Option<char>,
+    data_dir: &Path,
+    lang: &str,
+) -> String {
     let mut out = String::new();
     let mut word_units: Vec<String> = Vec::new();
+    // The table the codes that follow belong to; `None` = the clause's own.
+    let mut switched: Option<PhonemeData> = None;
 
     let push_unit = |u: String, word_units: &mut Vec<String>| {
         if u.is_empty() {
@@ -503,6 +851,35 @@ fn format_x(codes: &[PhonemeCode], phdata: &PhonemeData, sep: Option<char>) -> S
     };
 
     for pc in codes {
+        if let Some(espeak_ng::translate::CodeMarker::LangSwitch(target)) = &pc.marker {
+            flush_word(&mut out, &mut word_units, sep);
+            // A *closing* marker binds to the word it follows — upstream writes
+            // `(en)h@l'oU(ru) p@-r…`, so the word-boundary space moves after it.
+            // (A switched word emits its own word boundary and the separator
+            // token emits another, so there can be more than one space here.)
+            let trailing_space = target == lang && out.ends_with(' ');
+            while target == lang && out.ends_with(' ') {
+                out.pop();
+            }
+            out.push_str(&format!("({target})"));
+            if trailing_space {
+                out.push(' ');
+            }
+            switched = if target == lang {
+                None
+            } else {
+                // Load the target's table; if it has none, keep resolving with
+                // the clause's table rather than dropping the word.
+                PhonemeData::load(data_dir).ok().and_then(|mut d| {
+                    espeak_ng::translate::select_phoneme_table(&mut d, data_dir, target)
+                        .ok()
+                        .map(|_| d)
+                })
+            };
+            continue;
+        }
+        let phdata: &PhonemeData = switched.as_ref().unwrap_or(phdata);
+
         if pc.is_boundary && pc.code == 15 {
             flush_word(&mut out, &mut word_units, sep);
             out.push(' ');
@@ -538,14 +915,17 @@ fn format_x(codes: &[PhonemeCode], phdata: &PhonemeData, sep: Option<char>) -> S
             0 if !pc.is_boundary => {}
             c => {
                 if let Some(ph) = phdata.get(c) {
-                    if ph.typ == 1 && ph.program == 0 && ph.std_length <= 4 {
+                    if ph.typ == 1 && ph.program == 0 {
                         match ph.std_length {
                             4 => push_unit("'".to_string(), &mut word_units),
                             2 | 3 => push_unit(",".to_string(), &mut word_units),
                             _ => {}
                         }
-                    } else if ph.typ != 1 {
-                        push_unit(ph.mnemonic_str(), &mut word_units);
+                    } else {
+                        // Type-1 phonemes that carry a program are *tone*
+                        // phonemes (Mandarin `55`/`214`/…), which C writes out
+                        // with `WritePhMnemonic` like any other phoneme.
+                        push_unit(ph.mnemonic_display(), &mut word_units);
                     }
                 }
             }
@@ -553,6 +933,15 @@ fn format_x(codes: &[PhonemeCode], phdata: &PhonemeData, sep: Option<char>) -> S
     }
 
     flush_word(&mut out, &mut word_units, sep);
+    // A suppressed clause boundary (a period before a lowercase word, a comma
+    // between digits) leaves the surrounding separators behind; upstream prints
+    // a single space there.
+    while out.contains("  ") {
+        out = out.replace("  ", " ");
+    }
+    // Word boundaries either side of a clause break leave stray spaces at the
+    // ends of lines (`'eI \n b'i:` where upstream writes `'eI\nb'i:`).
+    let out: String = out.split('\n').map(str::trim).collect::<Vec<_>>().join("\n");
     out.trim_end().to_string()
 }
 
@@ -709,6 +1098,10 @@ fn parse_args(args: Vec<OsString>) -> Cli {
                     // compilation.  --compile-phonemes[=src]: phoneme-table
                     // compilation.  Other --compile-* variants (mbrola/
                     // intonation) are accepted as no-ops (no source ships).
+                    "--pho" => cli.pho = true,
+                    _ if s.starts_with("--compile-mbrola=") => {
+                        cli.compile_mbrola = Some(s["--compile-mbrola=".len()..].to_string());
+                    }
                     "--compile-phonemes" => cli.compile_phonemes = Some(String::new()),
                     _ if s.starts_with("--compile-phonemes=") => {
                         cli.compile_phonemes = Some(s["--compile-phonemes=".len()..].to_string());
@@ -831,6 +1224,8 @@ fn parse_args(args: Vec<OsString>) -> Cli {
                         }
                     }
                     'z' => cli.no_final_pause = true,
+                    'D' => cli.deterministic = true,
+                    'X' => cli.trace_rules = true,
                     'w' => {
                         if idx + 1 < bytes.len() {
                             cli.wave_out = Some(PathBuf::from(&s[idx + 1..]));
@@ -894,6 +1289,7 @@ fn print_help() {
 
 Phonemes / IPA
   --ipa            IPA to stdout (or --phonout)
+  --pho            MBROLA .pho phoneme/duration/pitch script to stdout
   -x               Phoneme mnemonics (Kirshenbaum-style)
   -q               No audio (useful with --ipa / -x)
   --sep=<c>        Separator between phoneme units (`z` = U+200C as in upstream)
@@ -912,6 +1308,8 @@ Speech (WAV only; playback not implemented)
 Compile
   --compile[=<lang>]  Compile <lang>_list + <lang>_rules (in the data dir) into
                       <lang>_dict (default <lang> = the -v voice's language)
+  --compile-mbrola=<src>      Compile an MBROLA phoneme-translation source into
+                              <data>/mbrola_ph/<name>_phtrans
   --compile-phonemes[=<src>]  Compile a phoneme-table source (default: the data
                       dir's `phonemes`) into `phontab` (table only)
 
@@ -919,6 +1317,8 @@ Other
   -f <file>        Input text file
   --stdin          Read all stdin as one string
   --punct[=CHARS]  Announce punctuation by name (all, or only the given chars)
+  -D               Deterministic random mode (pin the unvoiced-noise seed)
+  -X               Trace the translation rules that match each letter
   --help           This help
   --version        Version and data directory
 

@@ -43,7 +43,7 @@ fn slovenian_is_units_first() {
 #[test]
 fn tens_first_languages_unchanged() {
     // Finnish/Estonian/Norwegian stay tens-first.
-    for (lang, sub) in [("fi", "kˌaksɪkymm"), ("nb", "ʂˈʉːaˈeːn")] {
+    for (lang, sub) in [("fi", "kˌaksikymm"), ("nb", "ʂˈʉːaˈeːn")] {
         let Some(t) = Translator::new(lang, None).ok() else {
             eprintln!("[SKIP] no {lang} data");
             continue;

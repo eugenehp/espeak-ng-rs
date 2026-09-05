@@ -87,6 +87,11 @@ const S_INITIAL_2:            u32 = 0x2000;
 const S_MID_DIM:              u32 = 0x10000;
 // Dead code: const 0x20000:      u32 = 0x20000;
 const S_FINAL_LONG:           u32 = 0x80000;
+const S_FINAL_DIM_ONLY:       u32 = 0x06;
+const S_PRIORITY_STRESS:      u32 = 0x20000;
+const S_EO_CLAUSE1:           u32 = 0x40000;
+const S_HYPEN_UNSTRESS:       u32 = 0x100000;
+const S_NO_EOC_LENGTHEN:      u32 = 0x200000;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Language options needed by stress computation
@@ -115,6 +120,14 @@ pub struct StressOpts {
     /// True for languages with word-final obstruent devoicing
     /// (German, Dutch, Slovak, …).
     pub word_final_devoicing: bool,
+    /// `LOPT_REGRESSIVE_VOICING` — a consonant cluster takes the voicing of its
+    /// *last* member, so Ukrainian `світ` is `zB'i:t[`, not `sB'i:t[`.
+    ///
+    /// Bit 0x02 = `v`/`R` don't propagate, 0x04 = stop at a word boundary,
+    /// 0x08 = propagate through liquids and nasals (Polish), 0x100 = devoice
+    /// word-finally.  Russian and Ukrainian use `0x03`, which crosses word
+    /// boundaries (`привіт світ` → `pRIB'i:d[ zB'i:t[`).
+    pub regressive_voicing: u32,
     /// `LOPT_ALT & 2` — when true, the phoneme immediately after a primary
     /// stress marker is upgraded from its "plain" vowel form to its
     /// "stressed" vowel form.  Mirrors `ApplySpecialAttribute2()` in
@@ -128,106 +141,260 @@ pub struct StressOpts {
     /// because the port's number *composition* can bake citation stresses into
     /// composed words, where the default rule must still re-stress the whole.
     pub caps_mark_stress: bool,
+    /// `langopts.word_gap` — its low three bits index C's `pause_phonemes[]` for
+    /// the pause inserted at every word boundary.  Set from `tr_languages.c` and
+    /// from a `words <n>` line in the voice file.
+    pub word_gap: u8,
+    /// `LOPT_REDUCE`, which gates the stress-conditioned phoneme changes
+    /// (`ChangeIfDiminished` and friends) in C's `StressCondition`:
+    ///
+    /// * bit 0 — apply them even to a word whose phonemes came from the
+    ///   dictionary *list*.  Only Italian sets it ("reduce vowels even if
+    ///   phonemes are specified in it_list"); for every other language a listed
+    ///   word keeps exactly the phonemes the list gives it, which is why English
+    ///   "unseen" stays `Vns'i:n` rather than reducing to `@ns'i:n`.
+    /// * bit 1 — treat the most stressed syllable of an unstressed word as
+    ///   carrying primary stress (Bulgarian, Icelandic, Russian).
+    pub reduce: u32,
 }
 
 impl Default for StressOpts {
     fn default() -> Self {
         StressOpts {
-            stress_rule:     STRESSPOSN_1L,
+            // C's `NewTranslator()` defaults: penultimate stress, and a
+            // monosyllabic word is "unstressed" (1) or "secondary" (3).  The port
+            // used first-syllable stress and 2, which showed up in every language
+            // it doesn't configure explicitly (Crimean Tatar stressed both the
+            // first and the last syllable).
+            stress_rule:     STRESSPOSN_2R,
             stress_flags:    0,
             vowel_pause:     0,
             unstressed_wd1:  STRESS_IS_UNSTRESSED as i32,
-            unstressed_wd2:  STRESS_IS_NOT_STRESSED as i32,
+            unstressed_wd2:  STRESS_IS_SECONDARY as i32,
             translator_name: 0,
             opt_length:      0,
             word_final_devoicing: false,
+            regressive_voicing: 0,
             alt_stress_upgrade: false,
             caps_mark_stress: false,
+            word_gap: 0,
+            reduce: 0,
         }
     }
 }
 
+
+/// Per-language `langopts.stress_flags`, transcribed from `tr_languages.c`.
+///
+/// The port previously set these in only seven language arms (and three of those
+/// disagreed with upstream), so most languages ran with no stress flags at all —
+/// Basque, for instance, needs `S_FINAL_VOWEL_UNSTRESSED` to move the stress off
+/// a word-final vowel (`kaixo` → `k'aISo`, not `kaIS'o`).
+/// The language's `stress_rule` — which syllable takes the primary stress.
+///
+/// Transcribed from `tr_languages.c`; the default when a language sets nothing
+/// is C's `NewTranslator` default, `STRESSPOSN_2R` (penultimate).  A voice file
+/// may override it with `stressRule <n>` (Basque, Latin, Arabic, Finnish and a
+/// dozen others do), which `for_lang_in` applies afterwards.
+fn stress_rule_for(lang: &str) -> u8 {
+    match lang {
+        "af" | "am" | "as" | "be" | "bn" | "bpy" | "bs" | "cs" | "da" | "de" | "en" | "fo"
+        | "ga" | "gd" | "hr" | "hu" | "is" | "ka" | "kn" | "ltg" | "lv" | "mn" | "nb" | "nl"
+        | "si" | "sk" | "smj" | "sr" | "sv" | "ta" | "te" | "vi" => STRESSPOSN_1L,
+        "cmn" | "fr" | "ht" | "hy" | "pap" | "pt" | "ro" | "rup" | "sq" | "tt" | "yue"
+        | "zh" => STRESSPOSN_1R,
+        "an" | "bg" | "ca" | "cy" | "el" | "eo" | "es" | "grc" | "gu" | "ia" | "id" | "io"
+        | "it" | "jbo" | "la" | "lt" | "ms" | "mt" | "om" | "pl" | "sl" | "sw" | "tn" => {
+            STRESSPOSN_2R
+        }
+        "mk" => STRESSPOSN_3R,
+        // Stress the last *heaviest* syllable (the Indic group, minus Gujarati,
+        // which overrides it back to penultimate).
+        "hi" | "mr" | "ne" | "or" | "pa" => STRESSPOSN_1RH,
+        "az" | "kk" | "ku" | "tr" => STRESSPOSN_1RU,
+        "ml" => STRESSPOSN_1SL,
+        "ko" => STRESSPOSN_2LLH,
+        "kl" => STRESSPOSN_GREENLANDIC,
+        // `Translator_Russian`, shared by Russian and Ukrainian.
+        "ru" | "uk" => STRESSPOSN_SYLCOUNT,
+        // C's `NewTranslator` default.
+        _ => STRESSPOSN_2R,
+    }
+}
+
+fn stress_flags_for(lang: &str) -> u32 {
+    match lang {
+        "en" => 0x08,
+        "am" | "fr" | "ht" => S_NO_AUTO_2 | S_FINAL_DIM,
+        "rup" | "ro" => S_FINAL_VOWEL_UNSTRESSED | S_FINAL_DIM_ONLY,
+        "be" => S_NO_AUTO_2 | S_NO_DIM,
+        "bn" | "as" | "bpy" | "hi" | "ne" | "or" | "pa" | "gu" | "mr" => S_MID_DIM | S_FINAL_DIM,
+        "chr" => S_NO_AUTO_2 | S_FINAL_DIM | S_FINAL_DIM_ONLY | S_EO_CLAUSE1,
+        "cy" | "eo" | "io" | "id" | "ms" | "sk" | "cs" | "si" | "sw" | "tn"
+        | "ta" | "kn" | "ml" | "te" => S_FINAL_DIM_ONLY | S_FINAL_NO_2,
+        "el" | "grc" | "pl" => S_FINAL_DIM_ONLY,
+        // "stress last syllable if it doesn't end in vowel or `s` or `n`".
+        "es" | "an" | "ia" => S_FINAL_SPANISH | S_FINAL_DIM_ONLY | S_FINAL_NO_2,
+        // Catalan: "stress last syllable unless the word ends with a vowel".
+        "ca" => S_FINAL_SPANISH | S_FINAL_DIM_ONLY | S_FINAL_NO_2 | S_NO_AUTO_2 | S_FIRST_PRIMARY,
+        // Papiamento leaves the Spanish group entirely (rule `1R` as well).
+        "pap" => S_FINAL_VOWEL_UNSTRESSED | S_FINAL_DIM_ONLY | S_FINAL_NO_2 | S_NO_AUTO_2,
+        "eu" => S_FINAL_VOWEL_UNSTRESSED | S_MID_DIM,
+        "hak" | "cmn" | "yue" | "zh" => S_NO_DIM,
+        // `ru`/`uk` come from `Translator_Russian`, not the language switch.
+        "he" | "ga" | "gd" | "kl" | "la" | "lt" | "sl" | "tr" | "az" | "tt" | "ru" | "uk" => {
+            S_NO_AUTO_2
+        }
+        "hr" | "bs" | "sr" | "is" | "ka" => S_FINAL_NO_2,
+        "hu" => {
+            S_FINAL_DIM_ONLY | S_FINAL_NO_2 | S_NO_AUTO_2 | 0x8000 | S_HYPEN_UNSTRESS
+        }
+        "it" => S_NO_AUTO_2 | S_FINAL_DIM_ONLY | S_PRIORITY_STRESS,
+        "kk" | "mn" => S_NO_AUTO_2 | S_NO_EOC_LENGTHEN,
+        "lv" | "ltg" => S_NO_AUTO_2 | S_FINAL_DIM | S_FINAL_DIM_ONLY | S_EO_CLAUSE1,
+        "nl" => S_FIRST_PRIMARY,
+        "om" => S_FINAL_DIM_ONLY | S_FINAL_NO_2 | S_FINAL_LONG,
+        "pt" => S_FINAL_DIM_ONLY | S_FINAL_NO_2 | S_INITIAL_2 | S_PRIORITY_STRESS,
+        "smj" => S_FINAL_DIM_ONLY | S_FINAL_NO_2 | S_2_TO_HEAVY,
+        "sq" => S_FINAL_DIM_ONLY | S_FINAL_NO_2 | S_FINAL_VOWEL_UNSTRESSED,
+        _ => 0,
+    }
+}
+
 impl StressOpts {
+    /// As [`StressOpts::for_lang`], additionally honouring a `stressRule`
+    /// directive in the language's voice file (`stressRule <rule> [wd1] [wd2]`),
+    /// which is how Basque, Cherokee, Latin, Quechua and about a dozen more
+    /// languages are configured upstream.
+    pub fn for_lang_in(lang: &str, data_dir: &std::path::Path) -> Self {
+        let mut opts = Self::for_lang(lang);
+        if let Some(nums) = crate::voices::voice_stress_rule(data_dir, lang) {
+            if let Some(&rule) = nums.first() {
+                opts.stress_rule = rule as u8;
+            }
+            if let Some(&wd1) = nums.get(1) {
+                opts.unstressed_wd1 = wd1;
+            }
+            if let Some(&wd2) = nums.get(2) {
+                opts.unstressed_wd2 = wd2;
+            }
+        }
+        // `words <word_gap> [vowel_pause]` — Latin's `words 2` is what puts a
+        // short pause after every word.
+        if let Some(nums) = crate::voices::voice_words(data_dir, lang) {
+            if let Some(&gap) = nums.first() {
+                opts.word_gap = gap as u8;
+            }
+            if let Some(&vp) = nums.get(1) {
+                opts.vowel_pause = vp as u32;
+            }
+        }
+        // `stressOpt <bit…>` replaces the language's `stress_flags` outright
+        // (C writes straight into `langopts.stress_flags`).  Finnish, Estonian,
+        // Latin and Ligurian configure their stress entirely this way.
+        if let Some(bits) = crate::voices::voice_stress_opt(data_dir, lang) {
+            opts.stress_flags = bits;
+        }
+        opts
+    }
+
     pub fn for_lang(lang: &str) -> Self {
         let mut opts = StressOpts::default();
         let primary = primary_bcp47_subtag(lang);
         let name = lang_name(primary);
         opts.translator_name = name;
+        opts.stress_flags = stress_flags_for(primary);
+        // `LOPT_REDUCE`.  Italian is the only language that sets bit 0
+        // ("reduce vowels even if phonemes are specified in it_list");
+        // Bulgarian, Icelandic and Russian set bit 1.
+        opts.reduce = match primary {
+            "it" => 1,
+            "bg" | "is" | "ru" => 2,
+            _ => 0,
+        };
+
+        // `langopts.word_gap` — the language's own inter-word pause.
+        opts.word_gap = match primary {
+            "cmn" | "yue" | "zh" | "vi" => 0x21,
+            "de" => 0x08,
+            "mn" => 1,
+            _ => 0,
+        };
+
+        // `langopts.vowel_pause` — a break before a vowel-initial word (German
+        // "Ich" → `_|IC`), and, for the 0x30 languages, before a vowel-initial
+        // stem left by a prefix ("beachten" → `b@_!'axt@n`).
+        opts.vowel_pause = match primary {
+            "de" | "nl" | "af" => 0x30,
+            "hu" => 0x20,
+            "jbo" => 0x20c,
+            "eo" | "io" => 2,
+            "it" | "mn" | "sw" | "tn" => 1,
+            _ => 0,
+        };
+
+        // Stress placement is a straight transcription of `tr_languages.c`; the
+        // arms below add only what *isn't* stress placement.  (This used to be
+        // one ad-hoc match whose catch-all reset `stress_flags` to 0, so the
+        // table above reached almost nothing: Bulgarian, Esperanto, Indonesian,
+        // Malay, Macedonian, Romanian, Swahili and Azerbaijani all had the wrong
+        // rule, and Croatian, Hungarian, Georgian, Serbian and Bosnian lost
+        // their flags.)
+        opts.stress_rule = stress_rule_for(primary);
+
+        // `unstressed_wd1`/`unstressed_wd2` — the stress level an *unstressed*
+        // word gets, for one/two syllables and for three or more.  C's defaults
+        // are 1 and 3; these languages lower them.
+        match primary {
+            "an" | "ca" | "cy" | "el" | "es" | "grc" | "ia" | "it" | "la" | "lt" | "pap" => {
+                opts.unstressed_wd1 = 0;
+                opts.unstressed_wd2 = 2;
+            }
+            "eo" | "io" => opts.unstressed_wd2 = 2,
+            "hu" | "vi" => opts.unstressed_wd1 = 2,
+            _ => {}
+        }
+
+        // `LOPT_IT_LENGTHEN`: bit 0 removes the `:` length mark from a syllable
+        // that isn't stressed enough to keep it, bit 4 keeps it only on the
+        // *most* stressed one.
+        opts.opt_length = match primary {
+            "fr" | "ga" | "gd" | "sl" => 1,
+            "is" => 0x11,
+            "it" => 2,
+            _ => 0,
+        };
 
         match primary {
-            "en" => {
-                opts.stress_rule  = STRESSPOSN_1L;
-                opts.stress_flags = 0x08;
-            }
-            // Languages with LOPT_REGRESSIVE_VOICING & 0x100: word-final devoicing
-            "de" | "nl" | "af" | "sk" | "sl" | "sq" => {
-                opts.stress_rule  = STRESSPOSN_1L;
-                opts.stress_flags = 0;
+            // Languages with `LOPT_REGRESSIVE_VOICING & 0x100`: word-final
+            // devoicing (German's Auslautverhärtung and its neighbours).
+            "de" | "nl" | "af" | "sl" | "sq" | "sk" => {
                 opts.word_final_devoicing = true;
             }
-            "am" | "az" | "bs" | "bg" | "hr" | "cs"
-            | "eo" | "fi" | "hu" | "id" | "ms" | "ka" | "mk" | "nb"
-            | "ro" | "sr" | "sw" => {
-                opts.stress_rule  = STRESSPOSN_1L;
-                opts.stress_flags = 0;
-            }
-            "fr" => {
-                opts.stress_rule  = STRESSPOSN_1R;
-                opts.stress_flags = S_NO_AUTO_2 | S_FINAL_DIM;
-                opts.opt_length   = 1;
-            }
-            "es" | "an" | "ca" | "ia" => {
-                opts.stress_rule  = STRESSPOSN_2R;
-                opts.stress_flags = S_FINAL_DIM | S_FINAL_SPANISH;
-                // Note: ca and ia have sub-variants, this is a simplification
-            }
-            "it" => {
-                opts.stress_rule  = STRESSPOSN_2R;
-                opts.stress_flags = S_FINAL_DIM | S_NO_AUTO_2;
-            }
-            "pt" => {
-                opts.stress_rule  = STRESSPOSN_2R;
-                opts.stress_flags = S_FINAL_DIM | S_FINAL_SPANISH | S_NO_AUTO_2;
+            "es" | "an" | "ca" | "ia" | "pap" => {
+                // `S_FINAL_SPANISH` stands in for C's
+                // `S_FINAL_VOWEL_UNSTRESSED` here — the port's own name for the
+                // same bit pattern in the Spanish group.
+                opts.stress_flags = S_FINAL_SPANISH | S_FINAL_DIM_ONLY | S_FINAL_NO_2;
             }
             "ru" | "uk" => {
-                opts.stress_rule  = STRESSPOSN_SYLCOUNT;
-                opts.stress_flags = S_NO_AUTO_2;
+                // `Translator_Russian`: `LOPT_REGRESSIVE_VOICING = 0x03`, and
+                // Russian additionally sets `LOPT_REDUCE = 2`.
+                opts.regressive_voicing = 0x03;
             }
             "tr" => {
-                opts.stress_rule     = STRESSPOSN_1RU;
-                opts.stress_flags    = S_NO_AUTO_2 | S_FINAL_DIM;
-                opts.alt_stress_upgrade = true; // LOPT_ALT & 2: upgrade e→E, o→O under primary stress
+                // `LOPT_ALT & 2`: upgrade e→E, o→O under primary stress.
+                opts.alt_stress_upgrade = true;
             }
-            "hi" | "ur" => {
-                opts.stress_rule  = STRESSPOSN_1RH;
+            // Urdu shares Hindi's placement but not its flags.
+            "ur" => {
+                opts.stress_rule = STRESSPOSN_1RH;
                 opts.stress_flags = 0;
-            }
-            "kl" => {
-                opts.stress_rule  = STRESSPOSN_GREENLANDIC;
-            }
-            "ml" => {
-                opts.stress_rule  = STRESSPOSN_1SL;
             }
             "eu" => {
-                opts.stress_rule  = STRESSPOSN_EU;
+                opts.stress_rule = STRESSPOSN_EU;
             }
-            "el" | "grc" => {
-                opts.stress_rule  = STRESSPOSN_2R;
-                opts.stress_flags = S_FINAL_DIM | S_NO_AUTO_2;
-            }
-            "ja" => {
-                opts.stress_rule  = STRESSPOSN_1L;
-                opts.stress_flags = S_NO_AUTO_2;
-            }
-            "zh" | "cmn" | "yue" => {
-                opts.stress_rule  = STRESSPOSN_1L;
-                opts.stress_flags = 0;
-            }
-            _ => {
-                // Default: penultimate
-                opts.stress_rule  = STRESSPOSN_2R;
-                opts.stress_flags = 0;
-            }
+            _ => {}
         }
         // Lojban writes stress with capitals (LOPT_CAPS_IN_WORD): trust an
         // explicit stress mark in the phonemes over the default rule.
@@ -535,7 +702,17 @@ pub fn set_word_stress(
     // `caps_mark_stress` languages: elsewhere the port's number composition can
     // bake a citation stress into a composed word, where the default rule must
     // still re-stress the whole (e.g. Turkish "on"+"bir" → final stress).
-    if opts.caps_mark_stress && stressed_syllable == 0 && detected_primary > 0 {
+    // C's `GetVowelStress` returns the position of an explicit primary-stress
+    // marker for *every* language, and the placement rule below is skipped when
+    // it found one — so a dictionary or rule that spells the stress out wins.
+    // Restricting that to `caps_mark_stress` languages made Crimean Tatar stress
+    // both syllables (`s;'el;'Am` where upstream has `s;el;'Am`).
+    //
+    // A *composed* entry — the port builds spelled-out numbers as one entry with
+    // `END_WORD` separators — is exempt: the citation stresses baked into its
+    // parts must not fix the whole word's stress (Turkish "on"+"bir" is stressed
+    // on the last syllable).
+    if stressed_syllable == 0 && detected_primary > 0 {
         stressed_syllable = detected_primary;
     }
     // After get_vowel_stress, stressed_syllable is set via primary_posn,
@@ -546,6 +723,7 @@ pub fn set_word_stress(
         vowel_stress[sc as usize] = STRESS_IS_PRIMARY;
         max_stress = STRESS_IS_PRIMARY as i32;
     }
+
 
     let max_stress_input = max_stress;
 
@@ -801,6 +979,11 @@ pub fn set_word_stress(
         }
     }
 
+    if std::env::var_os("ESPEAK_RS_DEBUG_STRESS").is_some() {
+        eprintln!("[stress] rule={} vowel_count={} stressed_syllable={} max_stress={} vs={:?} stress={}",
+            opts.stress_rule, vowel_count, stressed_syllable, max_stress,
+            &vowel_stress[..(vowel_count as usize + 1).min(6)], stress);
+    }
     // ── Trochaic fill ──────────────────────────────────────────────────────
     let mut done = false;
     let mut first_primary = 0i32;
@@ -889,8 +1072,36 @@ pub fn set_word_stress(
     // ── Build output phoneme string with stress markers ────────────────────
     let mut output: Vec<u8> = Vec::with_capacity(phonetic.len() + vowel_count as usize + 4);
 
-    // Handle vowel-initial word (vowel_pause)
-    // (simplified: skip for now — affects pause insertion, not IPA output)
+    // A word (or prefix-stripped stem) that starts with a vowel gets a break in
+    // front of it, so the preceding word's final consonant doesn't link into it
+    // — C's `SetWordStress`: `_|` (no-link) when the language asks for it and the
+    // first vowel carries primary stress, otherwise `_!` (very short break).
+    // German/Dutch/Afrikaans use 0x30, Hungarian 0x20, Lojban 0x20c.
+    if control & 1 == 0 && opts.vowel_pause & 0x30 != 0 {
+        let first_sound = phonetic
+            .iter()
+            .copied()
+            .take_while(|&c| c != 0)
+            .find(|&c| {
+                c != crate::phoneme::PHON_END_WORD
+                    && !matches!(phdata.get(c), Some(ph) if ph.typ == PH_STRESS)
+            });
+        if matches!(first_sound.and_then(|c| phdata.get(c)), Some(ph) if ph.typ == PH_VOWEL) {
+            // C: `_!` (no-link) when the language asks for it and the first
+            // vowel carries primary stress, otherwise `_|` (very short break).
+            // Verified by instrumenting both engines: German "achten" has
+            // `vowel_stress[1] == 4` and prints `_!`, while "Ich" has 1 and
+            // prints `_|` — the port had the two mnemonics the other way round,
+            // and read the stress before the placement rule instead of after.
+            let stressed_start = opts.vowel_pause & 0x20 != 0
+                && vowel_stress.get(1).copied().unwrap_or(0) >= 4;
+            let mnem = if stressed_start { "_!" } else { "_|" };
+            let code = phdata.lookup_phoneme(mnem);
+            if code != 0 {
+                output.push(code);
+            }
+        }
+    }
 
     let mut v = 1i32;
     let phonetic_slice: &[u8] = if phonetic.last() == Some(&0) {
@@ -899,7 +1110,10 @@ pub fn set_word_stress(
         &phonetic
     };
 
-    for &phcode in phonetic_slice {
+    let mut pi = 0usize;
+    while pi < phonetic_slice.len() {
+        let phcode = phonetic_slice[pi];
+        pi += 1;
         if phcode == 0 { break; }
         let ph = phdata.get(phcode);
 
@@ -952,6 +1166,23 @@ pub fn set_word_stress(
                 {
                     let idx = v_stress.max(0).min(6) as usize;
                     output.push(STRESS_PHONEMES[idx]);
+                }
+
+                // `LOPT_IT_LENGTHEN`: drop the `:` that follows a vowel which is
+                // not stressed enough to keep it.  Slovenian's rules give every
+                // `o` a length mark; only the stressed one keeps it
+                // (`d'O:bRO`, not `d'O:bRO:`).
+                if opts.opt_length & 1 != 0
+                    && phonetic_slice.get(pi) == Some(&crate::phoneme::PHON_LENGTHEN)
+                {
+                    let shorten = if opts.opt_length & 0x10 != 0 {
+                        v != ms_posn
+                    } else {
+                        v_stress < STRESS_IS_PRIMARY as i32
+                    };
+                    if shorten {
+                        pi += 1;
+                    }
                 }
 
                 v += 1;

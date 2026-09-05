@@ -102,6 +102,12 @@ pub struct Dictionary {
     /// BCP-47 language tag this dictionary was loaded for (e.g. `"en"`).
     pub lang: String,
 
+    /// The voice's `dictrules` bitmask (C's `tr->dict_condition`), which selects
+    /// between `?n` variant entries — European `pt` takes `?1 _14 k&t'o*zy`,
+    /// Brazilian `pt-BR` takes `?2 _14 kat'o*zy`.  Set by the translator after
+    /// loading; `0` means no conditional entry applies.
+    pub dict_condition: u32,
+
     /// Compression configuration for word hashing and lookup.
     /// Most Latin-script languages use `TransposeConfig::LATIN`.
     pub transpose: TransposeConfig,
@@ -139,10 +145,57 @@ pub struct Dictionary {
     pub replace_pairs: Vec<(Vec<char>, String)>,
 }
 
+/// The base codepoint a language's `groups3` rule index is relative to — C's
+/// `Translator::letter_bits_offset`.  `0` for the Latin-script languages, which
+/// key their rules on the letters themselves.
+pub fn letter_bits_offset_for(lang: &str) -> u32 {
+    match lang {
+            // Cyrillic-script: OFFSET_CYRILLIC
+            "ru" | "bg" | "tt" | "uk" | "be" | "mk" | "mn" | "kk" | "ky"
+            | "ba" | "cv" | "tg" | "os" | "cu" => 0x420u32,
+            // Greek: OFFSET_GREEK
+            "el" | "grc" => 0x380u32,
+            // Armenian: OFFSET_ARMENIAN
+            "hy" | "hyw" => 0x530u32,
+            // Georgian: OFFSET_GEORGIAN
+            "ka" => 0x10A0u32,
+            // Indic scripts (block start = offset).  They share the ISCII-derived
+            // relative layout, so one letter-group classification serves all.
+            "hi" | "mr" | "ne" | "sa" | "kok" => 0x900u32, // Devanagari
+            "bn" | "as" | "bpy" => 0x980u32,               // Bengali/Assamese/Bishnupriya
+            "pa" => 0xA00u32,                              // Gurmukhi
+            "gu" => 0xA80u32,                              // Gujarati
+            "or" => 0xB00u32,                              // Oriya
+            "ta" => 0xB80u32,                              // Tamil
+            "te" => 0xC00u32,                              // Telugu
+            "kn" => 0xC80u32,                              // Kannada
+            "ml" => 0xD00u32,                              // Malayalam
+            // Sinhala — its own (non-ISCII) block; the si_rules carry the
+            // abugida handling via rule-file letter groups (.L01…) and virama
+            // (U+0DCA) context, so only the groups3 offset is needed here.
+            "si" => 0xD80u32,                              // Sinhala
+            // Arabic script: Arabic, Farsi/Persian, Urdu, Sindhi — key their
+            // rules on the U+0600 block, so index groups3 from there.  (Uyghur
+            // `ug` also uses Arabic script but resolves via groups2 and works
+            // without the offset, so it's intentionally left off.)
+            "ar" | "fa" | "ur" | "sd" => 0x600u32,
+            // Korean: the Hangul-syllable input is decomposed to conjoining jamo
+            // (U+1100 leading, U+1161 vowel, U+11A7 trailing) before lookup, and
+            // ko_rules keys its groups on those jamo — so index groups3 from the
+            // jamo block start.
+            "ko" => 0x1100u32,
+            // All other languages: no offset
+            _ => 0u32,
+    }
+}
+
 impl Dictionary {
     /// Load `<data_dir>/<lang>_dict`.
     pub fn load(lang: &str, data_dir: &Path) -> Result<Self, Error> {
-        let path = data_dir.join(format!("{}_dict", lang));
+        // Accept both the flat `<lang>_dict` and the `dicts/<lang>_dict` layout
+        // upstream #2261 introduces.
+        let path = crate::translate::dict_path(data_dir, lang)
+            .unwrap_or_else(|| data_dir.join(format!("{}_dict", lang)));
         let data = std::fs::read(&path)
             .map_err(|e| Error::Io(e))?;
 
@@ -204,44 +257,7 @@ impl Dictionary {
         // transpose (word hashing compression) is chosen by script; keep the
         // offsets in sync with `TransposeConfig::for_lang`.
         let transpose = TransposeConfig::for_lang(lang);
-        let letter_bits_offset = match lang {
-            // Cyrillic-script: OFFSET_CYRILLIC
-            "ru" | "bg" | "tt" | "uk" | "be" | "mk" | "mn" | "kk" | "ky"
-            | "ba" | "cv" | "tg" | "os" | "cu" => 0x420u32,
-            // Greek: OFFSET_GREEK
-            "el" | "grc" => 0x380u32,
-            // Armenian: OFFSET_ARMENIAN
-            "hy" | "hyw" => 0x530u32,
-            // Georgian: OFFSET_GEORGIAN
-            "ka" => 0x10A0u32,
-            // Indic scripts (block start = offset).  They share the ISCII-derived
-            // relative layout, so one letter-group classification serves all.
-            "hi" | "mr" | "ne" | "sa" | "kok" => 0x900u32, // Devanagari
-            "bn" | "as" | "bpy" => 0x980u32,               // Bengali/Assamese/Bishnupriya
-            "pa" => 0xA00u32,                              // Gurmukhi
-            "gu" => 0xA80u32,                              // Gujarati
-            "or" => 0xB00u32,                              // Oriya
-            "ta" => 0xB80u32,                              // Tamil
-            "te" => 0xC00u32,                              // Telugu
-            "kn" => 0xC80u32,                              // Kannada
-            "ml" => 0xD00u32,                              // Malayalam
-            // Sinhala — its own (non-ISCII) block; the si_rules carry the
-            // abugida handling via rule-file letter groups (.L01…) and virama
-            // (U+0DCA) context, so only the groups3 offset is needed here.
-            "si" => 0xD80u32,                              // Sinhala
-            // Arabic script: Arabic, Farsi/Persian, Urdu, Sindhi — key their
-            // rules on the U+0600 block, so index groups3 from there.  (Uyghur
-            // `ug` also uses Arabic script but resolves via groups2 and works
-            // without the offset, so it's intentionally left off.)
-            "ar" | "fa" | "ur" | "sd" => 0x600u32,
-            // Korean: the Hangul-syllable input is decomposed to conjoining jamo
-            // (U+1100 leading, U+1161 vowel, U+11A7 trailing) before lookup, and
-            // ko_rules keys its groups on those jamo — so index groups3 from the
-            // jamo block start.
-            "ko" => 0x1100u32,
-            // All other languages: no offset
-            _ => 0u32,
-        };
+        let letter_bits_offset = letter_bits_offset_for(lang);
 
         let letter_bits = build_letter_bits(lang);
 
@@ -250,6 +266,7 @@ impl Dictionary {
             .unwrap_or_default();
 
         Ok(Dictionary {
+            dict_condition: 0,
             data,
             rules_offset,
             hashtab,
@@ -536,7 +553,12 @@ fn build_letter_bits(lang: &str) -> Box<[u8; 256]> {
             // LETTERGP_Y (6) = iotated vowels + soft sign
             //   SetCyrillicLetters: ь ю я ё (0x2c,0x2e,0x2f,0x31)
             //   Translator_Russian adds: е и є ї (0x15,0x18,0x34,0x37)
-            const CYRL_IVOWELS: &[usize] = &[0x2c, 0x2e, 0x2f, 0x31, 0x15, 0x18, 0x34, 0x37];
+            const CYRL_IVOWELS: &[usize] = &[0x2c, 0x2e, 0x2f, 0x31];
+            //   Russian and Ukrainian go through `Translator_Russian`, which
+            //   *adds* "е и є ї" to the group.  Applying those to every Cyrillic
+            //   language palatalised Bulgarian's `в` before `е`
+            //   (`zdr'av;ej` for `zdr'avej`).
+            const RU_EXTRA_IVOWELS: &[usize] = &[0x15, 0x18, 0x34, 0x37];
 
             fn set_bits(bits: &mut [u8; 256], indices: &[usize], group: u8) {
                 for &idx in indices {
@@ -551,6 +573,9 @@ fn build_letter_bits(lang: &str) -> Box<[u8; 256]> {
             set_bits(&mut bits, CYRL_NOTHARD,  4); // LETTERGP_F
             set_bits(&mut bits, CYRL_VOICED,   5); // LETTERGP_G
             set_bits(&mut bits, CYRL_IVOWELS,  6); // LETTERGP_Y
+            if matches!(lang, "ru" | "uk") {
+                set_bits(&mut bits, RU_EXTRA_IVOWELS, 6);
+            }
             set_bits(&mut bits, RU_VOWELS,     7); // LETTERGP_VOWEL2
         }
         "el" | "grc" => {
