@@ -134,7 +134,7 @@ pub mod analysis;
 /// std::fs::create_dir_all(&data_dir).unwrap();
 /// espeak_ng::install_bundled_data(&data_dir).unwrap();
 ///
-/// let engine = espeak_ng::EspeakNg::with_data_dir(&data_dir, "en").unwrap();
+/// let engine = espeak_ng::EspeakNg::with_data_dir("en", &data_dir).unwrap();
 /// let ipa = engine.text_to_phonemes("hello world").unwrap();
 /// # }
 /// ```
@@ -145,7 +145,11 @@ pub mod analysis;
 #[cfg(feature = "bundled-data")]
 pub fn install_bundled_data(dest_dir: &std::path::Path) -> std::io::Result<()> {
     espeak_ng_data_phonemes::install(dest_dir)?;
+    // Russian, Faroese and Pashto ship as their own crates; the aggregate
+    // holds the other 120 languages.
     espeak_ng_data_dict_ru::install(dest_dir)?;
+    espeak_ng_data_dict_fo::install(dest_dir)?;
+    espeak_ng_data_dict_ps::install(dest_dir)?;
     espeak_ng_data_dicts::install(dest_dir)?;
     Ok(())
 }

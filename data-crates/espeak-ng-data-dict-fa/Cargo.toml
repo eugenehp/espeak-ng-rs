@@ -1,6 +1,6 @@
 [package]
 name        = "espeak-ng-data-dict-fa"
-version     = "0.1.1"
+version     = "0.2.0"
 edition     = "2021"
 description = "eSpeak NG dictionary data for fa_dict"
 license     = "GPL-3.0-or-later"

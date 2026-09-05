@@ -144,6 +144,8 @@ hms() {
     fi
 }
 
+mb() { awk -v b="$1" 'BEGIN { printf "%.2f MB", b / 1048576 }'; }
+
 # Sleep until an absolute epoch, printing a countdown that overwrites itself.
 sleep_until() {
     local target=$1 reason=$2 remaining
@@ -348,6 +350,20 @@ is_rate_limited() {
     printf '%s' "$1" | grep -qiE '429|too many|rate limit|try again after'
 }
 
+# crates.io sits behind a CDN, so a failed upload is often nothing to do with
+# the crate: a 5xx, a reset connection, a timeout. These are worth retrying.
+is_transient() {
+    printf '%s' "$1" | grep -qiE '50[0234]|backend (write|read|fetch) error|bad gateway|service unavailable|gateway time-?out|connection (reset|closed|refused)|timed out|temporary failure|EOF while'
+}
+
+# crates.io rejects a .crate over 10 MB. The CDN reports the refusal as a 503
+# "backend write error" rather than a clean 413, so without this check the
+# retry loop would spend its whole budget re-uploading something that can
+# never be accepted.
+is_too_large() {
+    printf '%s' "$1" | grep -qiE 'too large|exceeds the maximum|max upload size|413'
+}
+
 already_published() {
     printf '%s' "$1" | grep -qiE 'already (exists|uploaded|published)|crate version .* is already|cannot be published'
 }
@@ -486,6 +502,27 @@ publish_one() {
             continue
         fi
 
+        if is_too_large "$out"; then
+            printf '%s\n' "$out" >&2
+            err "$name $version exceeds the 10 MB crates.io limit; retrying cannot help."
+            err "Run '$0 package --only \"^$name\$\"' to see the packaged size, then"
+            err "add the offending paths to that crate's exclude/include list."
+            record_state "$name" "$version" too-large
+            return 1
+        fi
+
+        if is_transient "$out"; then
+            local wait=$((attempt * 30))
+            warn "transient registry failure; retrying in $(hms "$wait")"
+            printf '%s\n' "$out" | grep -iE '50[0234]|error' | head -3 >&2
+            sleep_until "$(( $(now) + wait ))" "waiting out a registry error"
+            # Nothing was consumed, so do not let the limiter charge for it.
+            if [ "$kind" = new ]; then TAT_NEW=$((TAT_NEW - NEW_RATE))
+            else TAT_EXISTING=$((TAT_EXISTING - EXISTING_RATE)); fi
+            attempt=$((attempt + 1))
+            continue
+        fi
+
         printf '%s\n' "$out" >&2
         record_state "$name" "$version" failed
         return 1
@@ -495,17 +532,35 @@ publish_one() {
     return 1
 }
 
+MAX_CRATE_BYTES=${MAX_CRATE_BYTES:-10485760}   # crates.io hard limit
+
 package_one() {
-    local name=$1 out rc
+    local name=$1 version=$2 out rc crate bytes
     log "  \$ cargo package -p $name --allow-dirty"
     set +e
     out=$(cargo package -p "$name" --allow-dirty 2>&1 </dev/null)
     rc=$?
     set -e
     [ -n "$LOG_FILE" ] && printf '%s\n' "$out" >>"$LOG_FILE"
-    [ "$rc" -eq 0 ] && return 0
-    printf '%s\n' "$out" >&2
-    return 1
+    if [ "$rc" -ne 0 ]; then
+        printf '%s\n' "$out" >&2
+        return 1
+    fi
+
+    # Checking the size here is the whole point of packaging before publishing:
+    # crates.io refuses an oversized upload through the CDN as an opaque 503.
+    crate="$ROOT/target/package/$name-$version.crate"
+    if [ -f "$crate" ]; then
+        bytes=$(stat -f%z "$crate" 2>/dev/null || stat -c%s "$crate" 2>/dev/null || echo 0)
+        if [ "$bytes" -gt "$MAX_CRATE_BYTES" ]; then
+            err "$name $version packages to $(mb "$bytes"), over the $(mb "$MAX_CRATE_BYTES") crates.io limit"
+            err "  largest paths:"
+            tar tzvf "$crate" 2>/dev/null | sort -k3 -rn | head -5 | sed 's/^/      /' >&2
+            return 1
+        fi
+        info "    $(mb "$bytes")"
+    fi
+    return 0
 }
 
 # -------------------------------------------------------------------- main --
@@ -599,7 +654,7 @@ if [ "$MODE" = package ]; then
     failed=0
     while IFS=$'\t' read -r name version kind; do
         log "- $name $version"
-        if package_one "$name"; then ok "packaged $name"; else err "failed to package $name"; failed=$((failed + 1)); fi
+        if package_one "$name" "$version"; then ok "packaged $name"; else err "failed to package $name"; failed=$((failed + 1)); fi
     done <"$PENDING"
     rm -f "$PENDING"
     log ""

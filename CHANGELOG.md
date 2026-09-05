@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.1.4] - 2026-09-05
+## [0.2.0] - 2026-09-05
 
 ### Added
 
@@ -186,6 +186,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Faroese and Pashto are published as their own dictionary crates**, joining
+  Russian outside `espeak-ng-data-dicts`. The regenerated dictionaries are much
+  larger, and all three inside the aggregate would have taken it to 8.9 MB
+  against a 10 MB crates.io hard limit; it now sits at 4.80 MB with 120
+  languages. `bundled-data` depends on all three, so "every language" still
+  means every language — a new test walks the actual crate set to prove it.
 - **Standard voices no longer render through the Klatt engine.** The run
   dispatcher routed to Klatt whenever a frame carried `FRFLAG_KLATT` — but that
   flag only means "this frame carries the extra parallel-resonator parameters",
@@ -220,6 +226,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The bundled data crates ship the dictionaries they claim to.**
+  `espeak-ng-data-dicts`, `espeak-ng-data-phonemes` and
+  `espeak-ng-data-dict-ru` were snapshots taken before the dictionaries were
+  regenerated, so they still carried the old `en_dict` (168K, not 182K), the
+  old `phondata`/`phontab`/`phonindex`, and an `ru_dict` half a megabyte short.
+  Because they also still carried their old version numbers they were already
+  on crates.io, so a publish run would have skipped them as "already
+  published" and shipped stale dictionaries under a fresh release. All three
+  are resynced. Every crate in the workspace now moves to 0.2.0 together, so a
+  version number can no longer be shared by two different sets of bytes.
+- **Abkhaz, Ligurian, Mongolian and the Pashto variants can be selected at
+  all.** Their `lang/` voice files (`lang/cau/ab`, `lang/roa/lij`,
+  `lang/xgn/mn-f`, `lang/ira/ps-x-{northwest,southeast,yusufzai}`) were never
+  added to `espeak-ng-data-phonemes`, so those dictionary crates had no voice
+  to load. Two superseded hand-written Pashto voices (`voices/ps`,
+  `voices/asia/ps`) that upstream does not have are removed.
+- **The `install_bundled_data` doc example compiles.** Its
+  `EspeakNg::with_data_dir` arguments were the wrong way round; the example is
+  only compiled when the `bundled-data` feature is on, which is why it went
+  unnoticed.
 - **The voice file's `replace <flags> <old> <new>` substitutions run.** Fourteen
   shipped voices use them; Russian's `replace 03 a a#` is what makes a
   word-final unstressed `a` into `a#` (`дела` → `d;'ela#`). The flags select

@@ -108,15 +108,38 @@ is kept for reference; prefer the shell script.
    match the versions just published.
 3. Run `cargo package -p espeak-ng` to verify the package is valid.
 
-## Aggregate crate sizes (compressed `.crate` files)
+## Versioning
+
+Every crate in the workspace - the library and all 125 data crates - carries
+the same version and is released together. Publishing a data crate whose bytes
+changed under a version that is already on crates.io is impossible, and letting
+the versions drift apart made it easy to miss that a crate needed a bump at
+all. One number for the whole workspace removes the question.
+
+## Crate sizes (compressed `.crate` files)
+
+crates.io rejects anything over 10 MB, which is what decides how the
+dictionaries are split up.
 
 | Crate | Files | Compressed |
 |-------|-------|------------|
-| `espeak-ng-data-phonemes` | 406 | 374 KB |
-| `espeak-ng-data-dict-ru`  | 6 | 4.5 MB |
-| `espeak-ng-data-dicts`    | 118 | 3.8 MB |
+| `espeak-ng-data-phonemes` | 409 | 0.39 MB |
+| `espeak-ng-data-dicts` (120 languages) | 126 | 4.80 MB |
+| `espeak-ng-data-dict-ru` | 7 | 4.82 MB |
+| `espeak-ng-data-dict-fo` | 7 | 2.86 MB |
+| `espeak-ng-data-dict-ps` | 7 | 1.15 MB |
 
-All aggregate data crates are well under the crates.io 10 MB limit.
+Russian, Faroese and Pashto stay out of the aggregate for size alone — folding
+all three back in takes it to 8.9 MB, close enough to the limit that the next
+dictionary refresh would break publishing. The `bundled-data` feature depends
+on all four crates, so the split is invisible to callers, and
+`tests/bundled_data_complete.rs` walks the actual crate set to make sure no
+language is lost on either side of it.
+
+If a future refresh pushes the aggregate near the limit again, move the next
+largest dictionary out the same way: give it a `dep:` line in `bundled-data`,
+an `install` call in `install_bundled_data`, and drop it from the aggregate's
+`include` list.
 
 ## Downstream usage
 
@@ -125,28 +148,28 @@ After publication, users add to their `Cargo.toml`:
 ```toml
 [dependencies]
 # Core library (text → IPA + synthesis)
-espeak-ng = "0.1"
+espeak-ng = "0.2"
 
 # Optional: embed all data in the binary — no system eSpeak NG needed
-espeak-ng = { version = "0.1", features = ["bundled-data"] }
+espeak-ng = { version = "0.2", features = ["bundled-data"] }
 ```
 
 Or, for the split approach (pick only the languages you need):
 
 ```toml
 [dependencies]
-espeak-ng               = "0.1"
-espeak-ng-data-phonemes = "0.1"   # required for any language
-espeak-ng-data-dict-en  = "0.1"
-espeak-ng-data-dict-uk  = "0.1"
-# espeak-ng-data-dict-ru = "0.1"  # add Russian if needed
+espeak-ng               = "0.2"
+espeak-ng-data-phonemes = "0.2"   # required for any language
+espeak-ng-data-dict-en  = "0.2"
+espeak-ng-data-dict-uk  = "0.2"
+# espeak-ng-data-dict-ru = "0.2"  # add Russian if needed
 ```
 
 Or enable the generated selective features on the main crate:
 
 ```toml
 [dependencies]
-espeak-ng = { version = "0.1", features = ["bundled-data-en", "bundled-data-uk"] }
+espeak-ng = { version = "0.2", features = ["bundled-data-en", "bundled-data-uk"] }
 ```
 
 Then in code:

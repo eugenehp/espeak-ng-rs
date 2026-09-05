@@ -1,8 +1,8 @@
 [package]
 name        = "espeak-ng-data-dicts"
-version     = "0.1.0"
+version     = "0.2.0"
 edition     = "2021"
-description = "Language dictionaries for eSpeak NG (113 languages) — embedded data for espeak-ng-rs"
+description = "Language dictionaries for eSpeak NG (120 languages) — embedded data for espeak-ng-rs"
 license     = "GPL-3.0-or-later"
 authors     = ["Eugene Hauptmann"]
 repository  = "https://github.com/eugenehp/espeak-ng-rs"
@@ -14,6 +14,7 @@ categories  = ["multimedia::audio", "accessibility"]
 include = [
     "build.rs",
     "src/**",
+    "data/ab_dict",
     "data/af_dict",
     "data/am_dict",
     "data/an_dict",
@@ -29,6 +30,7 @@ include = [
     "data/ca_dict",
     "data/chr_dict",
     "data/cmn_dict",
+    "data/crh_dict",
     "data/cs_dict",
     "data/cv_dict",
     "data/cy_dict",
@@ -64,6 +66,7 @@ include = [
     "data/ja_dict",
     "data/jbo_dict",
     "data/ka_dict",
+    "data/kaa_dict",
     "data/kk_dict",
     "data/kl_dict",
     "data/kn_dict",
@@ -74,11 +77,13 @@ include = [
     "data/la_dict",
     "data/lb_dict",
     "data/lfn_dict",
+    "data/lij_dict",
     "data/lt_dict",
     "data/lv_dict",
     "data/mi_dict",
     "data/mk_dict",
     "data/ml_dict",
+    "data/mn_dict",
     "data/mr_dict",
     "data/ms_dict",
     "data/mt_dict",
@@ -102,6 +107,7 @@ include = [
     "data/quc_dict",
     "data/qya_dict",
     "data/ro_dict",
+    "data/rup_dict",
     "data/sd_dict",
     "data/shn_dict",
     "data/si_dict",
@@ -126,5 +132,6 @@ include = [
     "data/ur_dict",
     "data/uz_dict",
     "data/vi_dict",
+    "data/xex_dict",
     "data/yue_dict",
 ]

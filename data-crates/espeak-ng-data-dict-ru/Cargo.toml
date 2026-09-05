@@ -1,6 +1,6 @@
 [package]
 name        = "espeak-ng-data-dict-ru"
-version     = "0.1.0"
+version     = "0.2.0"
 edition     = "2021"
 description = "Russian language dictionary for eSpeak NG — embedded data for espeak-ng-rs"
 license     = "GPL-3.0-or-later"

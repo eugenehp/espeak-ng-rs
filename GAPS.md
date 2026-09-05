@@ -408,6 +408,47 @@ Tackled one per loop iteration; each is a multi-day port.
 
 ## Autonomous loop progress log
 
+- **2026-09-05 — 📦 Publish script, stale data crates fixed, whole workspace to 0.2.0 (user: "create a publish shell script that will honor rate limits and delays" / "address data crates issue" / "change all of them to 0.2.0").**
+  `scripts/publish.sh` publishes the workspace paced against both crates.io
+  rate-limit buckets (new crate: burst 10, 1 per 10 min; new version: burst 30,
+  1 per min) using a GCRA token bucket, so build and upload time counts against
+  the interval instead of being added to it.  A 429 is answered by parsing the
+  `try again after <timestamp>` out of the error and sleeping until exactly
+  then.  Every crate is checked against the sparse index first and skipped if
+  that `name@version` exists, so a failed run resumes for free; after each
+  upload it polls the index until the version is visible, because the next
+  crate may depend on it.  `plan` / `package` / `publish` modes, `--only`,
+  `--exclude`, `--from`, `--limit`, `--assume-drained`.
+  Its data-freshness preflight then caught a real one:
+  - **`espeak-ng-data-dicts`, `espeak-ng-data-phonemes` and
+    `espeak-ng-data-dict-ru` were pre-refresh snapshots** — the old 168K
+    `en_dict`, the old `phondata`/`phontab`/`phonindex`, an `ru_dict` half a
+    megabyte short.  All still carried their old version numbers, so a publish
+    run would have skipped them as "already published" and shipped stale
+    dictionaries under a fresh release.  Silently.  That is why the check is a
+    hard failure and not a warning.
+  - **Six `lang/` voice files were never added to the phonemes crate**
+    (`lang/cau/ab`, `lang/roa/lij`, `lang/xgn/mn-f`,
+    `lang/ira/ps-x-{northwest,southeast,yusufzai}`), so those dictionary crates
+    had no voice to load.  Two superseded hand-written Pashto voices
+    (`voices/ps`, `voices/asia/ps`) that upstream does not have are removed.
+  - **Faroese and Pashto move out of the aggregate**, joining Russian.  The
+    refreshed dictionaries are much bigger; all three inside would have taken
+    the aggregate to 8.9 MB against a 10 MB hard limit.  It is 4.80 MB with 120
+    languages; `bundled-data` depends on all four crates so callers see no
+    difference.  `tests/bundled_data_complete.rs` walks the actual crate set to
+    prove no language is lost on either side of the split — matching voices the
+    way eSpeak resolves them, since `lang/gmq/nb` is what declares
+    `dictionary no` and `lang/iro/chr` declares `chr-US-Qaaa-x-west`.
+  - **The `install_bundled_data` doc example never compiled** — its
+    `with_data_dir` arguments were reversed, and it is only compiled with
+    `bundled-data` on.
+  Then the whole workspace moved to **0.2.0** — library, all 125 data crates,
+  all 125 dependency requirements, and the `generate_dict_crates.py` templates
+  — so one version number covers one set of bytes and no crate can be missed.
+  824 tests green with `bundled-data` (820 default), 0 warnings, preflight
+  clean, ETA 1h27m for the 126 publishes.  Nothing committed or published.
+
 - **2026-09-05 — 🏷️ Patch release 0.1.4 prepared (user: "bump patch version and prep for release").**
   `espeak-ng` `0.1.3` → **`0.1.4`** (Cargo.toml + Cargo.lock), and the
   accumulated unreleased work cut into a dated `[0.1.4]` CHANGELOG section (its

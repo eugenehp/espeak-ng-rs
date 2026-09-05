@@ -180,7 +180,7 @@ checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
 
 [[package]]
 name = "espeak-ng"
-version = "0.1.4"
+version = "0.2.0"
 dependencies = [
  "bitflags",
  "criterion",
@@ -317,503 +317,503 @@ dependencies = [
 
 [[package]]
 name = "espeak-ng-data-dict-ab"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-af"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-am"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-an"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-ar"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-as"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-az"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-ba"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-be"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-bg"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-bn"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-bpy"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-bs"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-ca"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-chr"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-cmn"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-crh"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-cs"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-cv"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-cy"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-da"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-de"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-el"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-en"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-eo"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-es"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-et"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-eu"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-fa"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-fi"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-fo"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-fr"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-ga"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-gd"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-gn"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-grc"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-gu"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-hak"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-haw"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-he"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-hi"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-hr"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-ht"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-hu"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-hy"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-ia"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-id"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-io"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-is"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-it"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-ja"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-jbo"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-ka"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-kaa"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-kk"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-kl"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-kn"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-ko"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-kok"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-ku"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-ky"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-la"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-lb"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-lfn"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-lij"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-lt"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-lv"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-mi"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-mk"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-ml"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-mn"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-mr"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-ms"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-mt"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-mto"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-my"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-nci"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-ne"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-nl"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-no"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-nog"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-om"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-or"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-pa"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-pap"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-piqd"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-pl"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-ps"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-pt"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-py"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-qdb"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-qu"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-quc"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-qya"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-ro"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-ru"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-rup"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-sd"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-shn"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-si"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-sjn"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-sk"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-sl"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-smj"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-sq"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-sr"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-sv"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-sw"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-ta"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-te"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-th"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-ti"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-tk"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-tn"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-tr"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-tt"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-ug"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-uk"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-ur"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-uz"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-vi"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-xex"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dict-yue"
-version = "0.1.1"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-dicts"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "espeak-ng-data-phonemes"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "half"

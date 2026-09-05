@@ -83,7 +83,7 @@ CARGO_DEPS_END = "# END generated per-language dependencies"
 def cargo_toml(crate_name: str, dict_name: str, lang: str) -> str:
     return f"""[package]
 name        = \"{crate_name}\"
-version     = \"0.1.0\"
+version     = \"0.2.0\"
 edition     = \"2021\"
 description = \"eSpeak NG dictionary data for {dict_name}\"
 license     = \"GPL-3.0-or-later\"
@@ -170,7 +170,7 @@ def generate_root_dependency_block(langs: list[str]) -> str:
             continue
         dep_name = root_dependency_name(lang)
         lines.append(
-            f'{dep_name} = {{ version = "0.1.0", path = "data-crates/{dep_name}", optional = true }}'
+            f'{dep_name} = {{ version = "0.2.0", path = "data-crates/{dep_name}", optional = true }}'
         )
     return "\n".join(lines)
 
