@@ -128,6 +128,9 @@ pub struct StressOpts {
     /// word-finally.  Russian and Ukrainian use `0x03`, which crosses word
     /// boundaries (`привіт світ` → `pRIB'i:d[ zB'i:t[`).
     pub regressive_voicing: u32,
+    /// `langopts.param[LOPT_ALT] & 2` — apply `ApplySpecialAttribute2()` to a
+    /// word flagged `$alt` or `$alt2` (Italian, Portuguese, Slovenian).
+    pub alt_attributes: bool,
     /// `LOPT_ALT & 2` — when true, the phoneme immediately after a primary
     /// stress marker is upgraded from its "plain" vowel form to its
     /// "stressed" vowel form.  Mirrors `ApplySpecialAttribute2()` in
@@ -175,6 +178,7 @@ impl Default for StressOpts {
             opt_length:      0,
             word_final_devoicing: false,
             regressive_voicing: 0,
+            alt_attributes: false,
             alt_stress_upgrade: false,
             caps_mark_stress: false,
             word_gap: 0,
@@ -366,26 +370,45 @@ impl StressOpts {
         };
 
         match primary {
-            // Languages with `LOPT_REGRESSIVE_VOICING & 0x100`: word-final
-            // devoicing (German's Auslautverhärtung and its neighbours).
-            "de" | "nl" | "af" | "sl" | "sq" | "sk" => {
+            // `LOPT_REGRESSIVE_VOICING`, transcribed from `tr_languages.c`: a
+            // consonant cluster takes its voicing from its last member, bit
+            // 0x100 devoices word-finally (German's Auslautverhärtung), and with
+            // bit 0x04 clear the assimilation reaches across the word boundary
+            // (Polish "minus b" is `m'inuz b'E`).
+            //
+            // `af` and `sq` set nothing in C; they keep the port's own
+            // word-final devoicing, which predates this transcription.
+            "af" | "sq" => opts.word_final_devoicing = true,
+            "de" | "nl" | "mt" => {
                 opts.word_final_devoicing = true;
+                opts.regressive_voicing = 0x100;
             }
-            "es" | "an" | "ca" | "ia" | "pap" => {
-                // `S_FINAL_SPANISH` stands in for C's
-                // `S_FINAL_VOWEL_UNSTRESSED` here — the port's own name for the
-                // same bit pattern in the Spanish group.
-                opts.stress_flags = S_FINAL_SPANISH | S_FINAL_DIM_ONLY | S_FINAL_NO_2;
+            "sl" => {
+                opts.word_final_devoicing = true;
+                opts.regressive_voicing = 0x103;
+                opts.alt_attributes = true; // `LOPT_ALT = 2`, as for it/pt
             }
+            "bg" => {
+                opts.word_final_devoicing = true;
+                opts.regressive_voicing = 0x107;
+            }
+            // `case L('r','u'): case L('s','k'): case L('c','s'):` share one arm.
+            "cs" | "sk" | "sr" => opts.regressive_voicing = 0x03,
+            "pl" => opts.regressive_voicing = 0x09, // propagates through liquids/nasals
             "ru" | "uk" => {
                 // `Translator_Russian`: `LOPT_REGRESSIVE_VOICING = 0x03`, and
                 // Russian additionally sets `LOPT_REDUCE = 2`.
                 opts.regressive_voicing = 0x03;
             }
-            "tr" => {
-                // `LOPT_ALT & 2`: upgrade e→E, o→O under primary stress.
-                opts.alt_stress_upgrade = true;
-            }
+            // (Turkish used to get an invented "upgrade e→E, o→O under primary
+            // stress" here.  C has no `LOPT_ALT` for it: the changes belong to
+            // the `e`/`o`/`i` phoneme programs, which fire on `isFinalVowel` or
+            // "the next two phonemes are not vowels" — so `dokuz` is `d'okUz`
+            // and `teşekkür` is `teSek:'YR`, neither of which the blanket
+            // upgrade could produce.)
+            // `LOPT_ALT = 2` — `ApplySpecialAttributes2()` for the words that
+            // carry `$alt` / `$alt2`.  (Slovenian is set in its own arm above.)
+            "it" | "pt" => opts.alt_attributes = true,
             // Urdu shares Hindi's placement but not its flags.
             "ur" => {
                 opts.stress_rule = STRESSPOSN_1RH;
@@ -462,6 +485,17 @@ pub fn apply_word_final_devoicing(phonemes: &mut Vec<u8>, phdata: &PhonemeData) 
 ///
 /// This handles Turkish vowel quality under primary stress (e→ɛ, o→ɔ).
 pub fn apply_alt_stress_upgrade(phonemes: &mut Vec<u8>, phdata: &PhonemeData) {
+    apply_special_attribute2(phonemes, phdata, false)
+}
+
+/// C's `ApplySpecialAttribute2`: for a language with `LOPT_ALT & 2` (Italian,
+/// Portuguese, Slovenian) and a word carrying `$alt` or `$alt2`, the vowel right
+/// after the primary stress marker swaps quality — `$alt2` opens it (`E`→`e`,
+/// `O`→`o`), `$alt` closes it (`e`→`E`, `o`→`O`).  Only the first stressed vowel.
+///
+/// Italian `somma` is the `$alt2` case: its stem `somm` carries the flag, so the
+/// `O` the rules chose becomes `o` and the word reads `s'omma`.
+pub fn apply_special_attribute2(phonemes: &mut [u8], phdata: &PhonemeData, alt2: bool) {
     // Pre-compute codes for the mnemonics we need to swap.
     const STRESS_P: u8 = 6; // phonSTRESS_P
     let code_plain_e  = phdata.lookup_phoneme("e");
@@ -476,11 +510,16 @@ pub fn apply_alt_stress_upgrade(phonemes: &mut Vec<u8>, phdata: &PhonemeData) {
         return;
     }
 
+    let (from_e, to_e, from_o, to_o) = if alt2 {
+        (code_stressed_e, code_plain_e, code_stressed_o, code_plain_o)
+    } else {
+        (code_plain_e, code_stressed_e, code_plain_o, code_stressed_o)
+    };
     for i in 0..phonemes.len().saturating_sub(1) {
         if phonemes[i] == STRESS_P {
             let p = &mut phonemes[i + 1];
-            if *p == code_plain_e      { *p = code_stressed_e; }
-            else if *p == code_plain_o { *p = code_stressed_o; }
+            if *p == from_e      { *p = to_e; }
+            else if *p == from_o { *p = to_o; }
             break; // only the first primary stress matters
         }
     }
@@ -506,6 +545,7 @@ pub fn get_vowel_stress(
     phdata: &PhonemeData,
     vowel_stress: &mut [i8; 100],   // N_WORD_PHONEMES/2
     control: i32,
+    stress_flags: u32,
 ) -> (i32, i32, i32) {
     let mut count = 1i32;
     let mut max_stress: i32 = -1;
@@ -633,8 +673,16 @@ pub fn get_vowel_stress(
     if max_stress == STRESS_IS_PRIORITY as i32 {
         for ix in 1..count {
             if vowel_stress[ix as usize] == STRESS_IS_PRIMARY {
-                // Replace with secondary (or unstressed if 0x20000)
-                vowel_stress[ix as usize] = STRESS_IS_SECONDARY;
+                // A language with `S_PRIORITY_STRESS` (Italian, Portuguese)
+                // *unstresses* the syllable the priority marker displaced
+                // rather than leaving it secondary — C's
+                // `stress_flags & S_PRIORITY_STRESS` branch, which was noted
+                // here but never implemented.
+                vowel_stress[ix as usize] = if stress_flags & S_PRIORITY_STRESS != 0 {
+                    STRESS_IS_UNSTRESSED
+                } else {
+                    STRESS_IS_SECONDARY
+                };
             }
             if vowel_stress[ix as usize] == STRESS_IS_PRIORITY {
                 vowel_stress[ix as usize] = STRESS_IS_PRIMARY;
@@ -693,6 +741,7 @@ pub fn set_word_stress(
         phdata,
         &mut vowel_stress,
         1,  // control=1: mark phUNSTRESSED vowels
+        opts.stress_flags,
     );
     // An explicit primary-stress marker already in the phonemes (e.g. a `ˈ` from
     // Lojban's capital-stress notation) fixes the stressed syllable.  C's
@@ -980,7 +1029,8 @@ pub fn set_word_stress(
     }
 
     if std::env::var_os("ESPEAK_RS_DEBUG_STRESS").is_some() {
-        eprintln!("[stress] rule={} vowel_count={} stressed_syllable={} max_stress={} vs={:?} stress={}",
+        eprintln!("[stress] flags={:#x} rule={} vowel_count={} stressed_syllable={} max_stress={} vs={:?} stress={}",
+            stressflags,
             opts.stress_rule, vowel_count, stressed_syllable, max_stress,
             &vowel_stress[..(vowel_count as usize + 1).min(6)], stress);
     }
@@ -1222,6 +1272,7 @@ pub fn change_word_stress(
         &mut phonetic,
         phdata,
         &mut vowel_stress,
+        0,
         0,
     );
 

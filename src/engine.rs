@@ -94,6 +94,10 @@ pub enum Parameter {
     ///
     /// C: `espeakWORDGAP`
     WordGap,
+    /// Percentage applied to every SSML `<break time=…>` (100 = as written).
+    ///
+    /// C: `espeakSSML_BREAK_MUL`
+    SsmlBreak,
 }
 
 // ---------------------------------------------------------------------------
@@ -319,6 +323,12 @@ pub struct EspeakNg {
     soundicons: crate::soundicon::SoundIconTable,
     /// When set, `synth` interprets SSML `<audio src="…">` markup.
     markup:     bool,
+    /// `espeakSSML_BREAK_MUL` (`--ssml-break`) as a percentage: scales every
+    /// SSML `<break time=…>`.  100 = the duration as written.
+    ssml_break: u32,
+    /// A `pitch <base> <range>` taken from a voice *file* rather than from the
+    /// data directory (`--load`).  `None` = look the language's up as usual.
+    voice_pitch: Option<(i32, i32)>,
     /// Post-synthesis tempo scale (libsonic, `1.0` = off): `>1` faster/shorter,
     /// pitch preserved.  Applied to the final PCM in [`synth`](Self::synth).
     post_tempo: f64,
@@ -377,6 +387,8 @@ impl EspeakNg {
             data_dir:   data_dir.to_path_buf(),
             soundicons: crate::soundicon::SoundIconTable::new(22_050),
             markup:     false,
+            ssml_break: 100,
+            voice_pitch: None,
             post_tempo: 1.0,
             post_pitch: 1.0,
         })
@@ -496,6 +508,7 @@ impl EspeakNg {
                 self.punct = (value != 0).then(Vec::new);
             }
             Parameter::Capitals => self.capitals = value.clamp(0, 255) as u8,
+            Parameter::SsmlBreak => self.ssml_break = value.clamp(0, 10_000) as u32,
         }
     }
 
@@ -519,6 +532,7 @@ impl EspeakNg {
             Parameter::WordGap   => self.word_gap,
             Parameter::Punctuation => self.punct.is_some() as i32,
             Parameter::Capitals    => self.capitals as i32,
+            Parameter::SsmlBreak   => self.ssml_break as i32,
         }
     }
 
@@ -529,6 +543,13 @@ impl EspeakNg {
     /// `espeak_ng_SetPunctuationList`.
     pub fn set_punctuation_list(&mut self, chars: Option<Vec<char>>) {
         self.punct = chars;
+    }
+
+    /// Use an explicit `pitch <base> <range>` instead of the one the data
+    /// directory holds for this language — the acoustic half of reading a voice
+    /// definition from a file (`--load`).  `None` restores the lookup.
+    pub fn set_voice_pitch(&mut self, pitch: Option<(i32, i32)>) {
+        self.voice_pitch = pitch;
     }
 
     /// Suppress (or restore) the end-of-utterance trailing silence (`-z`).
@@ -568,6 +589,17 @@ impl EspeakNg {
     pub fn text_to_phonemes(&self, text: &str) -> Result<String> {
         let translator = self.make_translator()?;
         translator.text_to_ipa(text)
+    }
+
+    /// Translate text to IPA, one entry per source word.
+    ///
+    /// Rust form of upstream's proposed `espeak_TextToWordPhonemePairs`
+    /// (PR #2533).  See [`crate::translate::Translator::text_to_ipa_words`].
+    pub fn text_to_phoneme_words(
+        &self,
+        text: &str,
+    ) -> Result<Vec<crate::translate::WordPhonemes>> {
+        self.make_translator()?.text_to_ipa_words(text)
     }
 
     /// Translate text to IPA and report how the last clause ended.
@@ -665,7 +697,11 @@ impl EspeakNg {
                     // tags, decodes entities, applies `<say-as>` spelling/`<sub>`
                     // and the interpret modes (ordinal/date/time).
                     let t = if self.markup {
-                        crate::translate::ssml_to_speech_text(&t, self.voice_spec.effective_lang())
+                        crate::translate::ssml_to_speech_text_opts(
+                            &t,
+                            self.voice_spec.effective_lang(),
+                            self.ssml_break,
+                        )
                     } else {
                         t
                     };
@@ -1039,7 +1075,9 @@ impl EspeakNg {
 
         // A voice file may declare its own `pitch <base> <range>`.
         let (voice_pitch1, voice_pitch2) =
-            match crate::voices::voice_pitch(&self.data_dir, self.voice_spec.effective_lang()) {
+            match self.voice_pitch.or_else(|| {
+                crate::voices::voice_pitch(&self.data_dir, self.voice_spec.effective_lang())
+            }) {
                 Some((p1, p2)) => (p1 as f64, p2 as f64),
                 None => (DEFAULT_PITCH1, DEFAULT_PITCH2),
             };

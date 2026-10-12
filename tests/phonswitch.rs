@@ -49,3 +49,37 @@ fn non_switch_words_unaffected() {
     let ipa = t.text_to_ipa("hallo").unwrap();
     assert!(!ipa.contains('('), "unexpected switch marker in {ipa:?}");
 }
+
+// ── A switch that comes from the *rules*, not from a list entry ─────────────
+//
+// `*_rules` files can send a word to another language too: German has
+// `igh (K  _^_EN` for English spellings, and about thirty languages use the
+// same device (fr has 180 such rules, af 66, de 60, vi 43, da 39).  C throws
+// away everything the rules matched so far and returns just the marker, so the
+// word is re-translated whole; the port used to append the marker to the
+// phonemes it had already produced, stranding it inside the word
+// (`de Copyright` → `kˈoːpyːr_^_t`).
+
+#[test]
+fn rule_level_switch_retranslates_the_whole_word() {
+    let Some(de) = Translator::new("de", None).ok() else {
+        eprintln!("[SKIP] no de data");
+        return;
+    };
+    assert_eq!(de.text_to_ipa("Copyright").unwrap(), "(en)kˈɒpɪɹˌaɪt(de)");
+    assert_eq!(de.text_to_ipa("high").unwrap(), "(en)hˈaɪ(de)");
+    // An ordinary German word is untouched.
+    assert!(!de.text_to_ipa("Gesicht").unwrap().contains('('));
+}
+
+#[test]
+fn rule_level_switch_in_other_languages() {
+    if let Some(af) = Translator::new("af", None).ok() {
+        assert_eq!(af.text_to_ipa("light").unwrap(), "(en)lˈaɪt(af)");
+    }
+    // A symbol whose entry is nothing *but* a switch (`fr ©`) re-translates the
+    // character itself in the target language.
+    if let Some(fr) = Translator::new("fr", None).ok() {
+        assert_eq!(fr.text_to_ipa("©").unwrap(), "(en)kˈɒpɪɹˌaɪt(fr)");
+    }
+}

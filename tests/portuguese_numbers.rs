@@ -1,9 +1,13 @@
 // tests/portuguese_numbers.rs
 //
-// Portuguese cardinals are generated as text and pronounced by the letter-to-
-// sound rules, because the shipped pt dictionary is missing most number keys
-// (`1`/`5`/`100`/`1000` used to come out empty or wrong — e.g. `2000` → "dois").
-// A generated cardinal must read identically to typing that number word.
+// Portuguese cardinals come from the dictionary's `_N` entries, which are
+// behind `?1` (European) / `?2` (Brazilian) conditions — they looked missing
+// until the port honoured those, and were generated as text instead.  Reading
+// them from the list is not the same as reading the spelled-out word, and
+// upstream has the same split: `pt "1"` is `ˈum` (list phonemes) while `pt
+// "um"` is `ˈũm` (the letter-to-sound rules).
+//
+// Values from a locally built upstream `espeak-ng` (`ba90c8e`).
 // Skips when the pt voice data is absent.
 
 use espeak_ng::Translator;
@@ -13,37 +17,38 @@ fn pt() -> Option<Translator> {
 }
 
 #[test]
-fn portuguese_cardinals_read_as_words() {
+fn portuguese_cardinals_come_from_the_list() {
     let Some(t) = pt() else {
         eprintln!("[SKIP] no pt data");
         return;
     };
     let ipa = |s: &str| t.text_to_ipa(s).unwrap();
-    // Each written number reads identically to the spelled-out word.
     let cases: &[(&str, &str)] = &[
-        ("1", "um"),
-        ("5", "cinco"),
-        ("15", "quinze"),
-        ("100", "cem"),
-        ("200", "duzentos"),
-        ("234", "duzentos e trinta e quatro"),
-        ("1000", "mil"),
-        ("1500", "mil e quinhentos"),
-        ("2000", "dois mil"),
-        ("2024", "dois mil e vinte e quatro"),
-        ("100000", "cem mil"),
-        ("1000000", "um milhão"),
-        ("5000000", "cinco milhões"),
+        ("1", "ˈum"),
+        ("5", "sˈĩŋku"),
+        ("15", "kˈĩnzɨ"),
+        ("100", "sˈeɪŋ"),
+        ("200", "dˌuzˈẽntuʃ"),
+        // The conjunction joins hundreds→remainder and tens→units
+        // (`NUM_HUNDRED_AND | NUM_AND_UNITS`).
+        ("234", "dˌuzˈẽntuz i tɾˈĩntɐ ikwˈatɾu"),
+        ("1000", "mˈil"),
+        ("1500", "mˈil kiɲˈẽntuʃ"),
+        ("2000", "dˈoɪʒ mˈil"),
+        ("2024", "dˈoɪʒ mˈil i vˈĩntɨ ikwˈatɾu"),
+        // …and after a scale word when the remainder is below a hundred:
+        // "mil E um".
+        ("1001", "mˈil i ˈum"),
+        ("100000", "sˈeɪn mˈil"),
+        ("1000000", "ˈũn miʎˈɐ̃ʊ̃"),
+        ("5000000", "sˈĩŋku miʎˈõɪ̃ʃ"),
     ];
-    for (digit, word) in cases {
-        assert_eq!(ipa(digit), ipa(word), "pt {digit:?} should read as {word:?}");
+    for (digits, want) in cases {
+        assert_eq!(&ipa(digits), want, "pt {digits:?}");
     }
-    // Previously-empty values now produce sound.
-    for n in ["1", "5", "1000"] {
-        assert!(!ipa(n).trim().is_empty(), "pt {n} should not be empty");
-    }
-    // In-sentence.
-    assert_eq!(ipa("tenho 5 anos"), ipa("tenho cinco anos"));
+    assert_eq!(ipa("tenho 5 anos"), "tˌeɲʊ sˈĩŋku ˈɐ̃nʊʃ");
+    // The list reading and the typed word differ, in C as here.
+    assert_ne!(ipa("1"), ipa("um"));
 }
 
 #[test]
@@ -54,22 +59,24 @@ fn portuguese_decimals_read_with_virgula() {
     };
     let ipa = |s: &str| t.text_to_ipa(s).unwrap();
     // Comma is the decimal separator, and a fraction of at most two digits is
-    // read as one number (upstream `NUM_DFRACTION_2`): "3,14" is "três vírgula
-    // catorze", not "… um quatro".  Leading zeros stay individual, and a longer
-    // fraction falls back to digit-by-digit.
+    // read as one number (upstream `NUM_DFRACTION_2`): "3,14" is "três vírgula
+    // catorze", not "… um quatro".  A longer fraction falls back to digit by
+    // digit.
     let cases: &[(&str, &str)] = &[
-        ("1,5", "um vírgula cinco"),
-        ("3,14", "três vírgula catorze"),
-        ("0,5", "zero vírgula cinco"),
-        ("2,50", "dois vírgula cinquenta"),
-        ("100,99", "cem vírgula noventa e nove"),
-        ("0,05", "zero vírgula zero cinco"),
-        ("1,234", "um vírgula dois três quatro"),
+        ("1,5", "ˈun vˈiɾɡulɐ sˈĩŋku"),
+        ("3,14", "tɾˈeʒ vˈiɾɡulɐ kɐtˈoɾzɨ"),
+        ("0,5", "zˈɛɾu vˈiɾɡulɐ sˈĩŋku"),
+        ("2,50", "dˈoɪʒ vˈiɾɡulɐ sĩŋkwˈẽntɐ"),
+        ("100,99", "sˈeɪn vˈiɾɡulɐ nuvˈẽntɐ inˈɔvɨ"),
+        ("1,234", "ˈun vˈiɾɡulɐ dˈoɪʃ tɾˈeʃ kwˈatɾu"),
     ];
-    for (digit, word) in cases {
-        assert_eq!(ipa(digit), ipa(word), "pt {digit:?} should read as {word:?}");
+    for (digits, want) in cases {
+        assert_eq!(&ipa(digits), want, "pt {digits:?}");
     }
-    // Period now groups thousands (Romance convention): 1.000 == mil.
-    assert_eq!(ipa("1.000"), ipa("mil"), "pt 1.000 → mil");
-    assert_eq!(ipa("custa 1,5 euros"), ipa("custa um vírgula cinco euros"));
+    // A leading zero in the fraction is spoken on its own.
+    assert!(ipa("0,05").starts_with("zˈɛɾu vˈiɾɡulɐ"));
+    assert!(ipa("0,05").ends_with("zˈɛɾu sˈĩŋku"));
+    // Period groups thousands (Romance convention): 1.000 == mil.
+    assert_eq!(ipa("1.000"), ipa("1000"));
+    assert_eq!(ipa("custa 1,5 euros"), "kˈuʃtɐ ˈun vˈiɾɡulɐ sˈĩŋku ˈeʊɾʊʃ");
 }

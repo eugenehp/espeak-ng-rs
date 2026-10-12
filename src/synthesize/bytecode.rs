@@ -509,6 +509,24 @@ pub struct Neighbours {
     pub prev_wordstart: bool,
     pub next_wordstart: bool,
     pub next2_wordstart: bool,
+    /// The next vowel **in this word**, and its syllable's stress level — C's
+    /// `nextVowel` condition, which scans forward to the next vowel and stops
+    /// at a word boundary rather than looking a fixed distance ahead.  `0`
+    /// means the caller doesn't track it (the condition then falls back to the
+    /// two-phoneme window).  Russian's pre-tonic rule needs it:
+    /// `V` is `IF nextVowel(isMaxStress) THEN ChangePhoneme(a)`, and in
+    /// `двадцатьпять` the stressed vowel is three phonemes away.
+    pub next_vowel: u8,
+    pub next_vowel_stress: u8,
+    /// The previous vowel in this word (C's `worddata->prev_vowel`) and its
+    /// stress level; `0` = none.
+    pub prev_vowel: u8,
+    pub prev_vowel_stress: u8,
+    /// Whether the caller filled `next_vowel`/`prev_vowel` by scanning the
+    /// word.  When it did, `next_vowel == 0` *means* "no further vowel in this
+    /// word" and `isFinalVowel` is exact; when it didn't, the conditions fall
+    /// back to looking within the two-phoneme window.
+    pub vowels_tracked: bool,
 }
 
 /// `next_stress`/`wordstress` value meaning "the caller doesn't track this".
@@ -529,6 +547,11 @@ impl Default for Neighbours {
             wordstress: STRESS_UNKNOWN,
             reduce: 0,
             translation_given: false,
+            next_vowel: 0,
+            next_vowel_stress: STRESS_UNKNOWN,
+            prev_vowel: 0,
+            prev_vowel_stress: STRESS_UNKNOWN,
+            vowels_tracked: false,
             this_wordstart: false,
             prev_wordstart: false,
             next_wordstart: false,
@@ -939,27 +962,41 @@ where
             nb.next2
         }
         7 => {
-            // nextVowel (not across a word boundary), within our window.
-            if nb.next_wordstart {
-                return false;
-            }
-            if resolve(nb.next).typ == PH_VOWEL {
-                nb.next
+            // nextVowel: the next vowel in this word, scanned by the caller.
+            if nb.vowels_tracked {
+                if nb.next_vowel == 0 {
+                    return false; // no further vowel in this word
+                }
+                nb.next_vowel
             } else {
-                if nb.next2_wordstart {
+                // Not tracked: look within the two-phoneme window instead.
+                if nb.next_wordstart {
                     return false;
                 }
-                if resolve(nb.next2).typ == PH_VOWEL {
-                    nb.next2
+                if resolve(nb.next).typ == PH_VOWEL {
+                    nb.next
                 } else {
-                    return false; // no vowel within window
+                    if nb.next2_wordstart {
+                        return false;
+                    }
+                    if resolve(nb.next2).typ == PH_VOWEL {
+                        nb.next2
+                    } else {
+                        return false; // no vowel within window
+                    }
                 }
             }
         }
         8 => {
-            // prevVowel in this word — approximate with prev if it is a vowel.
-            if resolve(nb.prev).typ == PH_VOWEL {
-                check_endtype = true;
+            // prevVowel in this word (C `worddata->prev_vowel`), or — when the
+            // caller doesn't track it — the previous phoneme if it is a vowel.
+            check_endtype = true;
+            if nb.vowels_tracked {
+                if nb.prev_vowel == 0 {
+                    return false;
+                }
+                nb.prev_vowel
+            } else if resolve(nb.prev).typ == PH_VOWEL {
                 nb.prev
             } else {
                 return false;
@@ -995,10 +1032,18 @@ where
             OTHER_IS_AFTER_STRESS => false, // needs history outside our window
             OTHER_IS_NOT_VOWEL => ph.typ != PH_VOWEL,
             OTHER_IS_FINAL_VOWEL => {
-                // No further vowel within the window ⇒ treat as final.
-                let n = resolve(nb.next);
-                let n2 = resolve(nb.next2);
-                !(n.typ == PH_VOWEL || n2.typ == PH_VOWEL)
+                // C scans to the end of the *word*: the last vowel in it is
+                // final, whatever follows in the next word.  Turkish turns
+                // every word-final `i`/`e`/`o` into `I`/`E`/`O` this way, so
+                // the two-phoneme window read `eksi işareti` as `Eks'i` —
+                // seeing the next word's vowel and deciding it was not final.
+                if nb.vowels_tracked {
+                    nb.next_vowel == 0
+                } else {
+                    let n = resolve(nb.next);
+                    let n2 = resolve(nb.next2);
+                    !(n.typ == PH_VOWEL || n2.typ == PH_VOWEL)
+                }
             }
             OTHER_IS_VOICED => {
                 ph.typ == PH_VOWEL || ph.typ == PH_LIQUID || (ph.phflags & PH_VOICED_FLAG) != 0
@@ -1052,11 +1097,15 @@ where
     // C moves `plist` to the phoneme the condition names *before* reading its
     // stress level, so `nextVowel(isMaxStress)` asks about the next vowel.
     let selected = match which {
-        0 | 5 | 8 => known(nb.prev_stress),
+        0 | 5 => known(nb.prev_stress),
+        8 => known(nb.prev_vowel_stress).or_else(|| known(nb.prev_stress)),
+        // (7 handled below, where the tracked vowel wins.)
         2 | 4 => known(nb.next_stress),
         3 | 6 => known(nb.next2_stress),
         7 => {
-            if is_vowel(nb.next) {
+            if nb.vowels_tracked {
+                known(nb.next_vowel_stress)
+            } else if is_vowel(nb.next) {
                 known(nb.next_stress)
             } else {
                 known(nb.next2_stress)

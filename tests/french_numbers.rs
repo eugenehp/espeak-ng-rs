@@ -196,7 +196,9 @@ fn comma_decimal_reads_fraction_digit_by_digit() {
     let cases: &[(&str, &str)] = &[
         ("pl", "pʃɛtɕˈinɛk"), // przecinek
         ("ro", "vˈirɡulə"),    // virgulă
-        ("ca", "kˈomə"),       // coma (unstressed final vowel, == upstream)
+        // coma — secondary stress inside the number group (`NUM_SINGLE_STRESS`),
+        // which is what upstream says: `tɾˈɛs kˌomə kətˌorzə`.
+        ("ca", "kˌomə"),
         ("cs", "tʃaːrka"),     // čárka
     ];
     for (lang, sep) in cases {

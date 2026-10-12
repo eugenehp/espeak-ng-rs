@@ -80,9 +80,10 @@ fn markup_tags_are_not_spoken_in_audio() {
     let plain_amp = {
         let mut e2 = EspeakNg::new("en").unwrap();
         e2.set_markup(true);
-        samples(&e2, "Tom and Jerry")
+        samples(&e2, "Tom & Jerry")
     };
-    // "&amp;" → "&" → read as "and"; same as literal "and".
+    // "&amp;" → "&", so it must sound like the literal symbol.  (That is the
+    // dictionary's `& _and` — "and" after a short pause — not the bare word.)
     assert_eq!(entity, plain_amp, "entities should decode in audio");
 }
 

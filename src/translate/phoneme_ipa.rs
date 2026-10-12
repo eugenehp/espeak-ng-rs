@@ -108,6 +108,43 @@ pub fn codes_to_ipa(
     lang: &str,
     preserve_punctuation: bool,
 ) -> String {
+    codes_to_ipa_tied(codes, phdata, data_dir, lang, preserve_punctuation, None)
+}
+
+/// [`codes_to_ipa`] with the `--tie` character: it goes *inside* each phoneme's
+/// IPA name, before every character after the first that is a letter, so `tʃ`
+/// prints as `t͡ʃ`.  Only the writer knows where one phoneme's name ends, which
+/// is why this cannot be done to the finished string.
+pub fn codes_to_ipa_tied(
+    codes: &[PhonemeCode],
+    phdata: &PhonemeData,
+    data_dir: &Path,
+    lang: &str,
+    preserve_punctuation: bool,
+    tie: Option<char>,
+) -> String {
+    codes_to_ipa_opts(codes, phdata, data_dir, lang, preserve_punctuation, tie, None)
+}
+
+/// [`codes_to_ipa`] with both of upstream's phoneme-name options: `tie` goes
+/// *inside* a multi-letter name, `sep` between phonemes.  Only one is ever set —
+/// `--sep` and `--tie` share a slot in the CLI, as they do upstream.
+///
+/// The separator is placed as C places it: before every phoneme but the first
+/// of a clause, never directly after a word break (unless it *is* a space, which
+/// is why `--sep` doubles the space between words), and not before a name that
+/// starts with a modifier letter.  A stress mark belongs to the phoneme that
+/// follows it, so the separator goes before the stress: `tʃ.ˈiː.z`.
+#[allow(clippy::too_many_arguments)]
+pub fn codes_to_ipa_opts(
+    codes: &[PhonemeCode],
+    phdata: &PhonemeData,
+    data_dir: &Path,
+    lang: &str,
+    preserve_punctuation: bool,
+    tie: Option<char>,
+    sep: Option<char>,
+) -> String {
     // Indices of the codes that are actual sounds, for neighbour lookups.
     let is_sound =
         |c: &PhonemeCode| !c.is_boundary && c.code > 8 && c.code != PHON_END_WORD;
@@ -128,6 +165,13 @@ pub fn codes_to_ipa(
     // The table the codes that follow belong to; `None` = the clause's own.
     let mut switched: Option<PhonemeData> = None;
     let mut straight_quote_open = false;
+    // `--sep` bookkeeping: whether a phoneme has been written in this clause,
+    // whether a word break has just happened (no separator straight after one,
+    // unless the separator is itself a space), and the stress mark waiting for
+    // the phoneme it belongs to.
+    let mut wrote_phoneme = false;
+    let mut after_word_break = true;
+    let mut pending_stress = String::new();
 
     for (i, pc) in codes.iter().enumerate() {
         if let Some(CodeMarker::Punctuation(c)) = &pc.marker {
@@ -155,13 +199,37 @@ pub fn codes_to_ipa(
         if let Some(CodeMarker::LangSwitch(target)) = &pc.marker {
             // A *closing* marker binds to the word it follows, so the word-space
             // moves after it — as in `-x`.
-            let trailing_space = target == lang && out.ends_with(' ');
+            // Put back exactly as many spaces as were taken, so a space
+            // separator keeps the doubling the word break already wrote.
+            let mut popped_spaces = 0usize;
             while target == lang && out.ends_with(' ') {
                 out.pop();
+                popped_spaces += 1;
             }
-            out.push_str(&format!("({target})"));
+            let trailing_space = popped_spaces > 0;
+            // C writes the marker through `WritePhMnemonic` like a phoneme name,
+            // so `--sep` separates it and `--tie` goes inside it: `(en).ð.ə.(de)`
+            // and `(-e-n)`.
+            let marker = format!("({target})");
+            if let Some(sep) = sep {
+                // A closing marker took the word space back, so the phoneme
+                // before it is still the one to separate from.
+                if wrote_phoneme && (!after_word_break || trailing_space) {
+                    out.push(sep);
+                }
+            }
+            out.push_str(&match tie {
+                Some(t) => tie_phoneme_name(&marker, t),
+                None => marker,
+            });
+            wrote_phoneme = true;
             if trailing_space {
-                out.push(' ');
+                // Still at a word break: the next word starts a run of its own.
+                for _ in 0..popped_spaces {
+                    out.push(' ');
+                }
+            } else {
+                after_word_break = false;
             }
             switched = if target == lang {
                 None
@@ -175,6 +243,8 @@ pub fn codes_to_ipa(
         let phdata: &PhonemeData = switched.as_ref().unwrap_or(phdata);
 
         if pc.is_boundary || pc.code == PHON_END_WORD {
+            out.push_str(&std::mem::take(&mut pending_stress));
+            after_word_break = true;
             if pc.is_boundary && pc.code == 0 && pc.clause_char.is_some() {
                 if preserve_punctuation {
                     if let Some(c) = pc.clause_char.filter(|c| ".,!?;:".contains(*c)) {
@@ -185,15 +255,23 @@ pub fn codes_to_ipa(
                     }
                 }
                 out.push('\n');
+                wrote_phoneme = false; // a new clause starts the run again
             } else {
                 out.push(' ');
+                // A *space* separator is emitted at a word start too, which is
+                // why `--sep` doubles the space between words — but only once,
+                // even where two boundaries meet (a switched word brings its
+                // own).
+                if sep == Some(' ') && !out.ends_with("  ") {
+                    out.push(' ');
+                }
             }
             continue;
         }
 
         match pc.code {
-            PHON_STRESS_P | PHON_STRESS_P2 | PHON_STRESS_TONIC => out.push('\u{2c8}'),
-            PHON_STRESS_2 | PHON_STRESS_3 => out.push('\u{2cc}'),
+            PHON_STRESS_P | PHON_STRESS_P2 | PHON_STRESS_TONIC => pending_stress.push('\u{2c8}'),
+            PHON_STRESS_2 | PHON_STRESS_3 => pending_stress.push('\u{2cc}'),
             PHON_STRESS_U | PHON_STRESS_PREV | PHON_STRESS_D => {}
             0 => {}
             code => {
@@ -202,23 +280,47 @@ pub fn codes_to_ipa(
                 if let Some(ph) = phdata.get(code) {
                     if ph.typ == 1 && ph.program == 0 {
                         match ph.std_length {
-                            4 => out.push('\u{2c8}'),
-                            2 | 3 => out.push('\u{2cc}'),
+                            4 => pending_stress.push('\u{2c8}'),
+                            2 | 3 => pending_stress.push('\u{2cc}'),
                             _ => {}
                         }
                         continue;
                     }
                 }
                 let nb = neighbours_at(codes, &real, rank[i], phdata);
-                out.push_str(&write_ph_mnemonic_ipa(phdata, code, &nb));
+                let name = write_ph_mnemonic_ipa(phdata, code, &nb);
+                if let Some(sep) = sep {
+                    // Not before the clause's first phoneme, not straight after
+                    // a word break, and not before a modifier letter.
+                    let starts_modifier = name
+                        .chars()
+                        .next()
+                        .is_some_and(|c| matches!(c as u32, 0x2b0..=0x36f));
+                    if wrote_phoneme && !after_word_break && !starts_modifier {
+                        out.push(sep);
+                    }
+                }
+                out.push_str(&std::mem::take(&mut pending_stress));
+                match tie {
+                    Some(t) => out.push_str(&tie_phoneme_name(&name, t)),
+                    None => out.push_str(&name),
+                }
+                if !name.is_empty() {
+                    wrote_phoneme = true;
+                    after_word_break = false;
+                }
             }
         }
     }
 
+    out.push_str(&pending_stress);
     // As in `-x`: a suppressed clause boundary leaves doubled separators behind,
     // and word boundaries either side of a clause break leave stray edge spaces.
-    while out.contains("  ") {
-        out = out.replace("  ", " ");
+    // With a space separator the doubling is upstream's own.
+    if sep != Some(' ') {
+        while out.contains("  ") {
+            out = out.replace("  ", " ");
+        }
     }
     let _ = straight_quote_open;
     out.split('\n').map(str::trim).collect::<Vec<_>>().join("\n").trim_end().to_string()
@@ -268,6 +370,20 @@ fn neighbours_at(
         next2_wordstart: next_wordstart,
         ..Default::default()
     }
+}
+
+/// Insert `tie` before every character after the first that is a letter — C's
+/// `--tie` handling in `GetTranslatedPhonemeString`.  Modifier letters and
+/// combining marks (U+02B0-U+036F) never take one.
+fn tie_phoneme_name(name: &str, tie: char) -> String {
+    let mut out = String::with_capacity(name.len() + 2);
+    for (i, c) in name.chars().enumerate() {
+        if i > 0 && c.is_alphabetic() && !matches!(c as u32, 0x2b0..=0x36f) {
+            out.push(tie);
+        }
+        out.push(c);
+    }
+    out
 }
 
 #[cfg(test)]

@@ -22,6 +22,7 @@ struct Cli {
     path_override: Option<PathBuf>,
     phonout:       Option<PathBuf>,
     sep:           Option<char>,
+    tie:           Option<char>,
     stdout_wav:    bool,
     wave_out:      Option<PathBuf>,
     print_help:    bool,
@@ -59,6 +60,21 @@ struct Cli {
     /// `--pho`: write the MBROLA `.pho` phoneme/duration/pitch script instead of
     /// speaking.
     pho: bool,
+    /// `--split[=<minutes>]`: start a new WAV file at the first sentence
+    /// boundary after this many minutes of audio.  `Some(0)` never splits
+    /// (upstream's `atoi` of a non-number); the bare option means 30 minutes.
+    split_minutes: Option<u32>,
+    /// `--load`: `-v` names a voice *file* to read, not an installed voice.
+    load_voice: bool,
+    /// The `-v` value exactly as given.  `voice` is normalized as a language
+    /// tag (lower-cased, `_` → `-`), which would corrupt the file path
+    /// `--load` expects.
+    voice_raw:     Option<String>,
+    /// `--ssml-break=<percentage>`: scale every SSML `<break time=…>`.
+    ssml_break: Option<u32>,
+    /// `-d <device>`: audio output device.  Accepted for parity; this port has
+    /// no playback, so it is never used.
+    device: Option<String>,
     positionals:   Vec<OsString>,
     had_unknown:   Option<String>,
 }
@@ -112,9 +128,33 @@ fn run() -> std::io::Result<()> {
     if let Some(src_arg) = cli.compile_mbrola.clone() {
         return run_compile_mbrola(&src_arg, &cli);
     }
-    // Resolve a voice *name* (e.g. "French (France)") to a language tag; a plain
-    // language tag is left unchanged.
-    {
+    // `--load`: `-v` is the path to a voice definition, not an installed voice.
+    // Its `language` (or `dictionary`) picks the translation, and its `pitch`
+    // line reaches the synthesizer below; the rest of a language's settings
+    // still come from the data directory.
+    let mut loaded_pitch = None;
+    if cli.load_voice {
+        let path = PathBuf::from(cli.voice_raw.as_deref().unwrap_or(&cli.voice));
+        match espeak_ng::voices::load_voice_file(&path) {
+            Some(v) => {
+                loaded_pitch = v.pitch;
+                let data = resolved_data_dir(cli.path_override.as_deref());
+                let want = v.dictionary.clone().unwrap_or_else(|| v.language.clone());
+                cli.voice = espeak_ng::translate::resolve_dict_stem(&data, &want)
+                    .unwrap_or(want);
+            }
+            None => {
+                eprintln!(
+                    "{}: can't read a voice definition from '{}'",
+                    argv0_display(),
+                    path.display()
+                );
+                return Ok(());
+            }
+        }
+    } else {
+        // Resolve a voice *name* (e.g. "French (France)") to a language tag; a
+        // plain language tag is left unchanged.
         let data = resolved_data_dir(cli.path_override.as_deref());
         cli.voice = resolve_voice(&cli.voice, &data);
     }
@@ -190,12 +230,28 @@ fn run() -> std::io::Result<()> {
         std::io::Error::new(std::io::ErrorKind::Other, format!("{e}"))
     })?;
     apply_runtime_params(&mut engine, &cli);
+    if let Some(p) = loaded_pitch {
+        engine.set_voice_pitch(Some(p));
+    }
     // A document-level `<prosody>` (wrapping the whole utterance) sets the
     // global rate/pitch/volume for the audio.  Scoped prosody is left to the
     // (unaffected) phoneme output.
     if cli.markup {
         if let Some(p) = espeak_ng::translate::ssml::document_prosody(&text) {
             apply_prosody(&mut engine, p);
+        }
+    }
+
+    // `--split=<minutes>`: a new WAV file at the first sentence boundary past
+    // the limit.  Only for `-w` — a split stream makes no sense on stdout.
+    if let (Some(minutes), Some(path)) =
+        (cli.split_minutes.filter(|&m| m > 0), cli.wave_out.clone())
+    {
+        if !cli.stdout_wav {
+            let (pcm, rate, events) = engine.synth_with_events(&text).map_err(|e| {
+                std::io::Error::new(std::io::ErrorKind::Other, format!("{e}"))
+            })?;
+            return write_split_wavs(&path, &pcm, rate, &events, minutes);
         }
     }
 
@@ -516,6 +572,9 @@ fn apply_runtime_params(engine: &mut EspeakNg, cli: &Cli) {
     if let Some(k) = cli.capitals {
         engine.set_parameter(Parameter::Capitals, k as i32);
     }
+    if let Some(b) = cli.ssml_break {
+        engine.set_parameter(Parameter::SsmlBreak, b as i32);
+    }
     if let Some(ref p) = cli.punct {
         engine.set_punctuation_list(Some(p.clone()));
     }
@@ -620,7 +679,7 @@ fn trace_output(cli: &Cli, text: &str) -> std::io::Result<()> {
     if rules_ran {
         out.push('\n');
     }
-    out.push_str(&format_x(&codes, &phdata, cli.sep, &data_dir, translator.options.lang.as_str()));
+    out.push_str(&format_x(&codes, &phdata, cli.sep, cli.tie, &data_dir, translator.options.lang.as_str()));
     out.push('\n');
 
     if let Some(ref path) = cli.phonout {
@@ -712,6 +771,10 @@ fn phoneme_output(cli: &Cli, text: &str) -> std::io::Result<()> {
     if let Some(ref p) = cli.punct {
         translator.options.punct = Some(p.clone());
     }
+    // `--tie` and `--sep` have to reach the IPA writer: it is the only place
+    // that knows where one phoneme's name ends.
+    translator.options.ipa_tie = cli.tie;
+    translator.options.ipa_separator = cli.sep;
 
     let line = if cli.ipa {
         let ipa = if cli.markup {
@@ -722,13 +785,17 @@ fn phoneme_output(cli: &Cli, text: &str) -> std::io::Result<()> {
         .map_err(|e| {
             std::io::Error::new(std::io::ErrorKind::Other, format!("{e}"))
         })?;
-        apply_ipa_sep(&ipa, cli.sep)
+        ipa
     } else {
         // `-x` with `-m`: the codes path takes plain text, so process SSML first
         // (strip tags, decode entities, apply say-as) — matching `--ipa -m`.
         // (Cross-`<voice>` language switching in `-x` is not yet wired.)
         let src = if cli.markup {
-            espeak_ng::translate::ssml_to_speech_text(text, translator.options.lang.as_str())
+            espeak_ng::translate::ssml_to_speech_text_opts(
+                text,
+                translator.options.lang.as_str(),
+                cli.ssml_break.unwrap_or(100),
+            )
         } else {
             text.to_string()
         };
@@ -747,7 +814,7 @@ fn phoneme_output(cli: &Cli, text: &str) -> std::io::Result<()> {
             translator.options.lang.as_str(),
         )
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{e}")))?;
-        format_x(&codes, &phdata, cli.sep, &data_dir, translator.options.lang.as_str())
+        format_x(&codes, &phdata, cli.sep, cli.tie, &data_dir, translator.options.lang.as_str())
     };
 
     let line_with_nl = format!("{line}\n");
@@ -759,59 +826,6 @@ fn phoneme_output(cli: &Cli, text: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-fn apply_ipa_sep(ipa: &str, sep: Option<char>) -> String {
-    let Some(sep) = sep else {
-        return ipa.to_string();
-    };
-    let sep_s = sep.to_string();
-    let mut out = String::with_capacity(ipa.len() * 2);
-    let chars: Vec<char> = ipa.chars().collect();
-    let mut i = 0;
-    while i < chars.len() {
-        if out.ends_with(&sep_s) || out.is_empty() {
-            /* continue */
-        } else if !out.ends_with('\n') && !out.ends_with(' ') {
-            out.push(sep);
-        }
-        let c = chars[i];
-        if is_stress_char(c) {
-            out.push(c);
-            i += 1;
-            continue;
-        }
-        if c.is_whitespace() {
-            out.push(c);
-            i += 1;
-            continue;
-        }
-        while i < chars.len() && !chars[i].is_whitespace() && !is_stress_char(chars[i]) {
-            out.push(chars[i]);
-            i += 1;
-            if i < chars.len() && is_combining_mark(chars[i]) {
-                while i < chars.len() && is_combining_mark(chars[i]) {
-                    out.push(chars[i]);
-                    i += 1;
-                }
-                break;
-            }
-            break;
-        }
-    }
-    out
-}
-
-#[inline]
-fn is_stress_char(c: char) -> bool {
-    matches!(c, 'ˈ' | 'ˌ')
-}
-
-#[inline]
-fn is_combining_mark(c: char) -> bool {
-    matches!(
-        c,
-        '\u{0300}'..='\u{036f}' | '\u{1ab0}'..='\u{1aff}' | '\u{1dc0}'..='\u{1dff}'
-    )
-}
 
 /// Render phoneme codes as eSpeak mnemonics (`-x`).
 ///
@@ -823,6 +837,7 @@ fn format_x(
     codes: &[PhonemeCode],
     phdata: &PhonemeData,
     sep: Option<char>,
+    tie: Option<char>,
     data_dir: &Path,
     lang: &str,
 ) -> String {
@@ -831,11 +846,20 @@ fn format_x(
     // The table the codes that follow belong to; `None` = the clause's own.
     let mut switched: Option<PhonemeData> = None;
 
-    let push_unit = |u: String, word_units: &mut Vec<String>| {
+    // A stress marker is written as part of the phoneme it precedes, as in C,
+    // where the separator goes *before* the stress: `tS.'i:.z`, not `tS.'.i:.z`.
+    let mut pending_stress = String::new();
+    let push_unit = |u: String, word_units: &mut Vec<String>, pending: &mut String| {
         if u.is_empty() {
             return;
         }
-        word_units.push(u);
+        // `--tie` goes inside the phoneme's own name, so apply it here rather
+        // than between units.
+        let tied = match tie {
+            Some(t) => tie_unit(&u, t),
+            None => u,
+        };
+        word_units.push(format!("{}{}", std::mem::take(pending), tied));
     };
 
     let flush_word = |out: &mut String, word_units: &mut Vec<String>, sep: Option<char>| {
@@ -881,8 +905,18 @@ fn format_x(
         let phdata: &PhonemeData = switched.as_ref().unwrap_or(phdata);
 
         if pc.is_boundary && pc.code == 15 {
+            // A word boundary flushes whatever stress is pending with it.
+            if !pending_stress.is_empty() {
+                word_units.push(std::mem::take(&mut pending_stress));
+            }
             flush_word(&mut out, &mut word_units, sep);
             out.push(' ');
+            // A *space* separator is emitted at a word start too, which is why
+            // C's `--sep` output has two spaces between words — but only once,
+            // even where two boundaries meet (a switched word brings its own).
+            if sep == Some(' ') && !out.ends_with("  ") {
+                out.push(' ');
+            }
             continue;
         }
         if pc.is_boundary && pc.code == 0 {
@@ -898,34 +932,36 @@ fn format_x(
         if pc.code == 15 && !pc.is_boundary {
             flush_word(&mut out, &mut word_units, sep);
             out.push(' ');
+            // A *space* separator is emitted at a word start too, which is why
+            // C's `--sep` output has two spaces between words — but only once,
+            // even where two boundaries meet (a switched word brings its own).
+            if sep == Some(' ') && !out.ends_with("  ") {
+                out.push(' ');
+            }
             continue;
         }
 
         match pc.code {
-            PHON_STRESS_P | PHON_STRESS_P2 | PHON_STRESS_TONIC => {
-                push_unit("'".to_string(), &mut word_units);
-            }
-            PHON_STRESS_2 | PHON_STRESS_3 => {
-                push_unit(",".to_string(), &mut word_units);
-            }
+            PHON_STRESS_P | PHON_STRESS_P2 | PHON_STRESS_TONIC => pending_stress.push('\''),
+            PHON_STRESS_2 | PHON_STRESS_3 => pending_stress.push(','),
             PHON_STRESS_U | PHON_STRESS_PREV => {}
             PHON_LENGTHEN => {
-                push_unit(":".to_string(), &mut word_units);
+                push_unit(":".to_string(), &mut word_units, &mut pending_stress);
             }
             0 if !pc.is_boundary => {}
             c => {
                 if let Some(ph) = phdata.get(c) {
                     if ph.typ == 1 && ph.program == 0 {
                         match ph.std_length {
-                            4 => push_unit("'".to_string(), &mut word_units),
-                            2 | 3 => push_unit(",".to_string(), &mut word_units),
+                            4 => pending_stress.push('\''),
+                            2 | 3 => pending_stress.push(','),
                             _ => {}
                         }
                     } else {
                         // Type-1 phonemes that carry a program are *tone*
                         // phonemes (Mandarin `55`/`214`/…), which C writes out
                         // with `WritePhMnemonic` like any other phoneme.
-                        push_unit(ph.mnemonic_display(), &mut word_units);
+                        push_unit(ph.mnemonic_display(), &mut word_units, &mut pending_stress);
                     }
                 }
             }
@@ -935,9 +971,11 @@ fn format_x(
     flush_word(&mut out, &mut word_units, sep);
     // A suppressed clause boundary (a period before a lowercase word, a comma
     // between digits) leaves the surrounding separators behind; upstream prints
-    // a single space there.
-    while out.contains("  ") {
-        out = out.replace("  ", " ");
+    // a single space there.  With a space separator the doubling is intentional.
+    if sep != Some(' ') {
+        while out.contains("  ") {
+            out = out.replace("  ", " ");
+        }
     }
     // Word boundaries either side of a clause break leave stray spaces at the
     // ends of lines (`'eI \n b'i:` where upstream writes `'eI\nb'i:`).
@@ -1011,6 +1049,49 @@ fn resolved_data_dir(path_arg: Option<&Path>) -> PathBuf {
     PathBuf::from(default_data_dir())
 }
 
+/// `--split=<minutes>`: write the audio as `<name>_01<ext>`, `<name>_02<ext>`, …
+/// cutting at the first sentence boundary after each `minutes` of audio — the
+/// `samples_total > samples_split` test in upstream's `SynthCallback`, which
+/// numbers the parts with `%s_%.2d%s` and keeps an extension of up to four
+/// characters (`out.wav` → `out_01.wav`, `out` → `out_01`).
+fn write_split_wavs(
+    path: &Path,
+    pcm: &[i16],
+    rate: u32,
+    events: &[espeak_ng::engine::SynthEvent],
+    minutes: u32,
+) -> std::io::Result<()> {
+    use espeak_ng::engine::EventKind;
+
+    let name = path.to_string_lossy().into_owned();
+    let (stem, ext) = match name.rfind('.') {
+        Some(ix) if name.len() - ix <= 4 => (&name[..ix], &name[ix..]),
+        _ => (name.as_str(), ""),
+    };
+
+    let limit = minutes as usize * 60 * rate as usize;
+    let at_sample = |ms: u32| (ms as u64 * rate as u64 / 1000) as usize;
+    let mut cuts = vec![0usize];
+    for e in events {
+        if e.kind != EventKind::Sentence {
+            continue;
+        }
+        let at = at_sample(e.audio_position_ms).min(pcm.len());
+        if at > *cuts.last().unwrap() && at - *cuts.last().unwrap() > limit {
+            cuts.push(at);
+        }
+    }
+    cuts.push(pcm.len());
+
+    for (n, w) in cuts.windows(2).enumerate() {
+        let mut buf = Vec::new();
+        write_wav_16_mono(&mut buf, &pcm[w[0]..w[1]], rate)
+            .map_err(|e| std::io::Error::other(format!("{e}")))?;
+        std::fs::write(format!("{stem}_{:02}{ext}", n + 1), &buf)?;
+    }
+    Ok(())
+}
+
 fn write_wav_16_mono(w: &mut Vec<u8>, samples: &[i16], sample_rate: u32) -> std::io::Result<()> {
     let data_bytes = samples.len().saturating_mul(2);
     let riff_len = 36u32 + data_bytes as u32;
@@ -1042,6 +1123,12 @@ fn parse_args(args: Vec<OsString>) -> Cli {
     };
     let mut i = 0;
     let mut posix_end = false;
+    // Upstream keeps one separator *character* (`phonemes_separator`) and a
+    // sticky tie *flag* (`espeakPHONEMES_TIE`): `--sep` and `--tie` both set the
+    // character, but only `--tie` sets the flag — and nothing clears it.  So
+    // `--tie --sep=.` ties with a dot, while `--sep=. --tie` ties with U+0361.
+    // `cli.sep` holds the character until the end of parsing.
+    let mut tie_mode = false;
     while i < args.len() {
         let arg = &args[i];
         if posix_end {
@@ -1077,13 +1164,37 @@ fn parse_args(args: Vec<OsString>) -> Cli {
                 }
             } else if let Some(rest) = s.strip_prefix("--sep=") {
                 cli.sep = parse_sep_value(rest);
+                cli.x_mnem = true; // `--sep`/`--tie` imply `-x`, as in C
             } else if s == "--sep" {
-                if let Some(p) = args.get(i + 1) {
-                    cli.sep = parse_sep_value(&p.to_string_lossy());
-                    i += 1;
+                // An *optional* argument only attaches with `=`, as getopt does:
+                // `--sep` on its own means a space, and the word that follows is
+                // text, not the separator.
+                cli.sep = Some(' ');
+                cli.x_mnem = true;
+            } else if let Some(rest) = s.strip_prefix("--ipa=") {
+                // The deprecated numeric forms: 1 = `_` between phonemes,
+                // 2 = a U+0361 tie, 3 = a ZWJ tie.  Anything else is plain IPA.
+                cli.ipa = true;
+                match rest.parse::<u32>().unwrap_or(0) {
+                    1 => cli.sep = Some('_'),
+                    2 => { cli.sep = Some('\u{361}'); tie_mode = true; }
+                    3 => { cli.sep = Some('\u{200d}'); tie_mode = true; }
+                    _ => {}
                 }
             } else if s == "--split" {
-                if args.get(i + 1).is_some() {
+                // An *optional* argument, so a bare `--split` takes upstream's
+                // 30-minute default and the next word stays text.
+                cli.split_minutes = Some(30);
+            } else if let Some(rest) = s.strip_prefix("--split=") {
+                cli.split_minutes = Some(rest.parse().unwrap_or(0));
+            } else if s == "--load" {
+                cli.load_voice = true;
+            } else if let Some(rest) = s.strip_prefix("--ssml-break=") {
+                cli.ssml_break = rest.parse().ok();
+            } else if s == "--ssml-break" {
+                // A *required* argument, so the next word is the percentage.
+                if let Some(a) = args.get(i + 1) {
+                    cli.ssml_break = a.to_string_lossy().parse().ok();
                     i += 1;
                 }
             } else {
@@ -1119,8 +1230,18 @@ fn parse_args(args: Vec<OsString>) -> Cli {
                         cli.list_voices = true;
                         cli.voices_filter = Some(s["--voices=".len()..].to_string());
                     }
-                    _ if s == "--ssml-break" || s.starts_with("--ssml-break=") => {}
-                    _ if s == "--tie" || s.starts_with("--tie=") => {}
+                    // A tie goes *inside* a phoneme name, a separator between
+                    // phonemes; both write the same character slot.
+                    _ if s == "--tie" => {
+                        cli.sep = Some('\u{361}'); // combining double inverted breve
+                        tie_mode = true;
+                        cli.x_mnem = true;
+                    }
+                    _ if s.starts_with("--tie=") => {
+                        cli.sep = parse_tie_value(&s["--tie=".len()..]);
+                        tie_mode = true;
+                        cli.x_mnem = true;
+                    }
                     "--punct" => cli.punct = Some(Vec::new()),
                     _ if s.starts_with("--punct=") => {
                         let chars = s["--punct=".len()..].trim_matches('"').chars().collect();
@@ -1148,9 +1269,12 @@ fn parse_args(args: Vec<OsString>) -> Cli {
                         if idx + 1 < bytes.len() {
                             let voice = &s[idx + 1..];
                             cli.voice = normalize_voice_tag(voice);
+                            cli.voice_raw = Some(voice.to_string());
                             idx = bytes.len();
                         } else if let Some(n) = args.get(i + 1) {
-                            cli.voice = normalize_voice_tag(&n.to_string_lossy());
+                            let voice = n.to_string_lossy();
+                            cli.voice = normalize_voice_tag(&voice);
+                            cli.voice_raw = Some(voice.into_owned());
                             i += 1;
                         }
                     }
@@ -1223,6 +1347,17 @@ fn parse_args(args: Vec<OsString>) -> Cli {
                             _ => {} // -l: accepted, no effect
                         }
                     }
+                    'd' => {
+                        // Audio device: no playback here, so it is parsed (and
+                        // its argument consumed) but never used.
+                        if idx + 1 < bytes.len() {
+                            cli.device = Some(s[idx + 1..].to_string());
+                            idx = bytes.len();
+                        } else if let Some(a) = args.get(i + 1) {
+                            cli.device = Some(a.to_string_lossy().into_owned());
+                            i += 1;
+                        }
+                    }
                     'z' => cli.no_final_pause = true,
                     'D' => cli.deterministic = true,
                     'X' => cli.trace_rules = true,
@@ -1257,6 +1392,10 @@ fn parse_args(args: Vec<OsString>) -> Cli {
         cli.positionals.push(arg.clone());
         i += 1;
     }
+    // The character belongs to whichever mode the flag selected.
+    if tie_mode {
+        cli.tie = cli.sep.take().or(Some('\u{361}'));
+    }
     cli
 }
 
@@ -1268,6 +1407,33 @@ fn parse_trailing_u32(rest: &str) -> (Option<u32>, ()) {
         return (Some(v), ());
     }
     (None, ())
+}
+
+/// `--tie[=<c>]`: no value means U+0361 (combining double inverted breve) and
+/// `z` means U+200D (zero-width joiner), as upstream documents.
+fn parse_tie_value(s: &str) -> Option<char> {
+    if s.is_empty() {
+        return Some('\u{361}');
+    }
+    if s == "z" {
+        return Some('\u{200d}');
+    }
+    s.chars().next()
+}
+
+/// Insert `tie` inside a phoneme's name, before every character after the first
+/// that is a letter — C's `--tie` handling in `GetTranslatedPhonemeString`,
+/// which turns `tʃ` into `t͡ʃ` and leaves `ˈiː` alone.  Modifier letters and
+/// combining marks (U+02B0-U+036F) never take one.
+fn tie_unit(unit: &str, tie: char) -> String {
+    let mut out = String::with_capacity(unit.len() + 2);
+    for (i, c) in unit.chars().enumerate() {
+        if i > 0 && c.is_alphabetic() && !matches!(c as u32, 0x2b0..=0x36f) {
+            out.push(tie);
+        }
+        out.push(c);
+    }
+    out
 }
 
 fn parse_sep_value(s: &str) -> Option<char> {
@@ -1288,38 +1454,57 @@ fn print_help() {
 {prog} [options] [\"text …\"]
 
 Phonemes / IPA
-  --ipa            IPA to stdout (or --phonout)
-  --pho            MBROLA .pho phoneme/duration/pitch script to stdout
+  --ipa[=1|2|3]    IPA to stdout (or --phonout).  The deprecated numeric forms
+                   are 1 = `_` between phonemes, 2 = a U+0361 tie, 3 = a ZWJ tie
   -x               Phoneme mnemonics (Kirshenbaum-style)
   -q               No audio (useful with --ipa / -x)
-  --sep=<c>        Separator between phoneme units (`z` = U+200C as in upstream)
+  --sep[=<c>]      Separator between phonemes (none = space, `z` = U+200C)
+  --tie[=<c>]      Tie *inside* a phoneme (none = U+0361, `z` = U+200D).
+                   --sep and --tie share one slot: the last one given wins
+  --pho            MBROLA .pho phoneme/duration/pitch script to stdout
   --phonout=<f>    Write phoneme output to file
+  -X               Trace the translation rules that match each letter
 
 Voice / data
   -v <voice>       Voice / language tag (e.g. en-us, de, fr)
+  --load           Read the -v voice from a file path instead of the installed
+                   voices (its language and pitch are applied)
   --voices[=<lang>]  List available voices (optionally filtered by language)
   --path=<dir>     Parent of espeak-ng-data/ or data dir itself
 
 Speech (WAV only; playback not implemented)
   -w <wav>         Write WAV
   --stdout         WAV to stdout
+  --split[=<min>]  Split -w output into <name>_01, _02, … at the first sentence
+                   boundary past every <min> minutes (default 30)
   -s -p -P -a      Speed, pitch, pitch range, amplitude (same ranges as upstream)
+  -g <n>           Word gap, in units of 10 ms
+  -z               No pause at the end of the text
+  -d <device>      Audio device (accepted; this port has no playback)
+
+Text
+  -f <file>        Input text file
+  --stdin          Read all stdin as one string
+  -m, --markup     Interpret SSML markup
+  --ssml-break=<n> Scale every SSML <break time=…> by <n> percent
+  --punct[=CHARS]  Announce punctuation by name (all, or only the given chars)
+  -k <n>           Announce capital letters: 1 = a tone, 2 = \"capital\", ≥3 = a
+                   pitch raise of <n> Hz
+  -b <n>           Input encoding: 1 = UTF-8, 2 = 8-bit, 4 = 16-bit
+  -l <n>           Line length (accepted for parity; no effect)
 
 Compile
   --compile[=<lang>]  Compile <lang>_list + <lang>_rules (in the data dir) into
-                      <lang>_dict (default <lang> = the -v voice's language)
+                      <lang>_dict (default <lang> = the -v voice's language).
+                      --compile-debug[=<lang>] is accepted as the same thing
   --compile-mbrola=<src>      Compile an MBROLA phoneme-translation source into
                               <data>/mbrola_ph/<name>_phtrans
   --compile-phonemes[=<src>]  Compile a phoneme-table source (default: the data
                       dir's `phonemes`) into `phontab` (table only)
 
 Other
-  -f <file>        Input text file
-  --stdin          Read all stdin as one string
-  --punct[=CHARS]  Announce punctuation by name (all, or only the given chars)
   -D               Deterministic random mode (pin the unvoiced-noise seed)
-  -X               Trace the translation rules that match each letter
-  --help           This help
+  -h, --help       This help
   --version        Version and data directory
 
 Environment

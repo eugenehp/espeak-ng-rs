@@ -129,17 +129,15 @@ fn russian_decimals_are_read_as_fractions() {
     // "0,25" is "ноль и двадцать пять сотых", not "ноль и два пять".
     let t = skip_unless!("ru");
     let ipa = |s: &str| t.text_to_ipa(s).unwrap();
-    // Numerator read as a number + the scale word, not digit by digit.
-    let quarter = ipa("0,25");
-    assert!(quarter.contains("dvˈɑtsʌtʲ"), "0,25 says 'двадцать': {quarter}");
-    assert!(quarter.contains("sˈot"), "0,25 says 'сотых': {quarter}");
-    assert!(!quarter.contains("dvˈɑ "), "not read as separate digits: {quarter}");
+    // Numerator and scale word are *one* word, as in C (`strcat` into the same
+    // phoneme buffer), which is why "двадцать" keeps its pre-tonic `a`.
+    assert_eq!(ipa("0,25"), "nˈoɭ ˈi dvˈɑtsatʲpʲˈatʲsˈotøx");
     // Numerator 1 takes the feminine singular ("одна десятая"), 2 the feminine
     // plural ("две десятых").
-    assert!(ipa("0,1").contains("ʌdnˈɑ"), "0,1 uses feminine 'одна': {}", ipa("0,1"));
-    assert!(ipa("0,2").contains("dvʲ"), "0,2 uses feminine 'две': {}", ipa("0,2"));
+    assert_eq!(ipa("0,1"), "nˈoɭ ˈi ʌdnˈɑdʲɪsʲˈɑtʌja");
+    assert_eq!(ipa("0,2"), "nˈoɭ ˈi dvʲˈedʲɪsʲˈɑtøx");
     // 11 is not "одиннадцать одна" — no feminine, plural suffix.
-    assert!(ipa("0,11").contains("sˈot"), "0,11 says hundredths: {}", ipa("0,11"));
+    assert_eq!(ipa("0,11"), "nˈoɭ ˈi ʌdʲˈinnʌtsatʲsˈotøx");
 }
 
 #[test]
@@ -147,15 +145,18 @@ fn portuguese_number_words_keep_final_stress() {
     // A composed number entry ("cento‖e‖um") must take end-stress promotion on
     // its LAST word, exactly as the same words typed out do.
     let t = skip_unless!("pt");
-    // The final word must carry the stress; upstream likewise renders the
-    // digit and the spelled-out form with slightly different vowels
-    // (`sˈẽntu` vs `sˈẽntw`), so compare the stress, not the whole string.
+    // The final word must carry the stress.  The digit form and the typed words
+    // are *not* the same string — the numbers come from the list's `?1 _N`
+    // phonemes and the words from the letter-to-sound rules, in C as here
+    // (`iˈum` vs `i ˈũm`) — so each is checked against upstream's own reading.
     let last_word_stressed = |s: String| {
-        s.split_whitespace().last().is_some_and(|w| w.starts_with('ˈ'))
+        s.split_whitespace().last().is_some_and(|w| w.contains('ˈ'))
     };
     assert!(last_word_stressed(t.text_to_ipa("101").unwrap()), "101 stresses 'um'");
     assert!(last_word_stressed(t.text_to_ipa("cento e um").unwrap()), "words stress 'um'");
-    assert_eq!(t.text_to_ipa("21").unwrap(), t.text_to_ipa("vinte e um").unwrap());
+    assert_eq!(t.text_to_ipa("101").unwrap(), "sˈẽntu i ˈum");
+    assert_eq!(t.text_to_ipa("21").unwrap(), "vˈĩntɨ iˈum");
+    assert_eq!(t.text_to_ipa("vinte e um").unwrap(), "vˈĩntɨ i ˈũm");
 }
 
 // ── Suffix chains ───────────────────────────────────────────────────────────
@@ -322,7 +323,10 @@ fn short_fractions_are_read_as_one_number() {
     }
     if let Some(t) = tr("pt") {
         let ipa = t.text_to_ipa("3,14").unwrap();
-        assert!(ipa.contains("kˌɐtˈɔɾz"), "pt 3,14 says 'catorze': {ipa}");
+        // The vowel is `o`, not `ɔ`: `catorze`'s stem carries `$alt2`, which
+        // opens it (C's `ApplySpecialAttribute2`).  C reads `kɐtˈoɾzɨ`; the port
+        // adds a secondary stress on the first syllable, a separate pt gap.
+        assert!(ipa.contains("tˈoɾz"), "pt 3,14 says 'catorze': {ipa}");
         // More digits than the language's limit → digit by digit again.
         let long = t.text_to_ipa("1,234").unwrap();
         assert!(long.split_whitespace().count() >= 4, "long fraction stays digits: {long}");

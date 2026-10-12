@@ -73,6 +73,12 @@ pub struct VoiceEntry {
     /// dict/rule groups (`?n`).  E.g. European `pt` has `dictrules 1`, Brazilian
     /// `pt-BR` has `dictrules 2`.  Each sets bit `n` of the dict condition.
     pub dict_rules: Vec<u8>,
+    /// `brackets <n>` / `bracketsAnnounced <n>` — how long a bracket or quote
+    /// pauses (`LOPT_BRACKET_PAUSE`, default 4; the announced form defaults to
+    /// 2).  Hungarian sets both to 0, which is why `hu "a ( b"` has no pause.
+    pub brackets: Option<u8>,
+    /// See [`Self::brackets`] — the `--punct` value.
+    pub brackets_announced: Option<u8>,
 }
 
 /// Enumerate every voice under `<data_dir>/lang/`, sorted by language code then
@@ -190,6 +196,18 @@ fn collect_dir(root: &Path, dir: &Path, out: &mut Vec<VoiceEntry>) {
     }
 }
 
+/// Read a voice definition from an explicit file path — `--load` /
+/// `espeak_ng_SetVoiceByFile`, for a voice that is not installed under
+/// `<data>/lang/`.
+///
+/// Returns `None` if the file cannot be read or has no `language` line.  Only
+/// the directives the port reads from a voice file are honoured; the rest of
+/// the engine still looks the language's settings up in the data directory.
+pub fn load_voice_file(path: &Path) -> Option<VoiceEntry> {
+    let root = path.parent().unwrap_or(Path::new(""));
+    parse_voice_file(root, path)
+}
+
 fn parse_voice_file(root: &Path, path: &Path) -> Option<VoiceEntry> {
     let bytes = fs::read(path).ok()?;
     let text = String::from_utf8_lossy(&bytes);
@@ -211,6 +229,8 @@ fn parse_voice_file(root: &Path, path: &Path) -> Option<VoiceEntry> {
     let mut replace: Vec<(u8, String, String)> = Vec::new();
     let mut phonemes = None;
     let mut dict_rules: Vec<u8> = Vec::new();
+    let mut brackets: Option<u8> = None;
+    let mut brackets_announced: Option<u8> = None;
 
     for line in text.lines() {
         let line = line.trim();
@@ -295,6 +315,10 @@ fn parse_voice_file(root: &Path, path: &Path) -> Option<VoiceEntry> {
             "phonemes" => phonemes = it.next().map(str::to_string),
             // Condition numbers selecting variant dict/rule groups (`dictrules 2`).
             "dictrules" => dict_rules.extend(it.filter_map(|n| n.parse::<u8>().ok())),
+            "brackets" => brackets = it.next().and_then(|n| n.parse().ok()),
+            "bracketsannounced" | "bracketsAnnounced" => {
+                brackets_announced = it.next().and_then(|n| n.parse().ok())
+            }
             _ => {}
         }
     }
@@ -311,6 +335,8 @@ fn parse_voice_file(root: &Path, path: &Path) -> Option<VoiceEntry> {
         intonation, stress_length, stress_opt, pitch, dictionary, stress_rule, words, replace,
         phonemes,
         dict_rules,
+        brackets,
+        brackets_announced,
     })
 }
 
@@ -411,6 +437,17 @@ pub fn voice_dict_condition(data_dir: &Path, lang: &str) -> u32 {
         .find(|v| v.language.eq_ignore_ascii_case(lang))
         .map(|v| v.dict_rules.iter().fold(0u32, |acc, &n| acc | (1u32 << n)))
         .unwrap_or(0)
+}
+
+/// How long a bracket or quote pauses for this voice: `(brackets,
+/// bracketsAnnounced)` from the voice file, defaulting to C's `(4, 2)`.  The
+/// pause loop spends 2 per `phonPAUSE`, so 4 is two pauses and 0 is none.
+pub fn voice_bracket_pause(data_dir: &Path, lang: &str) -> (u8, u8) {
+    let voices = list_voices(data_dir);
+    voices
+        .iter()
+        .find(|v| v.language.eq_ignore_ascii_case(lang))
+        .map_or((4, 2), |v| (v.brackets.unwrap_or(4), v.brackets_announced.unwrap_or(2)))
 }
 
 /// An MBROLA voice: the `voices/mb/mb-<db>` file's `language` and its

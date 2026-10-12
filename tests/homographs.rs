@@ -66,7 +66,10 @@ fn noun_form_after_determiner() {
     assert!(ipa("a refund").contains("ɹˈiːfʌnd"), "a refund → noun: {}", ipa("a refund"));
     assert!(ipa("an upset").contains("ˈʌpsɛt"), "an upset → noun: {}", ipa("an upset"));
     // …and they stay verbs after a verb trigger.
-    assert!(ipa("to convert").contains("kɒnvˈɜːt"), "to convert → verb: {}", ipa("to convert"));
+    // The verb's first syllable reduces, as upstream has it (`tə kənvˈɜːt`):
+    // English `0` is `IF nextVowel(isMaxStress) THEN ChangePhoneme(@)`, and the
+    // stressed vowel is three phonemes away.
+    assert!(ipa("to convert").contains("kənvˈɜːt"), "to convert → verb: {}", ipa("to convert"));
     // A non-$noun word after a determiner keeps its default (noun) pronunciation.
     assert!(ipa("the record").contains("ɹˈɛkɔːd"), "the record stays default: {}", ipa("the record"));
     assert!(ipa("a live show").contains("lˈaɪv"), "a live stays adj: {}", ipa("a live show"));

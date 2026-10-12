@@ -199,7 +199,8 @@ use crate::dictionary::{
     FLAG_SUFX_S, LETTERGP_B, LETTERGP_VOWEL2, SUFX_A, SUFX_E, SUFX_I, SUFX_M, SUFX_P,
 };
 use crate::dictionary::stress::{set_word_stress, promote_strend_stress, change_word_stress,
-                               apply_word_final_devoicing, apply_alt_stress_upgrade, StressOpts};
+                               apply_word_final_devoicing, apply_alt_stress_upgrade,
+                               apply_special_attribute2, StressOpts};
 
 use ipa_table::{
     en_ipa_override,
@@ -313,12 +314,9 @@ impl ClauseTerminator {
 
     /// Classify a clause-terminating character.
     pub fn from_char(c: char) -> Self {
-        match c {
-            '.' | '\u{3002}' /* 。 */ => ClauseTerminator::Period,
-            '?' | '\u{ff1f}' /* ？ */ => ClauseTerminator::Question,
-            '!' | '\u{ff01}' /* ！ */ => ClauseTerminator::Exclamation,
-            _ => ClauseTerminator::Comma,
-        }
+        // The same classification C makes in `clause_type_from_codepoint`, so
+        // `।` and `。` end a sentence while `、` and `…` only break a clause.
+        clause_punctuation_class(c).map_or(ClauseTerminator::Comma, |(class, _)| class)
     }
 }
 
@@ -403,6 +401,18 @@ pub struct LangOptions {
     /// that really are phonemes.  Reading the bytes as phoneme codes made every
     /// Han character gibberish (`你` → `qr`).
     pub reversed_textmode: bool,
+    /// `--tie=<char>`: the character to insert inside a multi-letter phoneme
+    /// name in IPA output (`tʃ` → `t͡ʃ`).  `None` = none, as by default.
+    pub ipa_tie: Option<char>,
+    /// `--sep=<char>`: the character to write *between* phonemes in IPA output.
+    /// Upstream shares one slot with [`Self::ipa_tie`], so only one is ever set.
+    pub ipa_separator: Option<char>,
+    /// `langopts.param[LOPT_BRACKET_PAUSE]` / `[LOPT_BRACKET_PAUSE_ANNOUNCED]`:
+    /// how long a bracket or quote pauses.  C's defaults are 4 and 2, and its
+    /// pre-pause loop spends 2 per `phonPAUSE`, so 4 means two pauses.  Read
+    /// from the voice file's `brackets` / `bracketsAnnounced` (Hungarian sets
+    /// both to 0 — `hu "a ( b"` has no pause at all).
+    pub bracket_pause: (u8, u8),
     /// `langopts.max_initial_consonants` — how many consonants may precede the
     /// first vowel before a word counts as unpronounceable and is spelled out
     /// letter by letter ("BBC" → `b,i:b,i:s'i:`).
@@ -465,12 +475,22 @@ pub struct NumberGrammar {
     /// (the pt dictionary is missing most number keys — `1`/`5`/`100`/`1000` come
     /// out empty or wrong).  Set for the `pt` voice.
     pub portuguese_cardinals: bool,
+    /// C's `NUM_1900`: read 1900–1999 as "nineteen hundred (and) …".  Only ten
+    /// languages ask for it (af, da, en, fo, is, kl, nb/no, nl, sv); the rest
+    /// say "one thousand nine hundred …".
+    pub year_1900: bool,
     /// Split a word at a lowercase→uppercase boundary (`CamelCase` → "Camel
     /// Case", `iPhone` → "i Phone"), mirroring espeak's `TranslateClause`
     /// behaviour (a space is inserted before the uppercase letter).  Universal
     /// in espeak; only Irish (`ga`), whose lenition prefixes legitimately mix
     /// case, disables it — so this is `true` by default and `false` for `ga`.
     pub caps_word_split: bool,
+    /// C's `LOPT_APOSTROPHE` (also the voice files' `apostrophe` directive):
+    /// bit 0 keeps an apostrophe that *starts* a word, bit 1 one that *ends* it.
+    /// Only Hebrew sets it (bit 1, for `בָּגָאז׳`).  Everywhere else an
+    /// apostrophe belongs to the word only *between* two letters, which is what
+    /// keeps `don't` whole while `hello'` is just "hello".
+    pub apostrophe: u8,
     /// Treat a capital letter as a *stress marker* rather than a word break
     /// (espeak `LOPT_CAPS_IN_WORD`).  The first capital in a word inserts a
     /// primary-stress mark `ˈ` before it and the word stays whole (`bAstu` →
@@ -710,31 +730,48 @@ impl NumberGrammar {
                 grammar.decimal_separator = ',';
                 grammar.group_separator = Some('.');
             }
-            // Portuguese: the dict lacks number keys, so cardinals are generated
-            // as text (`portuguese_cardinal_word`) and pronounced by the rules.
-            // Comma decimal / period thousands like the rest of the Romance set.
+            // Portuguese: comma decimal / period thousands like the rest of the
+            // Romance set.  (`portuguese_cardinals` spelled the numbers out as
+            // text because the dict looked key-less; it is not — pt's `_N`
+            // entries are behind `?1`/`?2` conditions, which the port now
+            // honours, so the generic machinery reads them.)
+            // `NUM_AND_UNITS | NUM_HUNDRED_AND`: the conjunction "e" joins
+            // tens→units ("vinte E um") and hundreds→remainder ("cento E um"),
+            // and `NUM_DFRACTION_2` reads two fraction digits as one number.
             "pt" => {
-                grammar.portuguese_cardinals = true;
+                grammar.portuguese_cardinals = false;
                 grammar.decimal_separator = ',';
                 grammar.group_separator = Some('.');
+                grammar.tens = TensGrammar::WithConjunction;
+                grammar.hundreds.use_conjunction_with_remainder = true;
+                grammar.fraction_digits_as_number = 2;
             }
             // Continental-European comma-decimal languages.
             // Units-first cardinals: Danish/Faroese "enogtyve", Slovenian
             // "enaindvajset" (units + "og"/"in" + tens), like German — and their
             // compound ordinals suffix the whole cardinal ("enogtyvende").
-            "da" | "fo" | "sl" => {
+            "da" | "fo" | "kl" | "sl" => {
                 grammar.ordinals.dot_marks_ordinal = true;
                 grammar.tens = TensGrammar::UnitsThenConjunction;
                 grammar.ordinals.compound_cardinal_suffix = true;
                 grammar.decimal_separator = ',';
                 grammar.group_separator = Some('.');
+                // C `NUM_HUNDRED_AND` — "hundrede OG en", "tusind OG en".
+                // Slovenian is the one of the four without it.
+                grammar.hundreds.use_conjunction_with_remainder = lang != "sl";
+                // C `NUM_OMIT_1_HUNDRED` for all but Danish.
+                grammar.hundreds.omit_one_prefix = lang != "da";
             }
             // Tens-first, dot-ordinal, comma-decimal (Finnish, Estonian,
             // Lithuanian, Norwegian "tjueen", Greenlandic).
-            "et" | "fi" | "kl" | "nb" | "no" => {
+            "et" | "fi" | "nb" | "no" => {
                 grammar.ordinals.dot_marks_ordinal = true;
                 grammar.decimal_separator = ',';
                 grammar.group_separator = Some('.');
+                // Norwegian has C's `NUM_HUNDRED_AND` ("nitten hundre OG …");
+                // Finnish and Estonian have no conjunction at all.
+                grammar.hundreds.use_conjunction_with_remainder =
+                    matches!(lang, "nb" | "no");
             }
             // Lithuanian: like the above, plus the scale word declines —
             // "tūkstantis" (1/…1), "tūkstančiai" (…2–9), "tūkstančių" (teens/×10).
@@ -753,6 +790,10 @@ impl NumberGrammar {
                 grammar.decimal_separator = ',';
                 grammar.group_separator = Some('.');
                 grammar.tens = TensGrammar::WithConjunction;
+                // Icelandic also joins hundreds→remainder, but only when the
+                // remainder is a single word (`NUM_SINGLE_AND | NUM_HUNDRED_AND`):
+                // "hundrað OG einn", but "nítján hundruð áttatíu og fjórir".
+                grammar.hundreds.conjunction_before_simple_remainder = lang == "is";
             }
             // Albanian: the conjunction "e" joins both tens→unit and
             // hundreds→remainder ("njëzet E një", "njëqind E tridhjetë").
@@ -861,6 +902,32 @@ impl NumberGrammar {
             | "tt" | "vi" => 5,
             _ => 0,
         };
+        // C `NUM_HUNDRED_AND` for the languages whose arm above doesn't set it:
+        // a conjunction joins hundreds→remainder ("mi'a WA wahid", "sto I edno").
+        // `NUM_SINGLE_AND` (Bulgarian, Hebrew) restricts it to a remainder that
+        // is a single word, as it does for Icelandic.
+        if matches!(lang, "ar" | "eu" | "fa" | "io" | "ku" | "om" | "tn") {
+            grammar.hundreds.use_conjunction_with_remainder = true;
+        }
+        if matches!(lang, "bg" | "he") {
+            grammar.hundreds.conjunction_before_simple_remainder = true;
+        }
+        // C `NUM_AND_UNITS`: a conjunction joins tens→units ("si O chahar",
+        // "shloshim VE arba").  Arabic also has `NUM_SWAP_TENS`, so its units
+        // come first ("arba'a WA thalathun").
+        if matches!(lang, "bg" | "fa" | "he" | "io" | "ka" | "ku" | "mk" | "tn") {
+            grammar.tens = TensGrammar::WithConjunction;
+        }
+        if lang == "ar" {
+            grammar.tens = TensGrammar::UnitsThenConjunction;
+        }
+        // C `LOPT_APOSTROPHE`: Hebrew keeps a word-final apostrophe.
+        grammar.apostrophe = if lang == "he" { 2 } else { 0 };
+        // C `NUM_1900`: 1900–1999 read as "nineteen hundred …".
+        grammar.year_1900 = matches!(
+            lang,
+            "af" | "da" | "en" | "fo" | "is" | "kl" | "nb" | "nl" | "no" | "sv"
+        );
         grammar
     }
 }
@@ -881,6 +948,8 @@ impl Default for NumberGrammar {
             vigesimal_70_90: false,
             space_group: false,
             portuguese_cardinals: false,
+            year_1900: false,
+            apostrophe: 0,
             caps_word_split: true,
             caps_mark_stress: false,
             dutch_ij: false,
@@ -906,6 +975,9 @@ impl Default for LangOptions {
             dict_condition: 0,
             reduce_dictionary_vowels: false,
             reversed_textmode: false,
+            bracket_pause: (4, 2),
+            ipa_tie: None,
+            ipa_separator: None,
             max_initial_consonants: 3,
             unpronouncable: 0,
         }
@@ -964,6 +1036,9 @@ impl LangOptions {
             reduce_dictionary_vowels,
             number_grammar: NumberGrammar::for_lang(&lang),
             reversed_textmode,
+            bracket_pause: (4, 2),
+            ipa_tie: None,
+            ipa_separator: None,
             max_initial_consonants,
             unpronouncable,
             lang_word_gap,
@@ -1017,6 +1092,11 @@ pub enum Token {
     ClauseBoundary(char),
     /// Any other punctuation character.
     Punctuation(char),
+    /// An arithmetic *operator* the tokenizer synthesised from the input (the
+    /// unary minus of `-5`).  It reads as the language's word for the operation
+    /// rather than as the dictionary's name for the character, which is often
+    /// the name of the sign itself ("minus sign").
+    Operator(char),
     /// Inline phonemes given directly in `[[ … ]]` (espeak phoneme mnemonics).
     /// These bypass the dictionary and are emitted verbatim.
     InlinePhonemes(String),
@@ -1422,6 +1502,25 @@ fn portuguese_number_word(token: &NumberToken) -> Option<String> {
 /// (`10³` → `10 3`, not `103`).  Returns the input unchanged (borrowed) when it
 /// contains none of these characters.  Language-neutral — the resulting digits
 /// and `/` are read by the normal number/symbol path in the target language.
+/// Map the typographic apostrophes onto the plain one — C's
+/// `TranslateClause` character loop ("'microsoft' quote or sexed closing single
+/// quote, or prime - possibly used as apostrophe").  Without it `don’t` split
+/// into "don" and a spoken "T", and Irish `D’fhuascail` into two words.
+///
+/// Applied to the **clause's own text** only, exactly as C does: a dictionary
+/// `$textmode` replacement is re-translated without passing through that loop,
+/// so Italian's `€ simbolo dell’euro` keeps its curly apostrophe and reads as
+/// two words (`s'imbolo d'El 'EURo`), not one.
+fn normalize_apostrophes(text: &str) -> std::borrow::Cow<'_, str> {
+    const SMART: [char; 4] = ['\u{2019}', '\u{00B4}', '\u{2032}', '\u{0092}'];
+    if !text.chars().any(|c| SMART.contains(&c)) {
+        return std::borrow::Cow::Borrowed(text);
+    }
+    std::borrow::Cow::Owned(
+        text.chars().map(|c| if SMART.contains(&c) { '\'' } else { c }).collect(),
+    )
+}
+
 fn normalize_number_symbols(text: &str) -> std::borrow::Cow<'_, str> {
     fn mapping(c: char) -> Option<&'static str> {
         Some(match c {
@@ -1446,6 +1545,7 @@ fn normalize_number_symbols(text: &str) -> std::borrow::Cow<'_, str> {
             '\u{066B}' => ".", // ARABIC DECIMAL SEPARATOR ٫
             '\u{066C}' => ",", // ARABIC THOUSANDS SEPARATOR ٬
             '\u{066A}' => "%", // ARABIC PERCENT SIGN ٪
+
             _ => return None,
         })
     }
@@ -1588,8 +1688,12 @@ fn native_digit_to_ascii(c: char) -> Option<char> {
 pub const CTRL_EMBEDDED: char = '\u{01}';
 
 /// The command letters accepted after `\x01[±]<value>` — pitch/speed/amplitude/
-/// range/reverb/tone/… (C `EmbeddedCommand`'s `"PSARHTIVYMUBF"`).
-const EMBED_LETTERS: &str = "PSARHTIVYMUBF";
+/// range/reverb/tone/… (C `EmbeddedCommand`'s `"PSARHTIVYMUBF"`), plus `Z`,
+/// which carries an SSML pause length in milliseconds (see
+/// [`ssml::BREAK_LETTER`]).  C has no equivalent — it packs the pause into the
+/// clause terminator — and drops the letter, so the two never disagree about
+/// text written for either.
+const EMBED_LETTERS: &str = "PSARHTIVYMUBFZ";
 
 /// A parsed inline embedded command `\x01[+|-]<value><letter>` (C
 /// `EmbeddedCommand`).  `relative`: 0 = absolute, 1 = `+`, -1 = `-`.  A missing
@@ -1717,6 +1821,24 @@ pub fn tokenize_opts(text: &str, grammar: &NumberGrammar) -> Vec<Token> {
                 }
             }
             tokens.push(Token::Number(NumberToken::Decimal { integer: integer.into(), fractional }));
+        } else if !matches!(c, '.' | ',' | '!' | '?' | ';' | ':')
+            && clause_punctuation_class(c).is_some_and(|(_, optional_space)| {
+                // C only ends the clause when the character is followed by
+                // space, a bracket or end of text — unless the character's
+                // property says a space is optional, which is what gives
+                // space-less scripts their sentence breaks (`।`, `。`).
+                optional_space
+                    || chars.peek().is_none_or(|&n| n.is_whitespace() || is_bracket(n))
+            })
+        {
+            // Non-ASCII clause punctuation: the Devanagari danda, the CJK full
+            // stop and comma, the Armenian/Syriac/Ethiopic/Mongolian/Tibetan
+            // terminators, the ellipsis, the en/em dash.  Unspaced (`a–b`) they
+            // are dropped instead, which is C's behaviour too.
+            while chars.peek().map(|ch| ch.is_whitespace()).unwrap_or(false) {
+                chars.next();
+            }
+            tokens.push(Token::ClauseBoundary(c));
         } else if matches!(c, '.' | ',' | '!' | '?' | ';' | ':') {
             // A '.' sitting tightly between single letters is an acronym
             // separator ("U.S.A.", "e.g.", "i.e."), not a sentence end — espeak
@@ -1769,10 +1891,14 @@ pub fn tokenize_opts(text: &str, grammar: &NumberGrammar) -> Vec<Token> {
             // "minus" word.  Gated to a clause start or just-after-a-space — a
             // hyphen following a word or number ("COVID-19", "5-10") is a
             // separator/range, not a sign, and is left to the punctuation path.
-            // Emit the U+2212 MINUS SIGN so it reuses the existing per-language
-            // symbol reading (`lookup_symbol_name`); the currency symbol and
-            // digits tokenise normally on the following iterations.
-            tokens.push(Token::Punctuation('−'));
+            // Keep the hyphen as written and mark it an *operator*: C reads a
+            // leading `-` by translating the character as a word — Finnish
+            // `*_rules` has `__) - (  mi:nus`, Greek a `- m'ion` list entry —
+            // and reads the *operation*, not the dictionary's name for the sign,
+            // which in several languages is "minus sign" (uk "знак мінуса", he
+            // "סימן מינוס").  The currency symbol and digits tokenise normally
+            // on the following iterations.
+            tokens.push(Token::Operator('-'));
         } else if c.is_ascii_digit() {
             let mut digits = String::new();
             digits.push(c);
@@ -1904,7 +2030,7 @@ pub fn tokenize_opts(text: &str, grammar: &NumberGrammar) -> Vec<Token> {
                     break;
                 }
             }
-        } else if c.is_alphabetic() || c == '\'' {
+        } else if c.is_alphabetic() || (c == '\'' && grammar.apostrophe & 1 != 0) {
             // Accumulate a word (letters, apostrophes, hyphens within words).
             let mut word = String::new();
             // Lojban (`caps_mark_stress`): a capital marks the stressed syllable,
@@ -1964,6 +2090,15 @@ pub fn tokenize_opts(text: &str, grammar: &NumberGrammar) -> Vec<Token> {
                     word.push(next);
                     chars.next();
                     prev_char = next;
+                } else if next == '\''
+                    && !(grammar.apostrophe & 2 != 0
+                        || chars.clone().nth(1).is_some_and(|after| after.is_alphanumeric()))
+                {
+                    // C keeps an apostrophe in the word only *between* two
+                    // letters (`don't`, `O'Brien`); elsewhere it becomes a space
+                    // — so `hello'` is "hello", not a word the dictionary has
+                    // never seen.  Leave it for the outer loop.
+                    break;
                 } else if next.is_alphabetic() || next == '\'' || is_indic_combining(next) {
                     // Indic combining marks (virama ्, nukta ़) aren't classed as
                     // alphabetic but are part of the word — keeping them lets the
@@ -1995,11 +2130,17 @@ pub fn tokenize_opts(text: &str, grammar: &NumberGrammar) -> Vec<Token> {
             if word_break {
                 tokens.push(if hyphen_join { Token::WordJoin } else { Token::Space });
             }
-        } else if is_emoji_char(c) {
+        } else if is_emoji_char(c) && !is_clause_punctuation(c) {
             // Emoji read via the dict's emoji-name entries.  A whole sequence
             // (variation selector, skin-tone modifier, ZWJ-joined parts, or a
             // regional-indicator flag pair) stays one word so it matches the
             // multi-codepoint dictionary entry.
+            //
+            // A few codepoints in the emoji blocks are *clause punctuation* to C
+            // (`❓` and `❗` are a question and an exclamation mark, `‼` a double
+            // one): those end a clause instead of being read, so they fall
+            // through to the punctuation arm below.  `⁉` carries both properties,
+            // matches none of C's cases, and so is read by name — as it is here.
             let mut emoji = String::from(c);
             let is_regional = |ch: char| (0x1F1E6..=0x1F1FF).contains(&(ch as u32));
             if is_regional(c) {
@@ -2802,6 +2943,32 @@ fn english_suffix_needs_e(stem: &str, dict: &Dictionary) -> bool {
     ADD_E_ADDITIONS.iter().any(|suffix| stem.ends_with(suffix))
 }
 
+/// C's `nl` branch of `RemoveEnding`: does taking a `SUFX_E` suffix off this
+/// stem restore a doubled vowel?  True when the stem ends in an ASCII vowel plus
+/// a consonant and the letter before the vowel is not a vowel — `grad` (from
+/// `graden`) doubles to `graad`, while `grond` (from `gronden`) does not.
+fn dutch_suffix_doubles_vowel(stem: &str, dict: &Dictionary) -> bool {
+    let chars: Vec<char> = stem.chars().collect();
+    if chars.len() < 3 {
+        return false;
+    }
+    let (last, vowel, before) = (
+        chars[chars.len() - 1],
+        chars[chars.len() - 2],
+        chars[chars.len() - 3],
+    );
+    if !last.is_ascii() || !vowel.is_ascii() {
+        return false;
+    }
+    let is_vowel = |c: char| {
+        is_letter_wc(&dict.letter_bits, c as u32, dict.letter_bits_offset, LETTERGP_VOWEL2)
+    };
+    is_vowel(vowel)
+        && is_letter_wc(&dict.letter_bits, last as u32, dict.letter_bits_offset,
+                        crate::dictionary::LETTERGP_C)
+        && !is_vowel(before)
+}
+
 fn remove_standard_prefix(word: &str, end_type: u32) -> Option<(String, u32)> {
     if end_type & SUFX_P == 0 {
         return None;
@@ -2849,9 +3016,26 @@ fn remove_standard_suffix(word: &str, end_type: u32, dict: &Dictionary) -> Optio
     let mut stem: String = chars.iter().collect();
     let mut end_flags = (end_type & 0xfff0) | FLAG_SUFX;
 
-    if (end_type & SUFX_E) != 0 && dict.lang == "en" && english_suffix_needs_e(&stem, dict) {
-        stem.push('e');
-        end_flags |= FLAG_SUFX_E_ADDED;
+    if (end_type & SUFX_E) != 0 {
+        match dict.lang.as_str() {
+            "en" if english_suffix_needs_e(&stem, dict) => {
+                stem.push('e');
+                end_flags |= FLAG_SUFX_E_ADDED;
+            }
+            // Dutch spells a long vowel doubled in a closed syllable, so taking
+            // the suffix off has to put the second vowel back: `graden` − `en`
+            // is the stem `graad`, not `grad`, which is why C reads `Qr'a:d@n`
+            // and not `Qr'Ad@n`.  C's own test (`RemoveEnding`, the `nl` branch)
+            // is: the stem ends ASCII vowel + consonant and the letter before
+            // the vowel is not itself a vowel.
+            "nl" if dutch_suffix_doubles_vowel(&stem, dict) => {
+                let mut chars: Vec<char> = stem.chars().collect();
+                let last = chars.len() - 1;
+                chars.insert(last, chars[last - 1]);
+                stem = chars.into_iter().collect();
+            }
+            _ => {}
+        }
     }
 
     if ending == "s" || ending == "es" {
@@ -3103,6 +3287,7 @@ fn append_cardinal_group(
     dict: &Dictionary,
     grammar: &NumberGrammar,
     exact: bool,
+    preceded: bool,
 ) {
     if group.value == 0 {
         return;
@@ -3112,6 +3297,24 @@ fn append_cardinal_group(
         append_scale_word(dst, group.value, scale, dict, grammar, exact);
     } else {
         // The last group: no scale word follows, so the plain digit form.
+        //
+        // C's `LookupNum3` takes the conjunction when the group *follows* a
+        // higher scale as well as when it has hundreds of its own — its
+        // condition is `(value > 100) || (control & 1 && thousandplex == 0)`.
+        // So "1001" is "one thousand AND one" / "mil E um", and only a group
+        // below a hundred needs it here (one with hundreds already gets it
+        // inside `num3_phonemes`).
+        let wants_and = group.value < 100
+            && (grammar.hundreds.use_conjunction_with_remainder
+                || (grammar.hundreds.conjunction_before_simple_remainder
+                    && (group.value % 10 == 0
+                        || !lookup_num_phonemes(dict, &num_key(group.value)).is_empty())));
+        if preceded && wants_and {
+            let and = lookup_num_phonemes(dict, "_0and");
+            if !and.is_empty() {
+                dst.push_lookup_word(&and);
+            }
+        }
         dst.push_pronunciation(&num3_phonemes(dict, group.value, false, grammar));
     }
 }
@@ -3458,21 +3661,31 @@ fn push_fraction(
             let Some(p) = cardinal_pronunciation(&tens.to_string(), dict, grammar) else {
                 return false;
             };
-            pronunciation.push_lookup_word(&p.finish());
+            // `push_pronunciation` drops the trailing word marker, so the
+            // feminine unit below joins the tens into one numeral.
+            pronunciation.push_pronunciation(&p);
         }
         let fem = lookup_num_phonemes(dict, if value % 10 == 1 { "_1f" } else { "_2f" });
         if fem.is_empty() {
             return false;
         }
-        pronunciation.push_lookup_word(&fem);
+        // Part of the same numeral, as every other tens+units pair is.
+        if tens > 0 {
+            pronunciation.append_lookup_suffix(&fem);
+        } else {
+            pronunciation.push_lookup_word(&fem);
+        }
     } else {
         let Some(p) = cardinal_pronunciation(&value.to_string(), dict, grammar) else {
             return false;
         };
-        pronunciation.push_lookup_word(&p.finish());
+        pronunciation.push_pronunciation(&p);
     }
 
-    pronunciation.push_lookup_word(&suffix);
+    // C `strcat(ph_buf, buf1)`: the scale word joins the numerator *inside* one
+    // word, which is what makes `ru "1,2"` one unit — `V#d;'in_ _:'i_:
+    // dv;'e_d;Is;'AtYx`, not two words with a gap between them.
+    pronunciation.append_lookup_suffix(&suffix);
     true
 }
 
@@ -3545,9 +3758,11 @@ fn cardinal_pronunciation(
             // "000" → the leading zeros plus a final "zero" (an all-zero run).
             result.push_lookup_word(&lookup_num_phonemes(dict, "_0"));
         } else {
+            let mut spoken = false;
             for group in split_scale_groups(value, dict) {
                 let exact = scale_group_is_exact(value, group.scale);
-                append_cardinal_group(&mut result, group, dict, grammar, exact);
+                append_cardinal_group(&mut result, group, dict, grammar, exact, spoken);
+                spoken |= group.value != 0;
             }
         }
         return Some(result);
@@ -3560,21 +3775,23 @@ fn cardinal_pronunciation(
         return Some(pronunciation);
     }
 
-    // A round hundred in 1100–1900 reads as "N hundred" ("nineteen hundred",
-    // "quinze cents") — the common reading for years.  2000 and above use the
-    // standard thousands form ("two thousand", "deux mille"); reading them as
-    // "twenty hundred" / "vingt cents" was wrong (a plain number is never a year).
-    let is_year_form = (1100..=1999).contains(&value) && value % 100 == 0;
-    if is_year_form {
-        let mut pronunciation = num3_phonemes(dict, (value / 100) as u32, false, grammar);
-        pronunciation.append_lookup_suffix(&lookup_num_phonemes(dict, "_0C"));
-        return Some(pronunciation);
+    // C `NUM_1900`: 1900–1999 read as "nineteen hundred (and) …" — `hundreds`
+    // is 19, which the three-digit path already handles (`_19` + `_0C` + the
+    // usual conjunction).  Only the ten languages that set the flag do this;
+    // the port used to read *every* round hundred from 1100 up this way, in
+    // every language, so `en 1500` was "fifteen hundred" where upstream says
+    // "one thousand five hundred", `de 1100` "elfhundert" for "ein tausend ein
+    // hundert" — and `en 1984` missed the year reading entirely.
+    if grammar.year_1900 && (1900..=1999).contains(&value) {
+        return Some(num3_phonemes(dict, value as u32, false, grammar));
     }
 
     let mut result = Pronunciation::default();
+    let mut spoken = false;
     for group in split_scale_groups(value, dict) {
         let exact = scale_group_is_exact(value, group.scale);
-        append_cardinal_group(&mut result, group, dict, grammar, exact);
+        append_cardinal_group(&mut result, group, dict, grammar, exact, spoken);
+        spoken |= group.value != 0;
     }
 
     Some(result)
@@ -3719,7 +3936,7 @@ fn try_ordinal_number(
     for &group in &groups[..last_nonzero] {
         // These groups all precede the last non-zero group, so a lower non-zero
         // digit always follows — never an exact scale group.
-        append_cardinal_group(&mut pronunciation, group, dict, grammar, false);
+        append_cardinal_group(&mut pronunciation, group, dict, grammar, false, false);
     }
 
     let final_group = groups[last_nonzero];
@@ -3810,6 +4027,15 @@ pub struct PosExpect {
     /// `$u+ $strend $verbf $allcaps $only`, so without the flag the lookup falls
     /// through to a flagless entry and the pronoun keeps primary stress.
     pub all_upper: bool,
+    /// The letters of this *same* word that have already been dealt with, for a
+    /// rule pre-context that reaches back past the fragment being translated.
+    /// NUL-padded, like [`Self::next_word`].
+    ///
+    /// C translates a word by advancing a pointer through the clause buffer, so
+    /// after spelling the unpronounceable letters of `s's` the leftover `'s` is
+    /// still matched with the `s` in front of it — which is what picks
+    /// `s) 's` → `I2z` over the bare `'s` → `z`.
+    pub prev_letters: [u8; 8],
     /// The first few UTF-8 bytes of the *following* word, NUL-padded.
     ///
     /// A rule's post-context may reach past the word boundary — Portuguese's
@@ -3987,6 +4213,9 @@ fn decompose_hangul(word: &str) -> Option<String> {
 /// TEXTMODE replacement", to stop a replacement from recursively re-expanding.
 /// Bit 30 — unused by the rules engine's word flags.
 const FLAG_IN_TEXTMODE: u32 = 0x4000_0000;
+/// `$unstressend` (dictionary flag bit 11): the word loses its stress when it ends
+/// the clause.  C's `FLAG_UNSTRESS_END`, the counterpart of `FLAG_STRESS_END`.
+const FLAG_UNSTRESS_END: u32 = 1 << 11;
 
 /// Peel a chain of stacked suffixes.
 ///
@@ -3996,8 +4225,9 @@ const FLAG_IN_TEXTMODE: u32 = 0x4000_0000;
 /// suffix's phonemes go *before* those collected so far, since the loop walks
 /// outside-in.
 ///
-/// Returns the innermost stem still to translate, its `end_type`, and the
-/// accumulated suffix phonemes.  Without this, `s's's` lost the stem and read
+/// Returns the innermost stem still to translate, its `end_type`, the
+/// accumulated suffix phonemes, and the stem phonemes of the last
+/// re-translation in the chain.  Without this, `s's's` lost the stem and read
 /// `s'I2zI2z` instead of `'EsI2zI2z`.
 #[allow(clippy::too_many_arguments)]
 fn peel_stacked_suffixes(
@@ -4007,13 +4237,14 @@ fn peel_stacked_suffixes(
     letter_bits: &[u8; 256],
     lang_opts: &LangOptions,
     phdata: &PhonemeData,
-) -> (String, u32, Vec<u8>) {
+) -> PeeledSuffixes {
     /// Same bound as C's prefix loop; no real word stacks this many suffixes.
     const MAX_SUFFIXES: usize = 50;
 
     let mut cur_word = word.to_string();
     let mut cur_end_type = result.end_type;
     let mut end_phonemes: Vec<u8> = result.end_phonemes.to_vec();
+    let mut stem_phonemes: Option<Vec<u8>> = None;
 
     for _ in 0..MAX_SUFFIXES {
         if cur_end_type & SUFX_M == 0 {
@@ -4060,11 +4291,30 @@ fn peel_stacked_suffixes(
         merged.extend_from_slice(&end_phonemes);
         end_phonemes = merged;
 
+        // What this re-translation made of the stem *without* its own ending.
+        // `SUFX_Q` ("don't retranslate") on that ending means the caller must
+        // keep exactly this, so it cannot be recomputed later.
+        stem_phonemes = Some(
+            stem_rules.phonemes.iter().copied().take_while(|&b| b != 0).collect(),
+        );
         cur_word = stem;
         cur_end_type = stem_rules.end_type;
     }
 
-    (cur_word, cur_end_type, end_phonemes)
+    PeeledSuffixes { word: cur_word, end_type: cur_end_type, end_phonemes, stem_phonemes }
+}
+
+/// What [`peel_stacked_suffixes`] found.
+struct PeeledSuffixes {
+    /// The innermost stem still to translate.
+    word: String,
+    /// That stem's own ending type.
+    end_type: u32,
+    /// Every suffix's phonemes, innermost first.
+    end_phonemes: Vec<u8>,
+    /// The stem phonemes produced by the last re-translation in the chain, if
+    /// the chain ran at all.
+    stem_phonemes: Option<Vec<u8>>,
 }
 
 /// Whether `code` is a **tone phoneme** — a `phSTRESS`-type entry that carries
@@ -4214,6 +4464,11 @@ fn word_to_phonemes_inner(
                 // Chinese) needs the same word segmentation as ordinary input,
                 // or only its first word is spoken.
                 let mut phonemes: Vec<u8> = Vec::new();
+                // Set when a part is dropped because its translation is a
+                // language-switch marker: the entry *was* understood, so the
+                // word must come out silent rather than fall through to reading
+                // the replacement text as phoneme codes.
+                let mut dropped_switch = false;
                 // Tokenize rather than just splitting on whitespace: a script
                 // written without spaces (Thai, Chinese) needs the same word
                 // segmentation as ordinary input, or only its first word is
@@ -4238,12 +4493,67 @@ fn word_to_phonemes_inner(
                     parts = replacement.split_whitespace().map(str::to_string).collect();
                 }
                 for part in &parts {
+                    // Re-translate each replacement word the way the tokenizer
+                    // hands an input word over: lower-cased for the dictionary
+                    // and the letter rules, with the capitalisation carried in
+                    // the flags instead.  German names every symbol with a
+                    // capitalised noun (`∑` → "Summenzeichen", `😀` →
+                    // "grinsendes Gesicht"); without this the rules match
+                    // nothing, the part is dropped, and a single-word reading
+                    // falls through to being read as raw phoneme *codes*
+                    // (`-v de ∑` → `B'AE,EQ@,aIQqJ^Q"QE2`).
+                    let lower = part.to_lowercase();
+                    let letters: Vec<char> =
+                        part.chars().filter(|c| c.is_alphabetic()).collect();
+                    // Clause position is deliberately *not* passed down: an
+                    // `$atend` entry is chosen by the word's position in the
+                    // clause buffer, and a replacement word never has one, so C
+                    // reads `≤` as "less than or equal **tU**", the running-text
+                    // form, even at the end of a clause.  The clause-end flags
+                    // that do apply (`$u+`, `$strend`, `$unstressend`) are
+                    // handled below instead.
+                    let part_expect = PosExpect {
+                        first_upper: part.chars().next().is_some_and(char::is_uppercase),
+                        all_upper: !letters.is_empty()
+                            && letters.iter().all(|c| c.is_uppercase()),
+                        ..PosExpect::default()
+                    };
                     let wr = word_to_phonemes_inner(
-                        part, dict, phdata, stress_opts, lang_opts,
-                        rule_word_flags | FLAG_IN_TEXTMODE, PosExpect::default(),
+                        &lower, dict, phdata, stress_opts, lang_opts,
+                        rule_word_flags | FLAG_IN_TEXTMODE, part_expect,
                     );
-                    let ph = wr.phonemes.strip_suffix(&[0]).unwrap_or(&wr.phonemes);
+                    // The clause-end stress attributes *do* apply, and C
+                    // applies them to every word of the replacement rather than
+                    // just its last — `÷` reads "divided b'aI", `es ™` "símbolo
+                    // D'e marca comercial", and Hungarian's `$unstressend`
+                    // words go the other way (`→` → `j,ob: _!,oldAlR2A …`).
+                    // They only apply when the symbol itself ends the clause:
+                    // `a 👍 b` and `👍 the` both keep "up" reduced.
+                    let mut owned;
+                    let mut ph = wr.phonemes.strip_suffix(&[0]).unwrap_or(&wr.phonemes);
+                    if expect.at_clause_end
+                        && wr.dict_flags
+                            & (crate::dictionary::FLAG_STRESS_END
+                                | crate::dictionary::FLAG_STRESS_END2
+                                | FLAG_UNSTRESS_END)
+                            != 0
+                    {
+                        owned = ph.to_vec();
+                        let to = if wr.dict_flags & FLAG_UNSTRESS_END != 0 { 3 } else { 4 };
+                        change_word_stress(&mut owned, phdata, to);
+                        ph = &owned[..];
+                    }
                     if ph.is_empty() {
+                        continue;
+                    }
+                    // A replacement word whose translation is a language-switch
+                    // marker (German `©` → "Copyright", which the de rules send
+                    // to English) can't be switched from here — the switch is
+                    // applied one level up, per clause token.  Drop the part
+                    // rather than emit the marker as if it were a phoneme; C
+                    // produces nothing for these too.
+                    if ph[0] == crate::phoneme::PHON_SWITCH {
+                        dropped_switch = true;
                         continue;
                     }
                     if !phonemes.is_empty() {
@@ -4251,7 +4561,7 @@ fn word_to_phonemes_inner(
                     }
                     phonemes.extend_from_slice(ph);
                 }
-                if !phonemes.is_empty() {
+                if !phonemes.is_empty() || dropped_switch {
                     return WordResult { phonemes, dict_flags: 0, found_in_list: false };
                 }
             }
@@ -4274,9 +4584,15 @@ fn word_to_phonemes_inner(
             let mut phonemes = result.phonemes.clone();
             // Apply stress placement
             set_word_stress(&mut phonemes, phdata, stress_opts, Some(dict_flags as u32), -1, 0);
-            // Stressed-vowel upgrading (e.g. Turkish e→E, o→O under primary stress)
-            if stress_opts.alt_stress_upgrade {
-                apply_alt_stress_upgrade(&mut phonemes, phdata);
+            // (No stressed-vowel upgrading here: the pronunciation came from the
+            // list, and C's `isTranslationGiven` gate keeps the vowel changes off
+            // a word whose phonemes were given — `tr b` is `b'e`, not `b'E`.)
+            if stress_opts.alt_attributes
+                && dict_flags & (crate::dictionary::FLAG_ALT_TRANS
+                    | crate::dictionary::FLAG_ALT2_TRANS) != 0
+            {
+                let alt2 = dict_flags & crate::dictionary::FLAG_ALT2_TRANS != 0;
+                apply_special_attribute2(&mut phonemes, phdata, alt2);
             }
             // Word-final devoicing (e.g. German Auslautverhärtung)
             if stress_opts.word_final_devoicing {
@@ -4319,8 +4635,15 @@ fn word_to_phonemes_inner(
     // the start of the *next* word after it so a post-context can reach across
     // the boundary (`_) o (_C`).  The translation loop itself stops at the
     // space, so the extra text is only ever read by a context.
-    let mut word_buf = Vec::with_capacity(word.len() + 12);
+    let mut word_buf = Vec::with_capacity(word.len() + 20);
     word_buf.push(b' ');
+    // Letters of the same word that come *before* this fragment, so a rule's
+    // pre-context can see them.  They are not translated: `word_start` points
+    // past them, and because the test for `_`/start-of-word reads the buffer
+    // byte itself, the fragment correctly stops counting as a word start.
+    let prev = expect.prev_letters.split(|&b| b == 0).next().unwrap_or(&[]);
+    word_buf.extend_from_slice(prev);
+    let word_start = word_buf.len();
     word_buf.extend_from_slice(word.as_bytes());
     word_buf.push(b' ');
     let next = expect.next_word.split(|&b| b == 0).next().unwrap_or(&[]);
@@ -4330,12 +4653,16 @@ fn word_to_phonemes_inner(
     }
     word_buf.push(0);
 
+    // C passes the flags from the *list* lookup into `TranslateRules`
+    // (`dict_flags[0]`), which is what lets a `$w_alt<n>` rule condition see a
+    // flags-only entry: `en_list`'s `banana $alt3` is what selects the `a#`
+    // rule, giving upstream's `ba#n'A:n@`.
     let result = translate_rules_phdata(
         dict,
         &word_buf,
-        1,   // word_start = 1 (skip leading space)
+        word_start, // past the leading space and any in-word pre-context
         rule_word_flags,
-        0,   // dict_flags
+        dict_flags_from_lookup,
         &letter_bits,
         lang_opts.dict_condition,
         &mut vowel_count,
@@ -4353,9 +4680,9 @@ fn word_to_phonemes_inner(
         let r = crate::dictionary::rules::translate_rules_ext(
             dict,
             &word_buf,
-            1,
+            word_start,
             rule_word_flags,
-            0,
+            dict_flags_from_lookup,
             &letter_bits,
             lang_opts.dict_condition,
             &mut vc,
@@ -4415,11 +4742,12 @@ fn word_to_phonemes_inner(
             // collected (C's `strcpy(end_phonemes2, end_phonemes); … strcat`).
             // Bounded like C's prefix loop; upstream left this loop uncapped,
             // which is how a 440-byte `s's's…` smashed its stack (#2495).
-            let (peeled_word, peeled_end_type, peeled_end_phonemes) =
+            let peeled =
                 peel_stacked_suffixes(word, &result, dict, &letter_bits, lang_opts, phdata);
-            let word = peeled_word.as_str();
-            let result_end_type = peeled_end_type;
-            let result_end_phonemes = peeled_end_phonemes;
+            let word = peeled.word.as_str();
+            let result_end_type = peeled.end_type;
+            let result_end_phonemes = peeled.end_phonemes;
+            let peeled_stem_phonemes = peeled.stem_phonemes;
             if let Some((stem, end_flags, stem_word_flags)) =
                 remove_standard_suffix(word, result_end_type, dict)
             {
@@ -4452,6 +4780,13 @@ fn word_to_phonemes_inner(
                         combined.extend_from_slice(&stem_lookup.phonemes);
                         stress_dict_flags = stem_lookup.flags1.0;
                         used_stem = true;
+                    } else {
+                        // A *flags-only* entry for the stem still applies, as it
+                        // does in C ("Flags:  somm   $alt2" in its trace): the
+                        // flags decide the word's stress and its alternate vowel
+                        // quality even though the pronunciation comes from the
+                        // rules.  Italian `somma` reads `s'omma` because of it.
+                        stress_dict_flags |= stem_lookup.flags1.0;
                     }
                 }
 
@@ -4500,6 +4835,20 @@ fn word_to_phonemes_inner(
                     append_raw_phonemes(&mut combined, &result_end_phonemes);
                     combined.push(0);
                     combined
+                } else if let Some(stem_ph) = peeled_stem_phonemes
+                    .filter(|ph| no_retranslate && ph.iter().any(|&b| b != 0))
+                {
+                    // `SUFX_Q` reached through a stacked suffix: the inner
+                    // ending forbids retranslating its stem, so keep what the
+                    // chain's own re-translation made of it and add every
+                    // suffix on top.  Falling back to the *whole word's*
+                    // phonemes here dropped the inner ending — Dutch
+                    // `vorige` (= `vorig` + `-e`, where `ig` is a `S2dq`
+                    // ending) read `v'o:r@` instead of `v'o:r@Q@`.
+                    let mut combined = stem_ph;
+                    append_raw_phonemes(&mut combined, &result_end_phonemes);
+                    combined.push(0);
+                    combined
                 } else {
                     let mut fallback = fallback_phonemes(&result);
                     fallback.push(0);
@@ -4533,6 +4882,14 @@ fn word_to_phonemes_inner(
         // Stressed-vowel upgrading (e.g. Turkish e→E, o→O under primary stress)
         if stress_opts.alt_stress_upgrade {
             apply_alt_stress_upgrade(&mut phonemes, phdata);
+        }
+        if stress_opts.alt_attributes {
+            let flags = stress_dict_flags;
+            if flags & (crate::dictionary::FLAG_ALT_TRANS | crate::dictionary::FLAG_ALT2_TRANS) != 0
+            {
+                let alt2 = flags & crate::dictionary::FLAG_ALT2_TRANS != 0;
+                apply_special_attribute2(&mut phonemes, phdata, alt2);
+            }
         }
         // Word-final devoicing (e.g. German Auslautverhärtung)
         if stress_opts.word_final_devoicing {
@@ -4650,7 +5007,14 @@ pub(crate) fn parse_inline_phonemes(content: &str, phdata: &PhonemeData) -> Vec<
 /// `--ipa`/`-x` path.  `<voice>` language spans are read in `lang` (audio voice
 /// switching is not yet wired).
 pub fn ssml_to_speech_text(text: &str, lang: &str) -> String {
-    ssml::process_markup(text)
+    ssml_to_speech_text_opts(text, lang, 100)
+}
+
+/// [`ssml_to_speech_text`] with the `--ssml-break` percentage
+/// (`espeakSSML_BREAK_MUL`) applied to every `<break time=…>`.
+pub fn ssml_to_speech_text_opts(text: &str, lang: &str, ssml_break: u32) -> String {
+    ssml::process_markup_opts(text, ssml_break)
+        .0
         .into_iter()
         .map(|s| interpret_segment_text(&s.text, s.interpret, lang))
         .collect()
@@ -4996,9 +5360,12 @@ fn native_scripts(lang: &str) -> &'static [Script] {
     match primary_bcp47_subtag(lang) {
         "ru" | "uk" | "bg" | "be" | "mk" | "mn" | "kk" | "ky" | "tt" | "ba"
         | "cv" | "tg" | "os" | "cu" | "ab" | "nog" => &[Script::Cyrillic],
-        // Serbian is digraphic: the voice reads Cyrillic *and* Latin
-        // (`sr "Beograd"` == `sr "Београд"`), so Latin must not switch away.
-        "sr" => &[Script::Cyrillic, Script::Latin],
+        // Serbo-Croatian is digraphic, and all three voices share one
+        // dictionary (C: `strcpy(tr->dictionary_name, "hbs")`) and declare
+        // Cyrillic as `langopts.our_alphabet` — so `sr "Beograd"` ==
+        // `sr "Београд"`, and `bs`/`hr` read the Cyrillic pangram as
+        // Serbo-Croatian instead of spelling it out or switching to Russian.
+        "sr" | "bs" | "hr" => &[Script::Cyrillic, Script::Latin],
         "el" | "grc" => &[Script::Greek],
         "ar" | "fa" | "ur" | "sd" | "ps" | "ug" => &[Script::Arabic],
         "he" => &[Script::Hebrew],
@@ -5040,6 +5407,42 @@ fn alt_alphabet_voice(lang: &str, script: Script) -> Option<&'static str> {
 fn dict_knows_word(word: &str, dict: &Dictionary) -> bool {
     let ctx = LookupCtx { lookup_symbol: true, ..Default::default() };
     matches!(lookup(dict, &word.to_lowercase(), &ctx), Some(r) if r.flags1.found())
+}
+
+/// Whether the language's **own letter rules** can read this word.
+///
+/// C never switches translator by script — its `alphabets[]` table nominates a
+/// language only for *naming* an unknown letter — and several voices carry
+/// rules for a second script: Serbo-Croatian is digraphic, Macedonian and Uzbek
+/// have Latin transliterations (and Uzbek a Cyrillic one), Lingua Franca Nova a
+/// Cyrillic orthography.  A word those rules cover must therefore stay in the
+/// language, instead of being routed to whatever voice owns the script:
+/// `mk "Dzidarski"` is `dz'id&Rsk,I`, not `d'@ z'@ I_:…`, and `uz "Ўзбекча"` is
+/// `o:zb'ektS&`, not Russian.
+fn rules_know_word(word: &str, dict: &Dictionary, lang_opts: &LangOptions) -> bool {
+    if word.is_empty() || dict.rules().is_empty() {
+        return false;
+    }
+    let mut buf = Vec::with_capacity(word.len() + 3);
+    buf.push(b' ');
+    buf.extend_from_slice(word.as_bytes());
+    buf.push(b' ');
+    buf.push(0);
+    let (mut vowels, mut stressed) = (0i32, 0i32);
+    let r = crate::dictionary::rules::translate_rules(
+        dict,
+        &buf,
+        1,
+        0,
+        0,
+        &dict.letter_bits,
+        lang_opts.dict_condition,
+        &mut vowels,
+        &mut stressed,
+    );
+    // `spellword` means a letter had no rule at all — that is the case where the
+    // word really is foreign to this language.
+    !r.spellword && r.phonemes.iter().any(|&b| b != 0)
 }
 
 /// If `word` is written in a script the `lang` voice doesn't read (a Cyrillic or
@@ -6090,13 +6493,150 @@ fn apply_currency(tokens: &mut Vec<Token>, lang: &str) {
 /// Look up the spoken name of a standalone symbol via the dictionary's
 /// character-name entries (`_%`, `_$`, …), mirroring `LookupCharName`.
 /// Returns the phoneme bytes, or empty if the symbol has no name in this voice.
+/// Which name a symbol character should be read by.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SymbolName {
+    /// The character appears in running text (`a − b`).  The dictionary's own
+    /// entry for the character wins.
+    Inline,
+    /// Punctuation being announced by name (`--punct`), where C calls
+    /// `LookupCharName()` and reads the `_<char>` entry — `&` is "ampersand"
+    /// here but "and" inline.
+    Announce,
+    /// An arithmetic operator: the word for the *operation* wins over the
+    /// dictionary's name for the character ("minus", not "minus sign").
+    Operator,
+}
+
+/// How C classifies this character as clause punctuation
+/// (`clause_type_from_codepoint`): which clause type it ends, and whether it
+/// ends one even when no space follows (`OPTIONAL_SPACE_AFTER` — the Devanagari
+/// danda and the CJK full stop do, which is how scripts written without spaces
+/// get sentence breaks at all).  `None` for everything else.
+///
+/// Transcribed from the `ESPEAKNG_PROPERTY_*` clause-type properties in
+/// `ucd-tools/src/proplist.c`, keeping only the property combinations C's
+/// `switch` maps to a clause type: U+2048/U+2049 (`⁈`/`⁉`) carry both
+/// QUESTION_MARK and EXCLAMATION_MARK, hit no case, and so *are* spoken by name.
+fn clause_punctuation_class(c: char) -> Option<(ClauseTerminator, bool)> {
+    use ClauseTerminator::{Comma, Exclamation, Period, Question};
+    let code = c as u32;
+    let class = match code {
+        0x002C | 0x003A..=0x003B | 0x0387 | 0x055D | 0x060C | 0x061B | 0x0702
+        | 0x0706..=0x0708 | 0x07F8 | 0x0F14 | 0x1363..=0x1366 | 0x1802 | 0x1804 | 0x1808
+        | 0x2013..=0x2014 | 0x204F | 0x2982 | 0x2E32 | 0x2E34..=0x2E35 | 0x2E3A..=0x2E3B
+        | 0x2E41 | 0xA4FE | 0xA60D | 0xA6F4..=0xA6F6 | 0xFE10..=0xFE11 | 0xFE13..=0xFE14
+        | 0xFE31..=0xFE32 | 0xFE50..=0xFE51 | 0xFE54..=0xFE55 | 0xFF64 | 0x1144D
+        | 0x12471..=0x12472 | 0x1DA87 | 0x1DA89..=0x1DA8A | 0x1F101..=0x1F10A | 0xE002C
+        | 0xE003A..=0xE003B => (Comma, false),
+        0x00A1 | 0x00BF | 0x0EAF | 0x1801 | 0x2026 | 0x22EE..=0x22F1 | 0x3001 | 0xFE19
+        | 0xFF0C | 0xFF1A..=0xFF1B => (Comma, true),
+        0x0021 | 0x055B..=0x055C | 0x0703 | 0x07F9 | 0x1944 | 0x203C | 0x2755 | 0x2757
+        | 0x2762..=0x2763 | 0xFE15 | 0xFE57 | 0x1E95E | 0xE0021 => (Exclamation, false),
+        0xFF01 => (Exclamation, true),
+        0x002E | 0x06D4 | 0x0700..=0x0701 | 0x0704 | 0x0965 | 0x0F0E | 0x10FB | 0x1362
+        | 0x1368 | 0x166E | 0x1803 | 0x1809 | 0x2488..=0x249B | 0x2CF9 | 0x2CFE | 0x2E33
+        | 0x2E3C | 0xA4FF | 0xA60E | 0xA6F3 | 0xFE12 | 0xFE52 | 0xFF61 | 0x16AF5
+        | 0x1BC9F | 0x1DA88 | 0x1F100 | 0xE002E => (Period, false),
+        0x0589 | 0x0964 | 0x0DF4 | 0x0F0D | 0x3002 | 0xFF0E => (Period, true),
+        0x003F | 0x037E | 0x055E | 0x061F | 0x0709 | 0x1367 | 0x1945 | 0x2047
+        | 0x2753..=0x2754 | 0x2CFA..=0x2CFB | 0xA60F | 0xA6F7 | 0xFE16 | 0xFE56 | 0x11143
+        | 0x1E95F | 0xE003F => (Question, false),
+        0xFF1F => (Question, true),
+        _ => return None,
+    };
+    Some(class)
+}
+
+/// Whether the character is clause punctuation at all — it breaks the clause
+/// instead of being spoken, so it never reaches the dictionary for a name.
+fn is_clause_punctuation(c: char) -> bool {
+    clause_punctuation_class(c).is_some()
+}
+
+/// C's `IsBracket()`: a bracket or quote, which pauses rather than speaks.
+fn is_bracket(c: char) -> bool {
+    matches!(c,
+        '(' | ')' | '[' | ']' | '{' | '}' | '<' | '>' | '"' | '\'' | '`'
+        | '\u{ab}' | '\u{bb}'          // « »
+        | '\u{300a}' | '\u{300b}')     // 《 》
+        || matches!(c as u32, 0x2014..=0x201F) // dashes and the curly quotes
+}
+
+/// Does the dictionary give this character a name of its own — a bare
+/// single-character list entry such as `#` → "hash" (`en_list`) or `−` →
+/// "mínusz" (`hu_emoji`)?
+///
+/// This is the test C effectively applies to a symbol that is not clause
+/// punctuation: the character reaches `TranslateWord()` like any other token, so
+/// a list entry for it is spoken and anything else falls through.  The `_<char>`
+/// *character-name* entries (`_(` → "left paren") are deliberately **not**
+/// consulted here — C speaks those only when spelling or announcing
+/// punctuation, which is why `a ( b` is silent while `a − b` is not.
+fn dict_names_symbol(dict: &Dictionary, c: char, dict_condition: u32) -> bool {
+    dict_symbol_flags(dict, c, dict_condition).is_some()
+}
+
+/// The dictionary flags of a bare single-character entry, when it has one.
+/// `$max3` lives here: a symbol entry carrying it is spoken at most three times
+/// in a row (C's `phonemes_repeat_count`), which is what keeps `~ ~ ~ ~ ~ ~`
+/// to three tildes.
+fn dict_symbol_flags(dict: &Dictionary, c: char, dict_condition: u32) -> Option<u32> {
+    // Clause punctuation goes to the clause path, not the dictionary: Hindi
+    // `।`, Ethiopic `።` and CJK `。` all have list entries naming them, and C
+    // speaks none of them (`a ❓ b` → "a b").
+    if is_clause_punctuation(c) {
+        return None;
+    }
+    // The entry may be behind a `?n` condition — Portuguese names `§` twice,
+    // once per variety (`?1 §` / `?2 §`) — so the language's own conditions have
+    // to be in the context or neither matches.
+    let ctx = LookupCtx { lookup_symbol: true, dict_condition, ..Default::default() };
+    lookup(dict, &c.to_string(), &ctx)
+        .filter(|r| r.flags1.found() && !r.phonemes.is_empty())
+        .map(|r| r.flags1.0)
+}
+
+/// A symbol's reading, and whether it came from the dictionary **as phonemes**
+/// (C's `SFLAG_DICTIONARY`, set when `FLAG_FOUND && !FLAG_TEXTMODE`).  The
+/// difference is visible: `pl @` has phonemes in `pl_list`, so the
+/// stress-conditioned changes don't touch it (`m'awpa`), while `tr −` has
+/// *replacement text* in `tr_emoji`, which is re-translated by the rules and so
+/// does take them (`eksi` → `Eks'I`).
 fn lookup_symbol_name(
     c: char,
     dict: &Dictionary,
     phdata: &PhonemeData,
     stress_opts: &StressOpts,
     options: &LangOptions,
-) -> Vec<u8> {
+    mode: SymbolName,
+    expect: PosExpect,
+) -> (Vec<u8>, bool) {
+    // The dictionary's own entry for the character comes first.  Every shipped
+    // language carries the symbol block of its `*_emoji` data (86 of them name
+    // U+2212 MINUS SIGN alone) and those are the readings C speaks, including
+    // the ones the table below cannot express: the pause markers around `=`
+    // (`_:'i:kw@Lz_:`), "sum sign" rather than "sum" for `∑`, and every
+    // currency, arrow, fraction and sign the table never listed.
+    // An operator is read by translating the character as a word — through the
+    // language's list *and* its letter rules, which is where C finds it (`fi`
+    // `__) - (  mi:nus`, `el`'s `- m'ion` entry).  The table below is only the
+    // fallback for languages whose data has nothing.
+    if mode == SymbolName::Operator {
+        let wr = word_to_phonemes_pos(&c.to_string(), dict, phdata, stress_opts, options, expect);
+        if wr.phonemes.iter().any(|&b| b != 0) {
+            return (wr.phonemes, wr.found_in_list);
+        }
+    }
+    if mode != SymbolName::Operator && mode != SymbolName::Announce
+        && dict_names_symbol(dict, c, options.dict_condition)
+    {
+        let wr =
+            word_to_phonemes_pos(&c.to_string(), dict, phdata, stress_opts, options, expect);
+        if wr.phonemes.iter().any(|&b| b != 0) {
+            return (wr.phonemes, wr.found_in_list);
+        }
+    }
     // A few symbols have a short "word" reading that differs from their
     // spell-out character name (`_&` = "ampersand" but `&` is read "and").
     // These readings are language-specific.
@@ -6271,17 +6811,87 @@ fn lookup_symbol_name(
             out.extend_from_slice(ph);
         }
         if !out.is_empty() {
-            return out;
+            // Several words, each translated on its own: the rules did the
+            // work, so this is not a dictionary pronunciation.
+            return (out, false);
         }
+    }
+    // An operator stops here.  C reads it by translating the character (above),
+    // so when the language's data has no reading there is nothing to say — it
+    // does *not* fall back to the character's spell-out name, which would make
+    // `-5` "hyphen five" (fr "tiret", pl "myślnik"), nor to another language.
+    // The table above is this port's own addition for the languages whose data
+    // is silent; past it, silence is the right answer.
+    if mode == SymbolName::Operator {
+        return (Vec::new(), false);
     }
     // Otherwise use the dictionary character-name entry (`_%`, `_$`, …).
     for key in [format!("_{c}"), c.to_string()] {
         let wr = word_to_phonemes(&key, dict, phdata, stress_opts, options);
-        if !wr.phonemes.is_empty() {
-            return wr.phonemes;
+        // A result of nothing but terminators is not a reading: it used to be
+        // returned as one, which silenced the fallback below (`fi -5` lost its
+        // "miinus" because `_−` came back as a lone NUL).
+        if wr.phonemes.iter().any(|&b| b != 0) {
+            return (wr.phonemes, wr.found_in_list);
         }
     }
-    Vec::new()
+    // Still nothing: C's `LookupCharName` names the character in the **default
+    // voice** instead of dropping it (`language = L('e','n')` when the
+    // character's alphabet nominates nothing), wrapping the result in a
+    // language switch — `sv #` reads `(en)h'aS(sv)`.  Returning the marker
+    // hands that to the switch machinery, which re-translates the character
+    // itself in the target language; if English has no name either, nothing is
+    // spoken, as in C.
+    if primary_bcp47_subtag(&options.lang) != "en" {
+        let mut switch = vec![crate::phoneme::PHON_SWITCH];
+        switch.extend_from_slice(b"en");
+        return (switch, false);
+    }
+    (Vec::new(), false)
+}
+
+/// Lower-case a word the way the language does — C's `towlower2`.
+///
+/// Two differences from Rust's `char::to_lowercase`, which applies the *full*
+/// Unicode mapping: `İ` (U+0130) lower-cases to a bare `i` rather than `i` plus
+/// a combining dot (the dot broke the following rule match, so `tr İstanbul`
+/// lost its `s` and read `itanb'UL`), and in Turkish and Azerbaijani `I` is the
+/// *dotless* `ı` — C's `langopts.dotless_i`, which only those two set.  So `tr
+/// IŞIK` is `@S'@k`, not `iS'Ik`.
+fn lowercase_for_lang(word: &str, lang: &str) -> String {
+    let dotless_i = matches!(primary_bcp47_subtag(lang), "tr" | "az");
+    let mut out = String::with_capacity(word.len());
+    for c in word.chars() {
+        match c {
+            'I' if dotless_i => out.push('ı'),
+            'İ' => out.push('i'), // the simple mapping, as `ucd_tolower` gives
+            _ => out.extend(c.to_lowercase()),
+        }
+    }
+    out
+}
+
+/// The first few UTF-8 bytes of the next word in the clause, for the rule
+/// post-contexts that reach across a word boundary.  A *number* counts: the
+/// hyphen of `-5` is read "minus" by a rule whose post-context is "boundary then
+/// a digit" (`__) - (_D`), so the digits have to be visible.
+fn next_word_opening(tokens: &[Token], from: usize, lang: &str) -> [u8; 8] {
+    let mut out = [0u8; 8];
+    let Some(next) = tokens[from..]
+        .iter()
+        .take_while(|t| !matches!(t, Token::ClauseBoundary(_)))
+        .find_map(|t| match t {
+            Token::Word(w) => Some(lowercase_for_lang(w, lang)),
+            Token::Number(n) => Some(n.surface().to_string()),
+            _ => None,
+        })
+    else {
+        return out;
+    };
+    let b = next.as_bytes();
+    let n = (0..=b.len().min(8)).rev().find(|&k| next.is_char_boundary(k)).unwrap_or(0);
+    out[..n].copy_from_slice(&b[..n]);
+    out
 }
 
 pub(crate) fn build_translate_entries(
@@ -6292,6 +6902,9 @@ pub(crate) fn build_translate_entries(
     options: &LangOptions,
 ) -> Vec<TranslateEntry> {
     let mut entries: Vec<TranslateEntry> = Vec::with_capacity(tokens.len());
+    // `$max3` bookkeeping: which symbol is repeating, and how many times so far.
+    let mut repeat_of_symbol: Option<char> = None;
+    let mut repeat_count = 0u32;
     // Part-of-speech homograph selection: a verb-triggering function word ("to",
     // a modal) makes the next word take its `$verb` pronunciation ("to lˈɪv" not
     // "lˈaɪv"); a perfect/passive auxiliary ("had"/"have"/"was") selects `$past`
@@ -6307,18 +6920,34 @@ pub(crate) fn build_translate_entries(
     let mut at_end = vec![false; tokens.len()];
     let mut at_start = vec![false; tokens.len()];
     let mut seen_word_in_clause = false;
-    for (i, t) in tokens.iter().enumerate() {
-        match t {
-            Token::ClauseBoundary(_) => seen_word_in_clause = false,
-            t if is_word(t) => {
-                at_start[i] = !seen_word_in_clause;
-                seen_word_in_clause = true;
-                at_end[i] = !tokens[i + 1..]
-                    .iter()
-                    .take_while(|t| !matches!(t, Token::ClauseBoundary(_)))
-                    .any(is_word);
+    // A symbol that is read by name is a word of the clause like any other, so
+    // it both *takes* a clause position (`👍` alone is clause-final and keeps
+    // "up" stressed; `a 👍 b` reduces it) and *occupies* one, which stops the
+    // word before it from being clause-final (`a ÷` reads "a#", not "'eI").
+    // Punctuation that is not spoken does neither.
+    let word_like: Vec<bool> = tokens
+        .iter()
+        .map(|t| match t {
+            Token::Operator(_) => true,
+            Token::Punctuation(c) => {
+                is_spoken_symbol(*c)
+                    || punct_covers(options, *c)
+                    || dict_names_symbol(dict, *c, options.dict_condition)
             }
-            _ => {}
+            t => is_word(t),
+        })
+        .collect();
+    for (i, t) in tokens.iter().enumerate() {
+        if matches!(t, Token::ClauseBoundary(_)) {
+            seen_word_in_clause = false;
+        } else if word_like[i] {
+            at_start[i] = !seen_word_in_clause;
+            seen_word_in_clause = true;
+            at_end[i] = !tokens[i + 1..]
+                .iter()
+                .enumerate()
+                .take_while(|(_, t)| !matches!(t, Token::ClauseBoundary(_)))
+                .any(|(k, _)| word_like[i + 1 + k]);
         }
     }
 
@@ -6363,7 +6992,23 @@ pub(crate) fn build_translate_entries(
                 // letters are covered by the language's own rules (English reads
                 // Greek letters directly, so `αβγ` is one word, while Cyrillic
                 // falls through to spelling and comes out as separate words).
-                let foreign = word
+                // The dictionary's `.replace` table runs before anything else —
+                // C applies it per character in `TranslateClause` — and it is
+                // how a digraphic language reads its second script:
+                // `mk "Dzidarski"` → `ѕидарски`, `lfn "Тота"` → `tota`,
+                // `uz "Ўзбекча"` → `ózbekça`.  The script tests below have to
+                // look at the *replaced* text, or the word is declared foreign
+                // and spelled out letter by letter.
+                // The table is keyed on lower case, as C's `SubstituteChar` is
+                // (it folds the character before the lookup), so `Dzidarski`
+                // transliterates as well as `dzidarski` does.
+                let replaced = dict.apply_replacements(word);
+                // Only the *script* tests below look at the replaced text; the
+                // translation itself keeps the original, since
+                // `word_to_phonemes` applies the table again (Icelandic's
+                // `x → xz` would double up).
+                let word_script = replaced.as_deref().unwrap_or(word);
+                let foreign = word_script
                     .chars()
                     .find_map(char_script)
                     .filter(|sc| !native_scripts(&options.lang).contains(sc));
@@ -6371,6 +7016,11 @@ pub(crate) fn build_translate_entries(
                     if !script_uses_words(sc)
                         && alt_alphabet_voice(&options.lang, sc).is_none()
                         && !dict_knows_word(word, dict)
+                        // …and only when this language's own rules can't read
+                        // it: Macedonian and Uzbek have Latin transliterations,
+                        // Uzbek and Lingua Franca Nova Cyrillic ones, so those
+                        // words are translated, not spelled out.
+                        && !rules_know_word(word_script, dict, options)
                     {
                         // If no character has a name here (Han, Hebrew, …), fall
                         // through to the voice switch rather than dropping the
@@ -6392,9 +7042,11 @@ pub(crate) fn build_translate_entries(
                         }
                     }
                 }
-                let switch_target = foreign_script_voice(word, &options.lang)
+                let switch_target = foreign_script_voice(word_script, &options.lang)
                     .or_else(|| foreign.map(script_voice));
-                if let Some(target) = switch_target.filter(|_| !dict_knows_word(word, dict)) {
+                if let Some(target) = switch_target.filter(|_| {
+                    !dict_knows_word(word, dict) && !rules_know_word(word_script, dict, options)
+                }) {
                     let mut phonemes = vec![crate::phoneme::PHON_SWITCH];
                     phonemes.extend_from_slice(target.as_bytes());
                     entries.push(TranslateEntry {
@@ -6408,26 +7060,11 @@ pub(crate) fn build_translate_entries(
                     prev_word = None;
                     continue;
                 }
-                let lower = word.to_lowercase();
+                let lower = lowercase_for_lang(word, &options.lang);
                 let letters = word.chars().filter(|c| c.is_alphabetic());
                 // The opening of the next word in the same clause, for the
                 // post-contexts that reach across the boundary.
-                let mut next_word = [0u8; 8];
-                if let Some(nw) = tokens[token_ix + 1..]
-                    .iter()
-                    .take_while(|t| !matches!(t, Token::ClauseBoundary(_)))
-                    .find_map(|t| match t {
-                        Token::Word(w) => Some(w.to_lowercase()),
-                        _ => None,
-                    })
-                {
-                    let b = nw.as_bytes();
-                    let n = (0..=b.len().min(8))
-                        .rev()
-                        .find(|&k| nw.is_char_boundary(k))
-                        .unwrap_or(0);
-                    next_word[..n].copy_from_slice(&b[..n]);
-                }
+                let next_word = next_word_opening(tokens, token_ix + 1, &options.lang);
                 let expect = PosExpect {
                     at_clause_end: at_end[token_ix],
                     at_clause_start: at_start[token_ix],
@@ -6460,8 +7097,27 @@ pub(crate) fn build_translate_entries(
                     {
                         let mut ph = letters;
                         if !rest.is_empty() {
-                            let tail =
-                                word_to_phonemes(rest, dict, phdata, stress_opts, options);
+                            // The remainder is still part of the same word, so
+                            // the letters already spelled stay available as a
+                            // rule pre-context (`s's` → `'Es` + `s) 's` → `I2z`,
+                            // not the bare `'s` → `z`).
+                            let spelled = &lower[..lower.len() - rest.len()];
+                            let mut prev_letters = [0u8; 8];
+                            let b = spelled.as_bytes();
+                            let keep = b.len().min(prev_letters.len());
+                            let from = (0..=keep)
+                                .rev()
+                                .find(|&k| spelled.is_char_boundary(b.len() - k))
+                                .unwrap_or(0);
+                            prev_letters[..from].copy_from_slice(&b[b.len() - from..]);
+                            let tail = word_to_phonemes_pos(
+                                rest,
+                                dict,
+                                phdata,
+                                stress_opts,
+                                options,
+                                PosExpect { prev_letters, ..PosExpect::default() },
+                            );
                             ph.extend(tail.phonemes.iter().copied().filter(|&b| b != 0));
                         }
                         wr.phonemes = ph;
@@ -6664,10 +7320,17 @@ pub(crate) fn build_translate_entries(
                 prev_word = None;
                 // `--punct`: announce clause punctuation by name instead of a
                 // silent break.  Falls back to a break if the char has no name.
-                let name = if punct_covers(options, *c) {
-                    lookup_symbol_name(*c, dict, phdata, stress_opts, options)
+                let (name, name_from_dict) = if punct_covers(options, *c) {
+                    lookup_symbol_name(
+                        *c, dict, phdata, stress_opts, options, SymbolName::Announce,
+                        PosExpect {
+                            at_clause_end: at_end[token_ix],
+                            at_clause_start: at_start[token_ix],
+                            ..PosExpect::default()
+                        },
+                    )
                 } else {
-                    Vec::new()
+                    (Vec::new(), false)
                 };
                 if name.is_empty() {
                     entries.push(TranslateEntry {
@@ -6685,13 +7348,54 @@ pub(crate) fn build_translate_entries(
                         kind:       TranslateEntryKind::Word,
                         word_lower: None,
                         no_word_gap: false,
-                        found_in_list: false,
+                        // A dictionary pronunciation is a *translation given*
+                        // (C's `SFLAG_DICTIONARY`), which suppresses the
+                        // stress-conditioned phoneme changes; a name that came
+                        // from replacement text was read by the rules and does
+                        // take them.
+                        found_in_list: name_from_dict,
                     });
                 }
             }
-            Token::Punctuation(c) if is_spoken_symbol(*c) || punct_covers(options, *c) => {
-                // Technical symbols read as their name by default (# $ % & * + / = @ ~).
-                let phonemes = lookup_symbol_name(*c, dict, phdata, stress_opts, options);
+            Token::Operator(c) | Token::Punctuation(c)
+                if matches!(token, Token::Operator(_))
+                    || is_spoken_symbol(*c)
+                    || punct_covers(options, *c)
+                    || dict_names_symbol(dict, *c, options.dict_condition) =>
+            {
+                // Technical symbols read as their name by default (# $ % & * + / = @ ~),
+                // as does any character the dictionary names (see `dict_names_symbol`).
+                let mode = if matches!(token, Token::Operator(_)) {
+                    SymbolName::Operator
+                } else if punct_covers(options, *c) && !is_spoken_symbol(*c) {
+                    SymbolName::Announce
+                } else {
+                    SymbolName::Inline
+                };
+                // `$max3`: a symbol repeated more than three times in a row is
+                // dropped after the third (C's `phonemes_repeat_count`), so
+                // `~ ~ ~ ~ ~ ~` is three tildes.  Letters are *not* limited —
+                // C limits them too, which upstream #2551 reports as a bug and
+                // #2552 fixes; this port already reads all the repeats.
+                let max3 = dict_symbol_flags(dict, *c, options.dict_condition)
+                    .is_some_and(|f| f & crate::dictionary::FLAG_MAX3 != 0);
+                let (phonemes, symbol_from_dict) = lookup_symbol_name(
+                    *c, dict, phdata, stress_opts, options, mode,
+                    PosExpect {
+                        at_clause_end: at_end[token_ix],
+                        at_clause_start: at_start[token_ix],
+                        next_word: next_word_opening(tokens, token_ix + 1, &options.lang),
+                        ..PosExpect::default()
+                    },
+                );
+                let phonemes = if max3 && repeat_of_symbol == Some(*c) {
+                    repeat_count += 1;
+                    if repeat_count > 3 { Vec::new() } else { phonemes }
+                } else {
+                    repeat_of_symbol = max3.then_some(*c);
+                    repeat_count = 1;
+                    phonemes
+                };
                 if phonemes.is_empty() {
                     entries.push(TranslateEntry {
                         phonemes, dict_flags: 0,
@@ -6702,9 +7406,27 @@ pub(crate) fn build_translate_entries(
                 } else {
                     entries.push(TranslateEntry {
                         phonemes, dict_flags: 0,
-                        kind: TranslateEntryKind::Word, word_lower: None,
+                        kind: TranslateEntryKind::Word,
+                        // What a language switch in these phonemes looks up in
+                        // the target language.  A switch that came from the
+                        // dictionary *entry* re-translates the character itself
+                        // (`fr ©` is a bare `phonSWITCH`, and English's own `©`
+                        // says "copyright"); a switch from the character-name
+                        // fallback is C's `LookupCharName`, which reads the
+                        // `_<char>` entry there (`he @` → English `_@` → "at
+                        // sign").  Without either the marker leaked out as `_^_`.
+                        word_lower: Some(if dict_names_symbol(dict, *c, options.dict_condition) {
+                            c.to_string()
+                        } else {
+                            format!("_{c}")
+                        }),
                         no_word_gap: false,
-                        found_in_list: false,
+                        // Phonemes from the dictionary are a *translation
+                        // given*, so the stress-conditioned changes don't apply
+                        // (`pl @` is `m'awpa` where the typed word "małpa",
+                        // read by the rules, is `m'awpa#`); replacement text is
+                        // re-translated and does take them (`tr −` → `Eks'I`).
+                        found_in_list: symbol_from_dict,
                     });
                 }
             }
@@ -6718,6 +7440,19 @@ pub(crate) fn build_translate_entries(
                     found_in_list: false,
                 });
             }
+        }
+        // Any other word that speaks ends the `$max3` run, as C clears
+        // `phonemes_repeat_count` for every word without the flag: the three
+        // tildes of `~ a ~ ~ ~ ~` start again after the "a".
+        let same_symbol = match token {
+            Token::Punctuation(c) | Token::Operator(c) => repeat_of_symbol == Some(*c),
+            _ => false,
+        };
+        if !same_symbol
+            && entries.last().is_some_and(|e| e.phonemes.iter().any(|&b| b != 0))
+        {
+            repeat_of_symbol = None;
+            repeat_count = 0;
         }
     }
     // Retag words whose translation is a language-switch marker so that
@@ -7192,6 +7927,7 @@ impl Translator {
         let mut options = LangOptions::for_lang(base);
         // Honour the voice's `dictrules` directive (Brazilian Portuguese etc.).
         options.dict_condition = crate::voices::voice_dict_condition(&dir, base);
+        options.bracket_pause = crate::voices::voice_bracket_pause(&dir, base);
         Ok(Translator { options, data_dir: dir })
     }
 
@@ -7270,6 +8006,103 @@ impl Translator {
     ///   3. Phoneme code → IPA string rendering
     pub fn text_to_ipa(&self, text: &str) -> Result<String> {
         self.text_to_ipa_with_options(text, false, false, false, true)
+    }
+
+    /// Each source word with the phonemes it was rendered as — the Rust form of
+    /// upstream's proposed `espeak_TextToWordPhonemePairs` (PR #2533).
+    ///
+    /// The phonemes come from the *same* rendering path as
+    /// [`text_to_ipa`](Self::text_to_ipa), so joining them with single spaces
+    /// reproduces that output; the alignment is taken from the pipeline rather
+    /// than re-derived, which is what makes the awkward cases right — a number
+    /// expands to several spoken words (`2.5` → `tˈuː pɔɪnt fˈaɪv`), an
+    /// abbreviation to a different word, and a multi-word dictionary entry to
+    /// one pronunciation unit.
+    ///
+    /// `offset`/`length` are byte offsets into `text`, located by searching
+    /// forward for the token, so they are exact for text the tokenizer did not
+    /// rewrite and `length == 0` where it did (a merged currency amount, a
+    /// substituted abbreviation).
+    ///
+    /// ```no_run
+    /// let tr = espeak_ng::Translator::new("en-us", None).unwrap();
+    /// for w in tr.text_to_ipa_words("Version 2.5").unwrap() {
+    ///     println!("{} -> {}", w.word, w.phonemes);
+    /// }
+    /// ```
+    pub fn text_to_ipa_words(&self, text: &str) -> Result<Vec<WordPhonemes>> {
+        let mut track: Vec<TokenCodes> = Vec::new();
+        let codes = self.translate_to_codes_tracked(text, true, Some(&mut track))?;
+        let mut phdata = PhonemeData::load(&self.data_dir)?;
+        select_phoneme_table(&mut phdata, &self.data_dir, &self.options.lang)?;
+        let render = |slice: &[PhonemeCode]| {
+            phoneme_ipa::codes_to_ipa_opts(
+                slice,
+                &phdata,
+                &self.data_dir,
+                &self.options.lang,
+                false,
+                self.options.ipa_tie,
+                self.options.ipa_separator,
+            )
+        };
+        // The flat rendering is authoritative: where the per-word counts add up
+        // to it, the words are cut straight out of it.
+        let flat = render(&codes);
+        let pieces: Vec<&str> = flat.split_whitespace().collect();
+        let rendered: Vec<String> = track
+            .iter()
+            .map(|t| render(&codes[t.codes.clone()]).trim().to_string())
+            .collect();
+        let counts: Vec<usize> = rendered.iter().map(|r| r.split_whitespace().count()).collect();
+        let exact = counts.iter().sum::<usize>() == pieces.len();
+
+        let mut out = Vec::new();
+        let mut taken = 0;
+        let mut search_from = 0;
+        for (t, (phon, n)) in track.iter().zip(rendered.iter().zip(&counts)) {
+            let phonemes = if exact {
+                pieces[taken..taken + n].join(" ")
+            } else {
+                phon.clone()
+            };
+            taken += n;
+            if phonemes.is_empty() {
+                continue; // punctuation, or a token that says nothing
+            }
+            let (offset, length) = find_token_span(text, &t.text, search_from);
+            search_from = offset + length;
+            out.push(WordPhonemes { word: t.text.clone(), offset, length, phonemes });
+        }
+        Ok(out)
+    }
+
+    /// The phonemes this language's dictionary gives for a *character-name* key
+    /// (`_@` → "at sign"), or `None` when it has no entry.
+    ///
+    /// C's cross-language fallback for a character the current language cannot
+    /// name is `LookupCharName` in the default voice, which reads exactly this
+    /// key — so `he @` is "at sign", not the short reading of `@` ("at") that
+    /// re-translating the character itself would give.
+    pub(crate) fn char_name_phonemes(&self, c: char) -> Option<Vec<u8>> {
+        let dict_stem = resolve_dict_stem(&self.data_dir, &self.options.lang)?;
+        let dict_path = dict_path(&self.data_dir, &dict_stem)?;
+        let dict_bytes = std::fs::read(&dict_path).ok()?;
+        let mut dict = Dictionary::from_bytes(&dict_stem, dict_bytes).ok()?;
+        dict.dict_condition = self.options.dict_condition;
+        let mut phdata = PhonemeData::load(&self.data_dir).ok()?;
+        select_phoneme_table(&mut phdata, &self.data_dir, &self.options.lang).ok()?;
+        let stress_opts = StressOpts::for_lang_in(&self.options.lang, &self.data_dir);
+        // The `_<char>` name first, then the character's own entry — the order
+        // `LookupCharName` uses, and what makes `_@` "at sign" while `#`, which
+        // has no `_#` entry, still reads "hash".
+        for key in [format!("_{c}"), c.to_string()] {
+            let wr = word_to_phonemes(&key, &dict, &phdata, &stress_opts, &self.options);
+            if wr.phonemes.iter().any(|&b| b != 0) {
+                return Some(wr.phonemes);
+            }
+        }
+        None
     }
 
     /// Translate free text to IPA and report how the last clause ended.
@@ -7380,12 +8213,14 @@ impl Translator {
         let codes = self.translate_to_codes_inner(text, allow_switch)?;
         let mut phdata = PhonemeData::load(&self.data_dir)?;
         select_phoneme_table(&mut phdata, &self.data_dir, &self.options.lang)?;
-        let mut ipa_out = phoneme_ipa::codes_to_ipa(
+        let mut ipa_out = phoneme_ipa::codes_to_ipa_opts(
             &codes,
             &phdata,
             &self.data_dir,
             &self.options.lang,
             preserve_punctuation,
+            self.options.ipa_tie,
+            self.options.ipa_separator,
         );
         if flatten_clauses {
             ipa_out = ipa_out.replace('\n', " ");
@@ -7424,13 +8259,30 @@ impl Translator {
         text: &str,
         allow_switch: bool,
     ) -> Result<Vec<PhonemeCode>> {
+        self.translate_to_codes_tracked(text, allow_switch, None)
+    }
+
+    /// [`translate_to_codes_inner`](Self::translate_to_codes_inner) with an
+    /// optional record of **which source token produced which codes**, which is
+    /// what the word-level API ([`text_to_ipa_words`](Self::text_to_ipa_words))
+    /// needs: the tokens have been through fifteen rewriting passes by the time
+    /// they are translated, so the mapping can only be taken from the pipeline
+    /// itself.
+    pub(crate) fn translate_to_codes_tracked(
+        &self,
+        text: &str,
+        allow_switch: bool,
+        track: Option<&mut Vec<TokenCodes>>,
+    ) -> Result<Vec<PhonemeCode>> {
         let lang = &self.options.lang;
-        let dict_stem = resolve_dict_stem(&self.data_dir, lang).ok_or_else(|| {
-            Error::NotImplemented("translate_to_codes: dict not found")
-        })?;
-        let dict_path = dict_path(&self.data_dir, &dict_stem).ok_or_else(|| {
-            Error::NotImplemented("translate: dict not found")
-        })?;
+        // An unknown voice is a *voice* error, not an unimplemented feature:
+        // `-v alex` used to report "not yet implemented: … dict not found",
+        // which says nothing about the real problem (upstream #2469, where C
+        // prints "Unknown phoneme table: ''" and then crashes).
+        let dict_stem = resolve_dict_stem(&self.data_dir, lang)
+            .ok_or_else(|| Error::VoiceNotFound(lang.to_string()))?;
+        let dict_path = dict_path(&self.data_dir, &dict_stem)
+            .ok_or_else(|| Error::VoiceNotFound(lang.to_string()))?;
         let phontab_path = self.data_dir.join("phontab");
 
         let dict_bytes = std::fs::read(&dict_path).map_err(Error::Io)?;
@@ -7456,7 +8308,8 @@ impl Translator {
             _ => Vec::new(),
         };
 
-        let mut tokens = tokenize_opts(text, &self.options.number_grammar);
+        let text = normalize_apostrophes(text);
+        let mut tokens = tokenize_opts(&text, &self.options.number_grammar);
         apply_roman_numerals(&mut tokens, lang);
         suppress_abbreviation_periods(&mut tokens, lang);
         apply_time_reading(&mut tokens, lang);
@@ -7499,7 +8352,18 @@ impl Translator {
             std::collections::HashMap::new();
         let mut open_switch: Option<String> = None;
 
+        // Parallel to `codes` when tracking: the token each code came from.
+        // Filled one iteration behind — every `continue` in the loop below would
+        // otherwise need its own bookkeeping.
+        let mut owners: Vec<usize> = Vec::new();
+        let tracking = track.is_some();
+        let mut owner_now = 0usize;
+
         for (token_ix, (token, entry)) in tokens.iter().zip(entries.iter()).enumerate() {
+            if tracking {
+                owners.resize(codes.len(), owner_now);
+                owner_now = token_ix;
+            }
             // C's `SFLAG_DICTIONARY`: the *pronunciation* came from the list,
             // not merely some flags — a flags-only `$` entry still leaves the
             // rules to pronounce the word.
@@ -7514,11 +8378,34 @@ impl Translator {
                             switch_cache.insert(target.clone(), tr);
                         }
                     }
+                    // A `_<char>` key is a character *name* to look up, not
+                    // text to translate (`_@` tokenises as two symbols).
+                    let char_name = word
+                        .strip_prefix('_')
+                        .and_then(|rest| {
+                            let mut it = rest.chars();
+                            it.next().filter(|_| it.next().is_none())
+                        });
                     // `translate_to_codes_inner` with switching disabled: a
                     // switched word may not switch again.
-                    let sw = switch_cache
-                        .get(&target)
-                        .and_then(|tr| tr.translate_to_codes_inner(word, false).ok());
+                    let sw = match char_name {
+                        Some(c) => switch_cache.get(&target).and_then(|tr| {
+                            tr.char_name_phonemes(c).map(|ph| {
+                                ph.iter()
+                                    .filter(|&&b| b != 0)
+                                    .map(|&b| PhonemeCode { code: b, ..Default::default() })
+                                    .collect::<Vec<_>>()
+                            })
+                        }),
+                        None => switch_cache
+                            .get(&target)
+                            .and_then(|tr| tr.translate_to_codes_inner(word, false).ok()),
+                    };
+                    // A switch whose target says nothing leaves no markers:
+                    // they would print as an empty `(en)(ru)` pair.
+                    let sw = sw.filter(|codes| {
+                        codes.iter().any(|c| !c.is_boundary && c.marker.is_none())
+                    });
                     if let Some(sw) = sw {
                         if open_switch.as_deref() != Some(target.as_str()) {
                             codes.push(PhonemeCode {
@@ -7543,8 +8430,18 @@ impl Translator {
             }
             // An open switch stays open across the separators between words, so
             // a run of switched words shares one `(en)…(ru)` group like
-            // upstream's; it closes at the next entry that actually speaks.
-            if open_switch.is_some() && !entry.phonemes.is_empty() {
+            // upstream's; it closes at the next entry that actually speaks, at a
+            // clause boundary — C ends the clause's phoneme list there, so
+            // `ru "a , b"` is `(en)'eI(ru) (en)b'i:(ru)`, two groups, not one
+            // spanning the comma — and at a bracket, whose pause belongs to the
+            // base language (`(en)'eI(ru)_:_: (en)b'i:(ru)`).
+            let bracket_here = matches!(token, Token::Punctuation(c) if is_bracket(*c))
+                && entry.phonemes.is_empty();
+            if open_switch.is_some()
+                && (!entry.phonemes.is_empty()
+                    || bracket_here
+                    || entry.kind == TranslateEntryKind::ClauseBoundary)
+            {
                 open_switch = None;
                 codes.push(PhonemeCode {
                     marker: Some(CodeMarker::LangSwitch(self.options.lang.clone())),
@@ -7572,8 +8469,76 @@ impl Translator {
                 Token::Word(_)
                 | Token::Number(_)
                 | Token::InlinePhonemes(_)
+                | Token::Operator(_)
                 | Token::Punctuation(_) => {
-                    if let Token::Punctuation(c) = token {
+                    if let Token::Punctuation(c) | Token::Operator(c) = token {
+                        // A bracket or quote is not spoken but does pause:
+                        // `langopts.param[LOPT_BRACKET_PAUSE]` is 4, and C's
+                        // pre-pause loop spends that as two `phonPAUSE`
+                        // (`en "a ( b"` → `a#_:_: b'i:`).  The announced-bracket
+                        // variant (`--punct`) is 2, i.e. one pause.  C builds the
+                        // pause as the *next* word's pre-pause, so a bracket with
+                        // no word after it in the clause — `(hello)` — pauses
+                        // only on the opening one.
+                        let word_follows = tokens[token_ix + 1..]
+                            .iter()
+                            .take_while(|t| !matches!(t, Token::ClauseBoundary(_)))
+                            .zip(entries[token_ix + 1..].iter())
+                            .any(|(_, e)| e.phonemes.iter().any(|&b| b != 0));
+                        // An apostrophe's pause is C's `pre_pause_add`, which
+                        // `words[0].pre_pause = 0` discards at the start of a
+                        // clause ("don't add extra pause at beginning of
+                        // clause") — so `'hello` has no pause while the curly
+                        // `‘hello`, a real bracket, keeps its own.
+                        let clause_initial_quote = *c == '\''
+                            && !tokens[..token_ix]
+                                .iter()
+                                .rev()
+                                .take_while(|t| !matches!(t, Token::ClauseBoundary(_)))
+                                .zip(entries[..token_ix].iter().rev())
+                                .any(|(_, e)| e.phonemes.iter().any(|&b| b != 0));
+                        if is_bracket(*c)
+                            && !clause_initial_quote
+                            && entry.phonemes.is_empty()
+                            && word_follows
+                        {
+                            // The pause joins the run of phonemes that is already
+                            // open, so take back the word boundary the separator
+                            // before the bracket pushed and put it back after.
+                            // Markers (a closing language switch) can sit after
+                            // that boundary, so look past them, and a switched
+                            // word contributes one of its own on top of the
+                            // separator's — take every trailing boundary and put
+                            // a single one back after the pause.
+                            let mut closed = false;
+                            while let Some(i) = codes
+                                .iter()
+                                .rposition(|k| k.marker.is_none())
+                                .filter(|&i| codes[i].is_boundary)
+                            {
+                                codes.remove(i);
+                                closed = true;
+                            }
+                            let (plain, announced) = self.options.bracket_pause;
+                            // The pre-pause loop in C spends 2 per `phonPAUSE`.
+                            let pauses = if punct_covers(&self.options, *c) {
+                                announced / 2
+                            } else {
+                                plain / 2
+                            };
+                            for _ in 0..pauses {
+                                codes.push(PhonemeCode {
+                                    code: crate::phoneme::PHON_PAUSE,
+                                    ..Default::default()
+                                });
+                            }
+                            if closed {
+                                codes.push(PhonemeCode {
+                                    code: 15, is_boundary: true, ..Default::default()
+                                });
+                            }
+                            from_dict.resize(codes.len(), false);
+                        }
                         codes.push(PhonemeCode {
                             marker: Some(CodeMarker::Punctuation(*c)),
                             ..Default::default()
@@ -7594,26 +8559,43 @@ impl Translator {
                         .find(|&k| !matches!(tokens[k], Token::Space | Token::WordJoin))
                         .and_then(|k| entries.get(k))
                         .is_some_and(|e| e.no_word_gap);
+                    // Does the open run end in phonemes this word should be
+                    // separated from?  A run of nothing but pauses doesn't count:
+                    // that is a bracket's pre-pause, which belongs to the word
+                    // after it as it does in C's phoneme list (`(hello)` is
+                    // `_:_:h@l'oU`, one token).  A word whose own reading merely
+                    // *ends* in a pause still does (`=` is `_:'i:kw@Lz_:`).
                     let runs_on = codes
                         .iter()
                         .rev()
-                        .find(|c| c.marker.is_none())
-                        .is_some_and(|c| !c.is_boundary && c.code != crate::phoneme::PHON_END_WORD);
+                        .filter(|c| c.marker.is_none())
+                        .take_while(|c| {
+                            !c.is_boundary && c.code != crate::phoneme::PHON_END_WORD
+                        })
+                        .any(|c| c.code != crate::phoneme::PHON_PAUSE);
                     if runs_on && !joined && entry.phonemes.iter().any(|&b| b != 0) {
                         codes.push(PhonemeCode {
                             code: 15, is_boundary: true, clause_char: None, marker: None,
                         });
                     }
-                    // `-k 1`/`-k 2`: capital indication before a capitalised
-                    // word.  For `-k 1`, an *all-caps* multi-letter word repeats
-                    // the sound (mirrors C: FLAG_ALL_UPPER + IsAlpha(word[1])).
-                    if !cap_codes.is_empty() {
-                        if let Token::Word(w) = token {
-                            if w.chars().next().is_some_and(char::is_uppercase) {
+                    // `-k`: capital indication before a capitalised word.
+                    //   1 → the `phonCAPITAL` sound, which belongs to the
+                    //       *word* (C puts it at the head of its phoneme list,
+                    //       hence `_#X1h@l'oU` with no gap), repeated for an
+                    //       all-caps multi-letter word (C: FLAG_ALL_UPPER +
+                    //       IsAlpha(word[1]));
+                    //   2 → the spoken announcement, a word of its own;
+                    //   ≥3 → raise the pitch for this word by that many Hz
+                    //       (3 means C's default 20), restored afterwards.
+                    let mut capital_pitch = 0;
+                    if let Token::Word(w) = token {
+                        if w.chars().next().is_some_and(char::is_uppercase) {
+                            if !cap_codes.is_empty() {
                                 let alpha = w.chars().filter(|c| c.is_alphabetic());
                                 let all_upper = alpha.clone().count() > 1
                                     && alpha.clone().all(|c| c.is_uppercase());
-                                let repeats = if self.options.capitals == 1 && all_upper { 2 } else { 1 };
+                                let repeats =
+                                    if self.options.capitals == 1 && all_upper { 2 } else { 1 };
                                 for _ in 0..repeats {
                                     for &b in &cap_codes {
                                         if b != 0 {
@@ -7623,9 +8605,23 @@ impl Translator {
                                         }
                                     }
                                 }
+                                if self.options.capitals != 1 {
+                                    codes.push(PhonemeCode {
+                                        code: 15, is_boundary: true, clause_char: None, marker: None
+                                    }); // END_WORD
+                                }
+                            } else if self.options.capitals >= 3 {
+                                capital_pitch = if self.options.capitals == 3 {
+                                    20
+                                } else {
+                                    self.options.capitals as i32
+                                };
                                 codes.push(PhonemeCode {
-                                    code: 15, is_boundary: true, clause_char: None, marker: None
-                                }); // END_WORD
+                                    marker: Some(CodeMarker::Embedded(EmbeddedCmd {
+                                        letter: 'P', value: capital_pitch, relative: 1,
+                                    })),
+                                    ..Default::default()
+                                });
                             }
                         }
                     }
@@ -7706,6 +8702,21 @@ impl Translator {
                             });
                         }
                     }
+                    // The pitch raise for a capital is undone after the word,
+                    // carried — as in C — on a `phonPAUSE_SHORT`, which is why
+                    // `-k 20 "Hello World"` prints `h@l'oU_ w'3:ld_`.
+                    if capital_pitch > 0 {
+                        codes.push(PhonemeCode {
+                            marker: Some(CodeMarker::Embedded(EmbeddedCmd {
+                                letter: 'P', value: capital_pitch, relative: -1,
+                            })),
+                            ..Default::default()
+                        });
+                        codes.push(PhonemeCode {
+                            code: crate::phoneme::PHON_PAUSE_SHORT,
+                            is_boundary: false, clause_char: None, marker: None,
+                        });
+                    }
                     // `-g` word gap: a pause phoneme (`_`) after each word.
                     if self.options.word_gap > 0 && !entry.phonemes.is_empty() {
                         let pause = phdata.lookup_phoneme("_");
@@ -7773,6 +8784,40 @@ impl Translator {
             from_dict.resize(codes.len(), false);
         }
 
+        // Which source token owns which codes, in *boundary* coordinates: the
+        // post-passes below insert and delete phonemes, so an index into
+        // `codes` would not survive them — the number of word/clause boundaries
+        // before a code does, since no pass adds or removes one.
+        let mut groups: Vec<(String, usize)> = Vec::new();
+        if tracking {
+            owners.resize(codes.len(), owner_now);
+            let mut boundaries_before = Vec::with_capacity(codes.len() + 1);
+            let mut n = 0usize;
+            boundaries_before.push(0);
+            for c in &codes {
+                if c.is_boundary {
+                    n += 1;
+                }
+                boundaries_before.push(n);
+            }
+            // The first *sounding* code: a token's own codes often open with the
+            // word boundary the separator before it pushed, and counting that
+            // boundary as "not yet passed" would start the span one word early.
+            let mut first: Vec<Option<usize>> = vec![None; tokens.len()];
+            for (i, &o) in owners.iter().enumerate() {
+                if !codes[i].is_boundary && o < tokens.len() && first[o].is_none() {
+                    first[o] = Some(i);
+                }
+            }
+            for (ix, token) in tokens.iter().enumerate() {
+                let Some(f) = first[ix] else { continue };
+                let text = token_surface(token, &self.options.number_grammar);
+                if !text.is_empty() {
+                    groups.push((text, boundaries_before[f]));
+                }
+            }
+        }
+
         // The post-passes resolve codes against *this* clause's phoneme table, so
         // they must skip anything inside a `phonSWITCH` region — those codes
         // belong to the switched language's table, and rewriting them with this
@@ -7788,6 +8833,8 @@ impl Translator {
                 return;
             }
             own_flags.resize(own.len(), false);
+            // Before the phoneme programs run, as in C's `MakePhonemeList`.
+            double_lengthened_consonants(own, &phdata);
             resolve_virtual_phonemes_in_codes(own, &phdata, own_flags, stress_opts.reduce);
             apply_list_editing_instructions(own, &phdata);
             if primary_bcp47_subtag(lang) == "fr" {
@@ -7834,7 +8881,97 @@ impl Translator {
         if self.options.word_gap == 0 {
             insert_word_gaps(&mut out, &phdata, stress_opts.vowel_pause, stress_opts.word_gap);
         }
+
+        // Boundary coordinates back into indices.  A token's codes run from its
+        // own first code to the *next* token's, so the separator's boundary and
+        // any pause the passes added stay with the word they follow.
+        if let Some(track) = track {
+            let positions: Vec<usize> = out
+                .iter()
+                .enumerate()
+                .filter(|(_, c)| c.is_boundary)
+                .map(|(i, _)| i)
+                .collect();
+            let start_of = |b: usize| -> usize {
+                if b == 0 {
+                    0
+                } else {
+                    positions.get(b - 1).map(|&i| i + 1).unwrap_or(out.len())
+                }
+            };
+            let starts: Vec<usize> = groups.iter().map(|&(_, b)| start_of(b)).collect();
+            for (i, (text, _)) in groups.into_iter().enumerate() {
+                let start = starts[i];
+                let end = starts.get(i + 1).copied().unwrap_or(out.len()).max(start);
+                track.push(TokenCodes { text, codes: start..end });
+            }
+        }
         Ok(out)
+    }
+}
+
+/// A source word and the phonemes it was rendered as
+/// ([`Translator::text_to_ipa_words`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WordPhonemes {
+    /// The word as it reached translation.
+    pub word: String,
+    /// Byte offset of the word in the input text (`0` with `length == 0` when
+    /// the tokenizer rewrote it and it can no longer be located).
+    pub offset: usize,
+    /// Its byte length in the input text, or `0` when unknown.
+    pub length: usize,
+    /// The IPA for this word — the slice of the clause's own rendering.
+    pub phonemes: String,
+}
+
+/// Locate `needle` in `text` at or after `from`, exactly or ignoring ASCII case
+/// (a capitalised sentence opener is the common case).  `length == 0` means it
+/// could not be found, which happens for tokens the rewriting passes created.
+fn find_token_span(text: &str, needle: &str, from: usize) -> (usize, usize) {
+    let from = from.min(text.len());
+    if needle.is_empty() || !text.is_char_boundary(from) {
+        return (from, 0);
+    }
+    let hay = &text[from..];
+    if let Some(ix) = hay.find(needle) {
+        return (from + ix, needle.len());
+    }
+    let n = needle.len();
+    for (i, _) in hay.char_indices() {
+        if i + n <= hay.len()
+            && hay.is_char_boundary(i + n)
+            && hay[i..i + n].eq_ignore_ascii_case(needle)
+        {
+            return (from + i, n);
+        }
+    }
+    (from, 0)
+}
+
+/// One source token and the span of phoneme codes it was translated into.
+pub(crate) struct TokenCodes {
+    /// The token's text as it appeared (after the number/abbreviation rewrites,
+    /// which is how the tokens reach translation).
+    pub(crate) text: String,
+    /// Its codes in the finished clause.
+    pub(crate) codes: std::ops::Range<usize>,
+}
+
+/// The text a token stands for, or `""` for one that is not part of the source
+/// text (a separator or an embedded command).
+fn token_surface(token: &Token, grammar: &NumberGrammar) -> String {
+    match token {
+        Token::Word(w) => w.clone(),
+        // `NumberToken::surface` writes a decimal point; the source may have
+        // used the language's own separator (`de "3,14"`).
+        Token::Number(NumberToken::Decimal { integer, fractional }) => {
+            format!("{integer}{}{fractional}", grammar.decimal_separator)
+        }
+        Token::Number(n) => n.surface(),
+        Token::InlinePhonemes(p) => format!("[[{p}]]"),
+        Token::Operator(c) | Token::Punctuation(c) | Token::ClauseBoundary(c) => c.to_string(),
+        Token::Space | Token::WordJoin | Token::Embedded(_) => String::new(),
     }
 }
 
@@ -8081,6 +9218,13 @@ fn set_regressive_voicing(codes: &mut [PhonemeCode], phdata: &PhonemeData, regre
     for i in (0..codes.len()).rev() {
         // A word boundary is a marker, not a phoneme; note it and move on.
         if codes[i].is_boundary || codes[i].marker.is_some() {
+            // A *clause* boundary is a pause phoneme in C's list, and a pause
+            // resets the voicing in force — which is what devoices Polish
+            // `flag.` before a clause starting with a voiced consonant
+            // (`fl'ak|z'aZuwts;`, where the port used to read `fl'ag`).
+            if codes[i].is_boundary && codes[i].code == 0 {
+                voicing = 0;
+            }
             if regression & 0x04 != 0 {
                 voicing = 0;
             }
@@ -8261,6 +9405,38 @@ pub(crate) fn stress_levels(
 /// `stress_levels` marker for a code that is not a vowel.
 pub(crate) const NO_STRESS_LEVEL: u8 = u8::MAX;
 
+/// C's `MakePhonemeList`: a consonant followed by the lengthener (`:`) is
+/// lengthened **by doubling it** when it is a fricative, voiced fricative, nasal
+/// or liquid, and the lengthener goes away.  Italian writes its geminates that
+/// way — `mm` compiles to `m:` and reads `s'omma`, not `s'om:a`.
+///
+/// Every other type keeps the lengthener, which is why a long vowel still reads
+/// `a:` (Dutch `Qr'a:d@n`) and a phoneme that is itself long, like Italian `tS:`,
+/// is untouched.
+fn double_lengthened_consonants(codes: &mut [PhonemeCode], phdata: &PhonemeData) {
+    use crate::phoneme::{PH_FRICATIVE, PH_LIQUID, PH_NASAL, PH_VFRICATIVE};
+    for i in 1..codes.len() {
+        if codes[i].is_boundary
+            || codes[i].marker.is_some()
+            || codes[i].code != crate::phoneme::PHON_LENGTHEN
+        {
+            continue;
+        }
+        let Some(prev) = codes[..i]
+            .iter()
+            .rposition(|c| !c.is_boundary && c.marker.is_none() && c.code > 8)
+        else {
+            continue;
+        };
+        let doubled = phdata
+            .get(codes[prev].code)
+            .is_some_and(|p| matches!(p.typ, PH_FRICATIVE | PH_VFRICATIVE | PH_NASAL | PH_LIQUID));
+        if doubled {
+            codes[i].code = codes[prev].code;
+        }
+    }
+}
+
 fn apply_list_editing_instructions(codes: &mut Vec<PhonemeCode>, phdata: &PhonemeData) {
     let is_sound = |c: &PhonemeCode| {
         !c.is_boundary && c.code > 8 && c.code != crate::phoneme::PHON_END_WORD
@@ -8359,10 +9535,20 @@ fn resolve_virtual_phonemes_in_codes(
     let vowel_pos = vowel_positions(codes, phdata);
 
     // Index of the next/previous code that is a real sound (not a boundary).
+    // The length mark is *not* one: C turns a `phonLENGTHEN` into an
+    // `SFLAG_LENGTHEN` flag on the phoneme before it and never puts it in the
+    // list, so a program's `nextPh`/`next2Ph` looks straight past it.  Keeping
+    // it visible made Turkish `teşekkür` read `teSEk:'YR` — the `e` before
+    // `k:` saw "two non-vowels" where C sees the vowel after it.
     let real: Vec<usize> = codes
         .iter()
         .enumerate()
-        .filter(|(_, c)| !c.is_boundary && c.code > 8 && c.code != crate::phoneme::PHON_END_WORD)
+        .filter(|(_, c)| {
+            !c.is_boundary
+                && c.code > 8
+                && c.code != crate::phoneme::PHON_END_WORD
+                && c.code != crate::phoneme::PHON_LENGTHEN
+        })
         .map(|(i, _)| i)
         .collect();
     let starts = word_starts(codes, &real);
@@ -8376,9 +9562,30 @@ fn resolve_virtual_phonemes_in_codes(
         // (Consonant changes apply here too — `l` → `l/2` in "world".  They are
         // invisible in `-x` because espeak drops a mnemonic's `/` variant
         // indicator when printing, which is why upstream shows a plain `l`.)
-        let prev = n.checked_sub(1).map(|k| codes[real[k]].code).unwrap_or(0);
-        let next = real.get(n + 1).map(|&k| codes[k].code).unwrap_or(0);
-        let next2 = real.get(n + 2).map(|&k| codes[k].code).unwrap_or(0);
+        // A clause boundary is a *pause phoneme* in C's list, so a neighbour on
+        // the other side of one is not visible as a sound: `es "a , b"` is the
+        // stop `b'e`, not the post-vocalic fricative `B'e` the port read by
+        // looking past the comma.
+        let clause_break =
+            |a: usize, b: usize| codes[a + 1..b].iter().any(|c| c.is_boundary && c.code == 0);
+        let prev = n
+            .checked_sub(1)
+            .map(|k| real[k])
+            .filter(|&k| !clause_break(k, i))
+            .map(|k| codes[k].code)
+            .unwrap_or(0);
+        let next = real
+            .get(n + 1)
+            .copied()
+            .filter(|&k| !clause_break(i, k))
+            .map(|k| codes[k].code)
+            .unwrap_or(0);
+        let next2 = real
+            .get(n + 2)
+            .copied()
+            .filter(|&k| !clause_break(i, k))
+            .map(|k| codes[k].code)
+            .unwrap_or(0);
         // A boundary marker between this phoneme and the next one means the next
         // phoneme starts a new word (`nextPhW` must not see through it).
         // A boundary *or* an `END_WORD` between this phoneme and the next means
@@ -8391,6 +9598,45 @@ fn resolve_virtual_phonemes_in_codes(
                 .any(|c| c.is_boundary || c.code == crate::phoneme::PHON_END_WORD)
         });
         let next_ix = real.get(n + 1).copied();
+        // C's `nextVowel` scans forward to the next vowel and gives up at a
+        // word boundary; `prevVowel` is the word's previous vowel
+        // (`worddata->prev_vowel`).  Both need the whole word, not a window.
+        const PH_VOWEL: u8 = 2;
+        let crosses = |a: usize, b: usize| {
+            codes[a + 1..b]
+                .iter()
+                .any(|c| c.is_boundary || c.code == crate::phoneme::PHON_END_WORD)
+        };
+        let (mut next_vowel, mut next_vowel_stress) = (0u8, NO_STRESS_LEVEL);
+        let mut from = i;
+        for k in (n + 1)..real.len() {
+            let at = real[k];
+            if crosses(from, at) {
+                break;
+            }
+            let c = codes[at].code;
+            if phdata.get(c).is_some_and(|p| p.typ == PH_VOWEL) {
+                next_vowel = c;
+                next_vowel_stress = level[at];
+                break;
+            }
+            from = at;
+        }
+        let (mut prev_vowel, mut prev_vowel_stress) = (0u8, NO_STRESS_LEVEL);
+        let mut from = i;
+        for k in (0..n).rev() {
+            let at = real[k];
+            if crosses(at, from) {
+                break;
+            }
+            let c = codes[at].code;
+            if phdata.get(c).is_some_and(|p| p.typ == PH_VOWEL) {
+                prev_vowel = c;
+                prev_vowel_stress = level[at];
+                break;
+            }
+            from = at;
+        }
         let nb = crate::synthesize::bytecode::Neighbours {
             prev,
             this: code,
@@ -8412,6 +9658,11 @@ fn resolve_virtual_phonemes_in_codes(
             prev_wordstart: n.checked_sub(1).is_some_and(|k| starts[k]),
             next_wordstart,
             next2_wordstart: next_wordstart,
+            next_vowel,
+            next_vowel_stress,
+            prev_vowel,
+            prev_vowel_stress,
+            vowels_tracked: true,
         };
         let extract = crate::synthesize::bytecode::interpret_phoneme_ctl(
             ph.program,
@@ -8528,6 +9779,10 @@ mod tests {
         let mut nl = g("nl");
         nl.dutch_ij = false;
         nl.ordinals.compound_cardinal_suffix = false;
+        // Dutch is also one of C's `NUM_1900` languages ("negentienhonderd"),
+        // Maltese is not.
+        assert!(g("nl").year_1900 && !g("mt").year_1900, "nl reads 19xx as a year");
+        nl.year_1900 = false;
         assert_eq!(nl, g("mt"), "nl and mt share the same number arm (apart from Dutch-only flags)");
         // Danish/Faroese/Slovenian are units-first ("enogtyve"), so they differ
         // from the tens-first Finnish/Estonian they used to share an arm with.

@@ -68,3 +68,59 @@ fn k1_inserts_the_capital_sound_not_the_word() {
     };
     assert_eq!(ipa_k1, 1);
 }
+
+/// `-k 1`'s capital sound belongs to the *word*: C puts it at the head of the
+/// word's phoneme list, so there is no gap between the two (`_#X1h@l'oU`).
+/// Values from upstream `espeak-ng -q -x -k 1`.
+#[test]
+fn k1_sound_is_part_of_the_word() {
+    let Some(mut t) = Translator::new("en", None).ok() else {
+        eprintln!("[SKIP] no en data");
+        return;
+    };
+    if t.text_to_ipa("hi").is_err() {
+        eprintln!("[SKIP] no en data");
+        return;
+    }
+    t.options.capitals = 1;
+    assert_eq!(t.text_to_ipa("Hello World").unwrap(), "ʰχhəlˈəʊ ʰχwˈɜːld");
+    assert_eq!(t.text_to_ipa("HELLO world").unwrap(), "ʰχʰχhəlˈəʊ wˈɜːld");
+}
+
+/// `-k <n>` with `n >= 3` raises the pitch for a capitalised word by that many
+/// Hz (3 means C's own default of 20) and restores it afterwards, the
+/// restoration riding on a short pause — which is why upstream's `-x` prints a
+/// trailing `_` on exactly the capitalised words.
+#[test]
+fn k3_and_above_raise_the_pitch_for_the_word() {
+    let Some(mut t) = Translator::new("en", None).ok() else { return };
+    if t.text_to_ipa("hi").is_err() {
+        eprintln!("[SKIP] no en data");
+        return;
+    }
+    for value in [3u8, 20, 50] {
+        t.options.capitals = value;
+        let raise = if value == 3 { 20 } else { value as i32 };
+        let codes = t.translate_to_codes("Hello world").unwrap();
+        let cmds: Vec<(char, i32, i8)> = codes
+            .iter()
+            .filter_map(|c| match &c.marker {
+                Some(espeak_ng::translate::CodeMarker::Embedded(cmd)) => {
+                    Some((cmd.letter, cmd.value, cmd.relative))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(cmds, vec![('P', raise, 1), ('P', raise, -1)], "-k {value}");
+        // No spoken announcement and no capital sound at this setting.
+        assert!(!t.text_to_ipa("Hello world").unwrap().contains("kˌapətəl"));
+        assert_eq!(codes.iter().filter(|c| c.code == 18).count(), 0);
+    }
+    // A lower-case clause gets no command at all.
+    t.options.capitals = 20;
+    assert!(t
+        .translate_to_codes("hello world")
+        .unwrap()
+        .iter()
+        .all(|c| c.marker.is_none()));
+}

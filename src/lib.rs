@@ -183,7 +183,7 @@ pub use phoneme::{PhonemeData, PhonemeTab, PhonemeFeature};
 /// Text translator.
 ///
 /// Re-exported from [`translate`] for convenience.
-pub use translate::{Translator, PhonemeCode};
+pub use translate::{Translator, PhonemeCode, WordPhonemes};
 
 /// Synthesizer and voice parameters.
 ///

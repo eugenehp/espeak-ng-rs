@@ -298,13 +298,41 @@ impl Dictionary {
         while i < chars.len() {
             let mut matched = false;
             for (from, to) in &self.replace_pairs {
-                if from.len() <= chars.len() - i && chars[i..i + from.len()] == from[..] {
-                    out.push_str(to);
-                    i += from.len();
-                    matched = true;
-                    changed = true;
-                    break;
+                if from.len() > chars.len() - i {
+                    continue;
                 }
+                let here = &chars[i..i + from.len()];
+                // C's `SubstituteChar` folds the character before the lookup and
+                // re-applies the case to the replacement, so a capitalised word
+                // transliterates like a lower-case one (`mk "Dzidarski"` →
+                // `Ѕидарски`, not `Dзидарски`).
+                let exact = here == from;
+                // C folds *only* an upper-case character (`if (iswupper(c))`),
+                // so a lower-case input never matches an upper-case table key —
+                // Icelandic has such keys, and matching them both ways inserted
+                // a stray phoneme in `öxi`.
+                let folded = !exact
+                    && here[0].is_uppercase()
+                    && here
+                        .iter()
+                        .zip(from.iter())
+                        .all(|(a, b)| a.to_lowercase().eq(b.to_lowercase()));
+                if !exact && !folded {
+                    continue;
+                }
+                if folded {
+                    let mut it = to.chars();
+                    if let Some(first) = it.next() {
+                        out.extend(first.to_uppercase());
+                        out.push_str(it.as_str());
+                    }
+                } else {
+                    out.push_str(to);
+                }
+                i += from.len();
+                matched = true;
+                changed = true;
+                break;
             }
             if !matched {
                 out.push(chars[i]);
@@ -579,21 +607,44 @@ fn build_letter_bits(lang: &str) -> Box<[u8; 256]> {
             set_bits(&mut bits, RU_VOWELS,     7); // LETTERGP_VOWEL2
         }
         "el" | "grc" => {
-            // Greek letter groups — `letter_bits_offset = OFFSET_GREEK = 0x380`.
-            // Index = (codepoint - 0x380) & 0x7f.
-            let set = |bits: &mut [u8; 256], chars: &str, group: u8| {
-                for c in chars.chars() {
-                    let idx = ((c as u32).wrapping_sub(0x380) & 0x7f) as usize;
+            // Greek letter groups — `letter_bits_offset = OFFSET_GREEK = 0x380`,
+            // so the index is `codepoint - 0x380`.  The four lists are C's
+            // `el_vowels` / `el_fvowels` / `el_voiceless` / `el_consonants`
+            // (`tr_languages.c`), transcribed as the same offsets.
+            //
+            // `LETTERGP_Y` — the front vowels — is what `el_rules`' `κ (Y  c`
+            // needs: Greek palatalises /k/ to /c/ before them, so without the
+            // group "κόκκινη" read `k'okin,i` instead of `k'ocin,i`.
+            fn set(bits: &mut [u8; 256], offsets: &[usize], group: u8) {
+                for &idx in offsets {
                     bits[idx] |= 1 << group;
                 }
-            };
-            // Vowels (mono/dia-critics included), upper- and lowercase.
-            let vowels = "αεηιουωΑΕΗΙΟΥΩάέήίόύώϊϋΐΰ";
-            // All consonants.
-            let consonants = "βγδζθκλμνξπρσςτφχψΒΓΔΖΘΚΛΜΝΞΠΡΣΤΦΧΨ";
-            set(&mut bits, vowels, 0);     // LETTERGP_A
-            set(&mut bits, consonants, 2); // LETTERGP_C
-            set(&mut bits, vowels, 7);     // LETTERGP_VOWEL2
+                // The rules match lower-case text, but accept the capitals too:
+                // in Greek they sit 0x20 below their lower-case form.
+                for &idx in offsets {
+                    if idx >= 0x20 {
+                        bits[idx - 0x20] |= 1 << group;
+                    }
+                }
+            }
+            const EL_VOWELS: &[usize] = &[
+                0x10, 0x2c, 0x2d, 0x2e, 0x2f, 0x30, 0x31, 0x35, 0x37, 0x39, 0x3f,
+                0x45, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f,
+            ];
+            // ε η ι υ and their accented forms έ ή ί ύ.
+            const EL_FVOWELS: &[usize] = &[0x2d, 0x2e, 0x2f, 0x35, 0x37, 0x39, 0x45, 0x4d];
+            // θ κ ξ π ς σ τ φ χ
+            const EL_VOICELESS: &[usize] =
+                &[0x38, 0x3a, 0x3e, 0x40, 0x42, 0x43, 0x44, 0x46, 0x47];
+            const EL_CONSONANTS: &[usize] = &[
+                0x32, 0x33, 0x34, 0x36, 0x38, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x40,
+                0x41, 0x42, 0x43, 0x44, 0x46, 0x47, 0x48,
+            ];
+            set(&mut bits, EL_VOWELS, 0);     // LETTERGP_A
+            set(&mut bits, EL_VOICELESS, 1);  // LETTERGP_B
+            set(&mut bits, EL_CONSONANTS, 2); // LETTERGP_C
+            set(&mut bits, EL_FVOWELS, 6);    // LETTERGP_Y
+            set(&mut bits, EL_VOWELS, 7);     // LETTERGP_VOWEL2
         }
         "hi" | "mr" | "ne" | "sa" | "kok" | "bn" | "as" | "bpy" | "pa" | "gu" | "or"
         | "ta" | "te" | "kn" | "ml" => {

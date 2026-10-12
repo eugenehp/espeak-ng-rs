@@ -448,7 +448,7 @@ impl Synthesizer {
         let sr = self.voice.sample_rate as f64;
         let ms = |samples: usize| -> u32 { (samples as f64 * 1000.0 / sr).round() as u32 };
 
-        let annotated = annotate_codes(codes, phdata);
+        let annotated = annotate_codes(codes, phdata, speed_factor);
 
         // Clause intonation, exactly as the audio path computes it: one syllable
         // per vowel, then the tune assigns each an envelope and pitch span.
@@ -687,7 +687,7 @@ impl Synthesizer {
         let speed_factor = 100.0 / self.voice.speed_percent.max(1) as f64;
 
         // ── Pass 1: annotate each code with synthesis context ─────────────
-        let annotated = annotate_codes(codes, phdata);
+        let annotated = annotate_codes(codes, phdata, speed_factor);
 
         // ── Pass 2: synthesize ─────────────────────────────────────────────
         let mut output_i16: Vec<i16> = Vec::new();
@@ -1078,6 +1078,15 @@ enum AnnCode {
     Embedded(crate::translate::EmbeddedCmd),
 }
 
+/// The pause length an SSML break command asks for, in the units the renderer's
+/// `sil_samples` expects.  A `+`-marked value is wall-clock exact (a
+/// `<break time=…>`), so it is pre-divided by the rate the silence will be
+/// scaled by; a plain one is a clause-unit pause that follows the voice's rate.
+fn break_ms(cmd: crate::translate::EmbeddedCmd, speed_factor: f64) -> f64 {
+    let ms = cmd.value.max(0) as f64;
+    if cmd.relative == 1 && speed_factor > 0.0 { ms / speed_factor } else { ms }
+}
+
 // ---------------------------------------------------------------------------
 // annotate_codes — pass 1
 // ---------------------------------------------------------------------------
@@ -1087,6 +1096,7 @@ enum AnnCode {
 fn annotate_codes(
     codes: &[crate::translate::PhonemeCode],
     phdata: &crate::phoneme::PhonemeData,
+    speed_factor: f64,
 ) -> Vec<AnnCode> {
     let mut result = Vec::new();
 
@@ -1128,6 +1138,9 @@ fn annotate_codes(
     // Re-insert the embedded-command markers in order as the loop reaches the
     // codes they preceded.
     let mut next_embedded = 0usize;
+    // An SSML `<break>`/`<p>`/`<s>` pause length (ms) waiting for the boundary
+    // it belongs to — see `ssml::BREAK_LETTER`.
+    let mut pending_break_ms: Option<f64> = None;
     let mut pending_stress: u8 = 0;
     let mut pending_lengthen = false;
     // Previous real phoneme (for coarticulation); reset to pause at silences.
@@ -1141,16 +1154,32 @@ fn annotate_codes(
 
     while i < n {
         while pending_embedded.get(next_embedded).is_some_and(|(ix, _)| *ix <= i) {
-            result.push(AnnCode::Embedded(pending_embedded[next_embedded].1));
+            let cmd = pending_embedded[next_embedded].1;
             next_embedded += 1;
+            if cmd.letter == crate::translate::ssml::BREAK_LETTER {
+                pending_break_ms = Some(break_ms(cmd, speed_factor));
+                continue;
+            }
+            result.push(AnnCode::Embedded(cmd));
         }
         let (code, is_boundary) = flat[i];
         i += 1;
 
+        // A `<break strength>` below `medium` is silence *without* a clause
+        // boundary (C makes it a prepause on the next word), so it lands here
+        // rather than in the boundary arm below.
+        if pending_break_ms.is_some() && !(code == 0 && is_boundary) {
+            if let Some(ms) = pending_break_ms.take().filter(|&ms| ms > 0.0) {
+                result.push(AnnCode::Pause(ms));
+                prev_code = 0; prev_type = 0; // silence breaks coarticulation
+                word_start_pending = true;
+            }
+        }
+
         match code {
             // Clause pause (sentence boundary)
             0 if is_boundary => {
-                result.push(AnnCode::ClauseBoundary(200.0));
+                result.push(AnnCode::ClauseBoundary(pending_break_ms.take().unwrap_or(200.0)));
                 pending_stress = 0;
                 prev_code = 0; prev_type = 0; // phPAUSE breaks coarticulation
                 word_start_pending = true;
@@ -1283,7 +1312,15 @@ fn annotate_codes(
     }
 
     for &(_, cmd) in &pending_embedded[next_embedded..] {
+        if cmd.letter == crate::translate::ssml::BREAK_LETTER {
+            pending_break_ms = Some(break_ms(cmd, speed_factor));
+            continue;
+        }
         result.push(AnnCode::Embedded(cmd));
+    }
+    // A trailing `<break>` (one with no word after it) still pauses.
+    if let Some(ms) = pending_break_ms.filter(|&ms| ms > 0.0) {
+        result.push(AnnCode::Pause(ms));
     }
     result
 }

@@ -265,6 +265,13 @@ pub struct RuleContext<'a> {
     /// Index into `word` of the current character group being matched.
     pub word_pos: usize,
 
+    /// Index into `word` of the word's first letter (C's `word_start`).  `$list`
+    /// and `$p_alt<n>` look the word up to the current match point up in the
+    /// dictionary list, which needs the real start, not "after the last space"
+    /// (a suffix re-translation puts the already-translated letters in the
+    /// buffer ahead of it).
+    pub word_start: usize,
+
     /// Number of bytes consumed by the current character group (1 or 2).
     pub group_length: usize,
 
@@ -297,6 +304,51 @@ pub struct RuleContext<'a> {
     pub expect_verb: bool,
 
     pub suffix_option: u32, // tr->langopts.param[LOPT_SUFFIX]
+}
+
+/// `$list` and `$p_alt<n>` — C's `DollarRule` (dictionary.c).
+///
+/// Both ask about the word *up to the current match point*: `$list` succeeds if
+/// that prefix is an entry in the `_list` file (and not a `$only` one), and
+/// `$p_alt<n>` if the entry carries `$alt<n>`.  Danish uses it ~300 times to
+/// stress the Latinate endings of words its list knows (`fatal`, `biograf`,
+/// `specialist`), Dutch 34 times.
+///
+/// Returns `(add_points, failed)`.
+fn dollar_rule(
+    dict: &Dictionary,
+    ctx: &RuleContext<'_>,
+    consumed: usize,
+    command: u8,
+) -> (i32, bool) {
+    let end = (ctx.word_pos + consumed + ctx.group_length).min(ctx.word.len());
+    if ctx.word_start >= end {
+        return (0, true);
+    }
+    // C copies up to the match point and terminates with a space, so the lookup
+    // text stops at the first space or NUL anyway.
+    let text = ctx.word[ctx.word_start..end]
+        .split(|&b| b == 0 || b == b' ')
+        .next()
+        .unwrap_or(&[]);
+    let Ok(text) = std::str::from_utf8(text) else { return (0, true) };
+    if text.is_empty() {
+        return (0, true);
+    }
+    let lctx = crate::dictionary::lookup::LookupCtx {
+        dict_condition: ctx.dict_condition,
+        ..Default::default()
+    };
+    let (flags0, flags1) = crate::dictionary::lookup::lookup(dict, text, &lctx)
+        .map(|r| (r.flags1.0, r.flags2.0))
+        .unwrap_or((0, 0));
+    let found_in_list = flags0 & crate::dictionary::FLAG_FOUND != 0
+        && flags1 & crate::dictionary::FLAG_ONLY == 0;
+    // For `$list` C falls through to the alt test as well, since `DOLLAR_LIST`
+    // is 3 and so overlaps `$p_alt3`'s bit; keep the quirk.
+    let alt_bit = 1u32 << (BITNUM_FLAG_ALT + (command & 0x0f) as u32);
+    let matched = (command == DOLLAR_LIST && found_in_list) || flags0 & alt_bit != 0;
+    if matched { (23, false) } else { (0, true) }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -530,9 +582,9 @@ pub fn match_rule(
                                     failed = 1;
                                 }
                             } else if (command & 0xf0) == 0x20 || command == DOLLAR_LIST {
-                                // DollarRule: not fully implemented; skip the condition
-                                // (treat as failed to avoid false positives)
-                                failed = 1;
+                                let (points, f) = dollar_rule(dict, ctx, consumed, command);
+                                add_points = points;
+                                failed = f as i32;
                             }
                         }
                         b'-' => {
@@ -732,7 +784,9 @@ pub fn match_rule(
                                     failed = 1;
                                 }
                             } else if (command & 0xf0) == 0x20 || command == DOLLAR_LIST {
-                                failed = 1;
+                                let (points, f) = dollar_rule(dict, ctx, consumed, command);
+                                add_points = points;
+                                failed = f as i32;
                             }
                         }
                         RULE_SYLLABLE => {
@@ -1054,35 +1108,27 @@ pub fn translate_rules_ext(
         // So we must pass TOTAL bytes = wc_bytes + 1 as group_length.
         let group_length_total = wc_bytes + 1; // = total UTF-8 bytes for this char
 
+        // C: `ix = wc - letter_bits_offset`, and the group is `groups3[ix]` when
+        // `0 <= ix < 128` — for a Latin-script language (`letter_bits_offset`
+        // 0) that is simply the codepoint.  There is no fallback that indexes
+        // `groups3` by the raw byte: doing that made Bulgarian read `-` with
+        // the rule for `ь` (`-5` → "j пет"), because byte 0x2D lands inside the
+        // Cyrillic group table.
         let lbo = dict.letter_bits_offset as u64;
-        if lbo > 0 && (wc as u64) >= lbo {
+        if (wc as u64) >= lbo {
             let g3_idx = (wc as u64 - lbo) as usize;
             if g3_idx < 128 {
                 let c2 = (g3_idx + 1) as u8; // c2 used for groups3[c2-1]
                 if let Some(g3_rules) = dict.group3(c2) {
                     let g3_abs = dict.groups.groups3[g3_idx].unwrap_or(0);
                     // Use total bytes (group_length_total) to match C's group_length
-                    let ctx = make_ctx(word_buf, pos, group_length_total, word_flags, dict_flags,
+                    let ctx = make_ctx(word_buf, pos, word_start, group_length_total, word_flags, dict_flags,
                         dict_condition, letter_bits, dict.letter_bits_offset, *word_vowel_count, *word_stressed_count);
                     let mut np = pos;
                     match1 = match_rule(dict, &ctx, g3_rules, g3_abs, &mut np);
                     next_pos1 = np;
                     found = match1.points > 0 || np > pos;
                 }
-            }
-        }
-
-        // Fall back to groups3 using raw first byte (legacy Latin-script path,
-        // kept for any languages that happen to set it this way)
-        if !found {
-            if let Some(g3_rules) = dict.group3(c) {
-                let g3_abs = dict.groups.groups3[(c.wrapping_sub(1)) as usize].unwrap_or(0);
-                let ctx = make_ctx(word_buf, pos, group_length_total, word_flags, dict_flags,
-                    dict_condition, letter_bits, dict.letter_bits_offset, *word_vowel_count, *word_stressed_count);
-                let mut np = pos;
-                match1 = match_rule(dict, &ctx, g3_rules, g3_abs, &mut np);
-                next_pos1 = np;
-                found = match1.points > 0 || np > pos;
             }
         }
 
@@ -1099,14 +1145,14 @@ pub fn translate_rules_ext(
                     found = true;
                     let entry = &dict.groups.groups2[g];
                     let g2_rules = &dict.data[entry.offset..];
-                    let ctx2 = make_ctx(word_buf, pos, 2, word_flags, dict_flags,
+                    let ctx2 = make_ctx(word_buf, pos, word_start, 2, word_flags, dict_flags,
                         dict_condition, letter_bits, dict.letter_bits_offset, *word_vowel_count, *word_stressed_count);
                     let mut np2 = pos;
                     let mut m2 = match_rule(dict, &ctx2, g2_rules, entry.offset, &mut np2);
                     if m2.points > 0 { m2.points += 35; }
 
                     // Also try single-letter chain
-                    let ctx1 = make_ctx(word_buf, pos, 1, word_flags, dict_flags,
+                    let ctx1 = make_ctx(word_buf, pos, word_start, 1, word_flags, dict_flags,
                         dict_condition, letter_bits, dict.letter_bits_offset, *word_vowel_count, *word_stressed_count);
                     if let Some(g1_rules) = dict.group1(c) {
                         let g1_abs = dict.groups.groups1[c as usize].unwrap_or(rules_abs_base);
@@ -1128,7 +1174,7 @@ pub fn translate_rules_ext(
             // Single-letter chain
             if let Some(g1_rules) = dict.group1(c) {
                 let g1_abs = dict.groups.groups1[c as usize].unwrap_or(rules_abs_base);
-                let ctx = make_ctx(word_buf, pos, 1, word_flags, dict_flags,
+                let ctx = make_ctx(word_buf, pos, word_start, 1, word_flags, dict_flags,
                     dict_condition, letter_bits, dict.letter_bits_offset, *word_vowel_count, *word_stressed_count);
                 let mut np = pos;
                 match1 = match_rule(dict, &ctx, g1_rules, g1_abs, &mut np);
@@ -1137,7 +1183,7 @@ pub fn translate_rules_ext(
                 // Default group
                 if let Some(def_rules) = dict.group1(0) {
                     let def_abs = dict.groups.groups1[0].unwrap_or(rules_abs_base);
-                    let ctx = make_ctx(word_buf, pos, 0, word_flags, dict_flags,
+                    let ctx = make_ctx(word_buf, pos, word_start, 0, word_flags, dict_flags,
                         dict_condition, letter_bits, dict.letter_bits_offset, *word_vowel_count, *word_stressed_count);
                     let mut np = pos;
                     match1 = match_rule(dict, &ctx, def_rules, def_abs, &mut np);
@@ -1145,9 +1191,15 @@ pub fn translate_rules_ext(
                 }
 
                 if match1.points == 0 && is_alpha(wc) {
-                    // Unrecognised character → spell the word
+                    // An unrecognised letter: note it (the caller may spell the
+                    // word) but keep scanning, which is what C does — Russian
+                    // reads the Serbian `његов` as `'egVf`, skipping the `њ` its
+                    // rules don't cover.  Abandoning the word here dropped the
+                    // whole thing, and under a *switching* voice left the bare
+                    // `phonSWITCH` marker behind (upstream #2555).
                     spellword = true;
-                    break;
+                    pos += wc_bytes + 1;
+                    continue;
                 }
             }
         }
@@ -1159,6 +1211,27 @@ pub fn translate_rules_ext(
                 let mut ph_end = ph_start;
                 while ph_end < dict.data.len() && dict.data[ph_end] != 0 {
                     ph_end += 1;
+                }
+                // A rule whose phonemes *start* with `phonSWITCH` is an
+                // instruction to translate the whole word in another language
+                // (German `igh (K  _^_EN` for English spellings, and ~30 other
+                // languages' rules).  C throws away everything matched so far
+                // and returns just the marker so the caller can re-translate;
+                // appending it instead left the marker stranded inside the word
+                // (`de Copyright` → `k'o:py:r_^_t`).
+                if dict.data[ph_start] == crate::phoneme::PHON_SWITCH {
+                    out_phonemes.clear();
+                    out_phonemes.extend_from_slice(&dict.data[ph_start..ph_end]);
+                    out_end_phonemes.clear();
+                    out_end_type = 0;
+                    out_suffix_start = 0;
+                    return RulesResult {
+                        phonemes: out_phonemes,
+                        end_phonemes: out_end_phonemes,
+                        end_type: out_end_type,
+                        suffix_start: out_suffix_start,
+                        spellword,
+                    };
                 }
                 // Update vowel/stress counts from appended phonemes
                 if let Some(ph) = phdata {
@@ -1246,9 +1319,11 @@ pub fn translate_rules_ext(
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 fn make_ctx<'a>(
     word: &'a [u8],
     pos: usize,
+    word_start: usize,
     group_length: usize,
     word_flags: u32,
     dict_flags: u32,
@@ -1261,6 +1336,7 @@ fn make_ctx<'a>(
     RuleContext {
         word,
         word_pos: pos,
+        word_start,
         group_length,
         word_flags,
         dict_flags0: dict_flags,

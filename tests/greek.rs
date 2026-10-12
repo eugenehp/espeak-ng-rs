@@ -18,7 +18,9 @@ fn greek_words_are_pronounced() {
     let cases: &[(&str, &str)] = &[
         ("γεια", "jˈa"),        // "hi"
         ("ναι", "nˈe"),         // "yes"
-        ("όχι", "ˈoxi"),        // "no"
+        // /x/ palatalises to /ç/ before a front vowel, which is what the
+        // `κ (Y` / `χ (Y` rules need `LETTERGP_Y` for.
+        ("όχι", "ˈoçi"),        // "no"
         ("Αθήνα", "aθˈina"),    // "Athens"
         ("Ελλάδα", "elˈaða"),   // "Greece"
     ];
@@ -29,6 +31,19 @@ fn greek_words_are_pronounced() {
     }
     // Numbers already worked and still do.
     assert!(!t.text_to_ipa("123").unwrap().trim().is_empty(), "el numbers");
+}
+
+/// Greek palatalises /k/ and /x/ before a front vowel, which `el_rules` writes
+/// as `κ (Y  c` — so the language's `LETTERGP_Y` has to be defined.  The port
+/// set only groups A, C and VOWEL2 for Greek, and the rules never fired.
+#[test]
+fn velars_palatalise_before_front_vowels() {
+    let Some(t) = el() else { eprintln!("[SKIP] no el data"); return };
+    assert_eq!(t.text_to_ipa("κόκκινη").unwrap(), "kˈocinˌi");
+    assert_eq!(t.text_to_ipa("κύριος").unwrap(), "cˈiriˌos");
+    assert_eq!(t.text_to_ipa("όχι").unwrap(), "ˈoçi");
+    // …and not before a back vowel.
+    assert_eq!(t.text_to_ipa("καλημέρα").unwrap(), "kˌalimˈera");
 }
 
 #[test]

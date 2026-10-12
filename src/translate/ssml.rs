@@ -39,6 +39,36 @@
 /// [`Token::ClauseBoundary`](crate::translate::Token::ClauseBoundary).
 pub(crate) const SSML_BREAK: char = '\u{E000}';
 
+/// The embedded-command letter that carries an SSML pause length, in
+/// milliseconds (`\x01<ms>Z`).
+///
+/// In C a `<break>` becomes part of the *clause terminator*, which has no
+/// equivalent in the port's text stream, so the duration travels as an embedded
+/// command instead — the one channel that already survives tokenizing,
+/// translation and phoneme-code assembly in order.  It is not one of upstream's
+/// own command letters (`PSARHTIVYMUBF`), so text written for C can never
+/// collide with it; C itself drops an unknown letter.
+pub(crate) const BREAK_LETTER: char = 'Z';
+
+/// Parse an SSML `time` attribute (`"500ms"`, `"2s"`, `"1.5s"`, a bare number of
+/// milliseconds) into milliseconds.  Mirrors C's `attrnumber(attr, 0, 1)`.
+fn parse_break_time(value: &str) -> Option<u32> {
+    let v = value.trim();
+    let digits_end = v
+        .find(|c: char| !c.is_ascii_digit() && c != '.')
+        .unwrap_or(v.len());
+    let number: f64 = v[..digits_end].parse().ok()?;
+    let unit = v[digits_end..].trim().to_ascii_lowercase();
+    let ms = match unit.as_str() {
+        "s" => number * 1000.0,
+        _ => number, // "ms" and a bare number are both milliseconds
+    };
+    if ms < 0.0 {
+        return None;
+    }
+    Some(ms.round() as u32)
+}
+
 /// How a segment's content should be interpreted.  Text-level `<say-as>` modes
 /// (spelling) are applied inline in the walker; this carries the modes that
 /// need the *translate* layer (which knows the language), threaded to
@@ -170,9 +200,15 @@ pub fn process_markup(input: &str) -> Vec<Segment> {
 /// Like [`process_markup`], but also returns the `<mark>` reference points found
 /// in the fragment (each with its offset into the stripped text).
 pub fn process_markup_with_marks(input: &str) -> (Vec<Segment>, Vec<Mark>) {
+    process_markup_opts(input, 100)
+}
+
+/// [`process_markup_with_marks`] with the `--ssml-break` percentage
+/// (`espeakSSML_BREAK_MUL`) that scales every `<break time=…>`.
+pub fn process_markup_opts(input: &str, break_mul: u32) -> (Vec<Segment>, Vec<Mark>) {
     let chars: Vec<char> = input.chars().collect();
     let n = chars.len();
-    let mut w = Walker::default();
+    let mut w = Walker { break_mul, ..Walker::default() };
     let mut i = 0;
 
     while i < n {
@@ -265,6 +301,9 @@ struct Walker {
     prosody_stack: Vec<(i32, i32, i32)>,
     /// Current rate (wpm), volume (0-200) and pitch (0-100).
     prosody: (i32, i32, i32),
+    /// `espeakSSML_BREAK_MUL` as a percentage (`--ssml-break`): every
+    /// `<break time=…>` is scaled by it.  100 = unchanged.
+    break_mul: u32,
 }
 
 /// The engine's own rate / volume / pitch, which a `<prosody>` percentage is
@@ -288,6 +327,7 @@ impl Default for Walker {
             // Start at the engine's own parameters, so a span that changes
             // nothing emits nothing.
             prosody: PROSODY_BASE,
+            break_mul: 100,
         }
     }
 }
@@ -353,9 +393,79 @@ impl Walker {
         self.prosody = next;
     }
 
-    fn emit_break(&mut self) {
+    /// A clause boundary whose silence lasts `ms` — the pause value C packs
+    /// into the clause terminator (`CLAUSE_PAUSE`, in units of 10 ms).  The
+    /// duration rides along as an embedded command so it survives the
+    /// tokenizer; [`BREAK_LETTER`] documents the encoding.
+    fn emit_break_ms(&mut self, ms: u32) {
+        self.push_break_cmd(ms, false);
         if self.suppress_depth == 0 {
             self.cur.push(SSML_BREAK);
+        }
+    }
+
+    /// `\x01[+]<ms>Z`: the pause length, and whether it is wall-clock exact.
+    /// A `+` means it is — C compensates a `<break time=…>` for the speaking
+    /// rate so the requested duration is what the listener gets, while its
+    /// `strength` pauses are clause units that get faster with the voice.
+    fn push_break_cmd(&mut self, ms: u32, exact: bool) {
+        if self.suppress_depth != 0 {
+            return;
+        }
+        self.cur.push(crate::translate::CTRL_EMBEDDED);
+        if exact {
+            self.cur.push('+');
+        }
+        self.cur.push_str(&ms.to_string());
+        self.cur.push(BREAK_LETTER);
+    }
+
+    /// Silence without a clause boundary: C turns a `<break strength>` weaker
+    /// than `medium` into a *prepause* on the next word, which leaves the
+    /// clause (and so the intonation) alone.
+    /// A zero-length one is still emitted: C writes `\x01 0B` for
+    /// `strength="none"`, and the command is what keeps the words on either
+    /// side of the tag apart.
+    fn emit_prepause_ms(&mut self, ms: u32) {
+        self.push_break_cmd(ms, false);
+    }
+
+    /// `<break>`: `strength` picks one of C's six pause lengths and `time`
+    /// overrides it with an explicit duration (scaled by `--ssml-break`).
+    fn emit_break(&mut self, attrs: &str) {
+        // C `ssml.c`: `break_value[6] = { 0, 7, 14, 21, 40, 80 }` (×10 ms),
+        // with `value = 21` when no `strength` is given.
+        const BREAK_VALUE: [u32; 6] = [0, 70, 140, 210, 400, 800];
+        let mut ms = 210;
+        let mut weak = false;
+        let mut exact = false;
+        if let Some(a) = get_attr(attrs, "strength") {
+            let level = match a.trim().to_ascii_lowercase().as_str() {
+                "none" => 0,
+                "x-weak" => 1,
+                "weak" => 2,
+                "medium" => 3,
+                "strong" => 4,
+                "x-strong" => 5,
+                _ => 2, // C's `if (value < 0) value = 2`
+            };
+            ms = BREAK_VALUE[level];
+            weak = level < 3;
+        }
+        if let Some(t) = get_attr(attrs, "time").as_deref().and_then(parse_break_time) {
+            // `time` wins, and restores the clause boundary a weak `strength`
+            // had taken away.
+            ms = (t as u64 * self.break_mul as u64 / 100).min(u32::MAX as u64) as u32;
+            weak = false;
+            exact = true;
+        }
+        if weak {
+            self.emit_prepause_ms(ms);
+        } else {
+            self.push_break_cmd(ms, exact);
+            if self.suppress_depth == 0 {
+                self.cur.push(SSML_BREAK);
+            }
         }
     }
 
@@ -401,8 +511,13 @@ impl Walker {
                     self.emit_prosody(next);
                 }
             }
-            "break" => self.emit_break(),
-            "p" | "s" => self.emit_break(),
+            "break" => self.emit_break(attrs),
+            // C: `<p>`/`<s>` open with CLAUSE_PARAGRAPH (700 ms), `</s>` ends
+            // with CLAUSE_PERIOD (400 ms) and `</p>` with CLAUSE_PARAGRAPH.
+            "p" => self.emit_break_ms(700),
+            "s" => self.emit_break_ms(if is_close { 400 } else { 700 }),
+            // HTML `<br>` is C's HTML_BREAK — CLAUSE_COLON, 300 ms.
+            "br" => self.emit_break_ms(300),
             "mark" => {
                 // `<mark name="x"/>`: record the name and its offset into the
                 // stripped output (finished segments + the current buffer).
@@ -653,8 +768,26 @@ fn find_seq(chars: &[char], from: usize, pat: &str) -> Option<usize> {
 mod tests {
     use super::*;
 
+    /// Render the break encoding readably: `|` for a clause boundary and
+    /// `{ms}` (or `{+ms}` for a wall-clock one) for the pause it carries.
     fn show(s: &str) -> String {
-        s.replace(SSML_BREAK, "|")
+        let mut out = String::new();
+        let mut it = s.chars().peekable();
+        while let Some(c) = it.next() {
+            if c == crate::translate::CTRL_EMBEDDED {
+                let mut n = String::new();
+                while matches!(it.peek(), Some(d) if d.is_ascii_digit() || *d == '+') {
+                    n.push(it.next().unwrap());
+                }
+                it.next(); // the command letter
+                out.push('{');
+                out.push_str(&n);
+                out.push('}');
+                continue;
+            }
+            out.push(if c == SSML_BREAK { '|' } else { c });
+        }
+        out
     }
 
     #[test]
@@ -679,7 +812,12 @@ mod tests {
 
     #[test]
     fn strips_unknown_and_formatting_tags() {
-        assert_eq!(strip_markup("<p>hello</p>"), format!("{b}hello{b}", b = SSML_BREAK));
+        // `<p>`/`</p>` are both C's CLAUSE_PARAGRAPH (700 ms).
+        assert_eq!(show(&strip_markup("<p>hello</p>")), "{700}|hello{700}|");
+        // `<s>` opens with a paragraph pause and closes with a period's.
+        assert_eq!(show(&strip_markup("<s>hello</s>")), "{700}|hello{400}|");
+        // HTML `<br>` is C's HTML_BREAK — a colon, 300 ms.
+        assert_eq!(show(&strip_markup("a<br/>b")), "a{300}|b");
         assert_eq!(strip_markup("a <emphasis>b</emphasis> c"), "a b c");
         assert_eq!(strip_markup("<speak>hi</speak>"), "hi");
         assert_eq!(strip_markup("x <foo bar='1'>y</foo> z"), "x y z");
@@ -846,8 +984,46 @@ mod tests {
 
     #[test]
     fn break_inserts_boundary() {
-        assert_eq!(show(&strip_markup("one<break time=\"500ms\"/>two")), "one|two");
-        assert_eq!(show(&strip_markup("a<break/>b")), "a|b");
+        // `time` is wall-clock exact (`+`); a bare break is C's 210 ms.
+        assert_eq!(show(&strip_markup("one<break time=\"500ms\"/>two")), "one{+500}|two");
+        assert_eq!(show(&strip_markup("a<break/>b")), "a{210}|b");
+        assert_eq!(show(&strip_markup("a<break time=\"2s\"/>b")), "a{+2000}|b");
+        assert_eq!(show(&strip_markup("a<break time=\"1.5s\"/>b")), "a{+1500}|b");
+    }
+
+    /// `strength` picks one of C's six pause lengths; below `medium` it is a
+    /// prepause on the next word rather than a clause boundary, so there is no
+    /// `|`.  `none` still emits the command, which is what keeps `a` and `b`
+    /// apart.
+    #[test]
+    fn break_strength_sets_the_pause() {
+        assert_eq!(show(&strip_markup("a<break strength=\"x-strong\"/>b")), "a{800}|b");
+        assert_eq!(show(&strip_markup("a<break strength=\"strong\"/>b")), "a{400}|b");
+        assert_eq!(show(&strip_markup("a<break strength=\"medium\"/>b")), "a{210}|b");
+        assert_eq!(show(&strip_markup("a<break strength=\"weak\"/>b")), "a{140}b");
+        assert_eq!(show(&strip_markup("a<break strength=\"x-weak\"/>b")), "a{70}b");
+        assert_eq!(show(&strip_markup("a<break strength=\"none\"/>b")), "a{0}b");
+        // An unknown strength is C's `weak`, and `time` wins over `strength`.
+        assert_eq!(show(&strip_markup("a<break strength=\"huh\"/>b")), "a{140}b");
+        assert_eq!(
+            show(&strip_markup("a<break strength=\"weak\" time=\"300ms\"/>b")),
+            "a{+300}|b"
+        );
+    }
+
+    /// `--ssml-break` scales `time`, and only `time` — C applies
+    /// `espeakSSML_BREAK_MUL` where it reads the attribute.
+    #[test]
+    fn ssml_break_percentage_scales_time() {
+        let text = |mul| show(&process_markup_opts("a<break time=\"400ms\"/>b", mul).0
+            .into_iter().map(|s| s.text).collect::<String>());
+        assert_eq!(text(100), "a{+400}|b");
+        assert_eq!(text(50), "a{+200}|b");
+        assert_eq!(text(250), "a{+1000}|b");
+        assert_eq!(text(0), "a{+0}|b");
+        let strength = |mul| show(&process_markup_opts("a<break strength=\"strong\"/>b", mul).0
+            .into_iter().map(|s| s.text).collect::<String>());
+        assert_eq!(strength(50), "a{400}|b", "strength is not scaled");
     }
 
     #[test]

@@ -83,20 +83,35 @@ fn leading_minus_is_language_neutral() {
 
 #[test]
 fn leading_minus_reads_the_sign_across_languages() {
-    // Each language reads its own "minus"/"plus" word (not a literal English
-    // one), so "-5" / "+5" must differ from a bare "5" — the sign is spoken,
-    // not dropped.  Covers the languages whose symbol table gained readings.
+    // The sign is read from the language's own data, as C does: a rule like
+    // Finnish's `__) - (_D  mi:nus` or a list entry like Greek's `- m'ion`.
+    // A language whose data has neither drops it — C does too, so these lists
+    // are the oracle's own split.
+    for lang in ["cs", "ro", "sv", "nb", "uk", "pt"] {
+        let Some(t) = Translator::new(lang, None).ok() else {
+            eprintln!("[SKIP] no {lang} data");
+            continue;
+        };
+        let ipa = |s: &str| t.text_to_ipa(s).unwrap();
+        let (five, minus5) = (ipa("5"), ipa("-5"));
+        assert!(minus5 != five, "{lang} '-5' dropped the sign: {minus5:?} (5={five:?})");
+    }
+    for lang in ["pl", "ru", "da", "tr", "bg"] {
+        let Some(t) = Translator::new(lang, None).ok() else {
+            eprintln!("[SKIP] no {lang} data");
+            continue;
+        };
+        let ipa = |s: &str| t.text_to_ipa(s).unwrap();
+        assert_eq!(ipa("-5"), ipa("5"), "{lang} has no minus word; the sign is dropped");
+    }
+    // `+` *is* in every one of these dictionaries.
     for lang in ["pl", "pt", "ru", "uk", "bg", "cs", "ro", "sv", "da", "nb", "tr"] {
         let Some(t) = Translator::new(lang, None).ok() else {
             eprintln!("[SKIP] no {lang} data");
             continue;
         };
         let ipa = |s: &str| t.text_to_ipa(s).unwrap();
-        let (five, minus5, plus5) = (ipa("5"), ipa("-5"), ipa("+5"));
-        assert!(
-            !minus5.is_empty() && minus5 != five,
-            "{lang} '-5' dropped the sign: {minus5:?} (5={five:?})"
-        );
+        let (five, plus5) = (ipa("5"), ipa("+5"));
         assert!(
             !plus5.is_empty() && plus5 != five,
             "{lang} '+5' dropped the sign: {plus5:?} (5={five:?})"

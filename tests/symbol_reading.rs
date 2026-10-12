@@ -68,7 +68,9 @@ fn math_and_degree_symbols_are_spoken() {
     let ang = t.text_to_ipa("90°").unwrap();
     assert!(ang.contains("dɪɡɹˈiːz") && !ang.contains("sˈɛlsɪəs"), "90° stays degrees: {ang}");
     // Trademark / copyright signs (previously dropped).
-    assert_eq!(t.text_to_ipa("™").unwrap(), t.text_to_ipa("trademark").unwrap(), "™ → trademark");
+    // "trade mark", which is what `en_emoji` names U+2122 and what upstream
+    // speaks; it was "trademark" while the reading came from a hardcoded table.
+    assert_eq!(t.text_to_ipa("™").unwrap(), t.text_to_ipa("trade mark").unwrap(), "™ → trade mark");
     assert_eq!(t.text_to_ipa("©").unwrap(), t.text_to_ipa("copyright").unwrap(), "© → copyright");
     assert!(t.text_to_ipa("Windows®").unwrap().contains("ɹˈɛdʒɪstəd"), "® → registered");
     // Per-mille / per-ten-thousand (previously dropped).
@@ -80,19 +82,21 @@ fn math_and_degree_symbols_are_spoken() {
 fn arithmetic_and_degree_symbols_read_in_other_languages() {
     // Previously `+ − °` fell to the dictionary character-name spell-out for
     // non-English voices, which produced garbage letters (German `+` →
-    // "ˈɪːɜˌaʊɐ", `°` → "r.ˈʊʑç").  Now they read the proper word.
+    // "ˈɪːɜˌaʊɐ", `°` → "r.ˈʊʑç").  Now they read the proper word — the one the
+    // language's own `*_emoji` data gives, so all but the `es ×` case below
+    // (upstream drops that one) are byte-identical to upstream.
     let cases: &[(&str, &str, &str)] = &[
         ("de", "5+3", "plˈʊs"),   // plus
         ("de", "5−2", "mˈiːnʊs"), // minus
         ("de", "20°", "ɡɾˈɑːt"),  // grad
-        ("fr", "5+3", "ply"),     // plus
+        ("fr", "5+3", "plˈys"),  // plus
         ("fr", "20°", "dəɡʁ"),    // degrés
         ("es", "5+3", "mˈas"),    // más
         ("es", "20°", "ɣɾˈaðos"), // grados
-        ("it", "20°", "ɡrˈad"), // gradi
-        ("nl", "20°", "ɣrˈɑdən"), // graden
+        ("it", "20°", "ɡrˈaːdɪ"), // gradi (the dictionary's own reading)
+        ("nl", "20°", "ɣrˈaːdən"), // graden (long vowel: the plural restores it)
         ("de", "5×3", "mˈɑːl"),   // mal (times)
-        ("fr", "5×3", "fwˈa"),    // fois
+        ("fr", "5×3", "myltipliˈepˈaʁ"), // multiplié par (fr_emoji; "fois" was the hardcoded table)
         ("es", "5×3", "poɾ"),     // por
         ("de", "6÷2", "ɡətˈaɪlt"), // geteilt durch
         ("fr", "6÷2", "divizˈe"),  // divisé par
@@ -355,17 +359,32 @@ fn spoken_symbols_reach_the_code_stream() {
     // Regression: `translate_to_codes` (the `-x` / synthesis path) dropped
     // spoken symbols even though `--ipa` (`text_to_ipa`) rendered them — the
     // emission match had no `Token::Punctuation` arm.  `&` → "and" must now emit.
+    // Pauses don't count as speech: a bracket is silent but still pauses
+    // (`LOPT_BRACKET_PAUSE`), so `a (b) c` gains two pauses per bracket.
     let n = |s: &str| {
         t.translate_to_codes(s)
             .expect("codes")
             .iter()
-            .filter(|c| !c.is_boundary && c.marker.is_none())
+            .filter(|c| {
+                !c.is_boundary
+                    && c.marker.is_none()
+                    && c.code != espeak_ng::phoneme::PHON_PAUSE
+            })
             .count()
     };
     assert!(n("a & b") > n("a b"), "spoken '&' added no codes");
     assert!(n("5 % x") > n("5 x"), "spoken '%' added no codes");
-    // Non-spoken punctuation stays silent (no extra codes vs plain text).
+    // Non-spoken punctuation stays silent (no extra spoken codes vs plain text).
     assert_eq!(n("a (b) c"), n("a b c"), "parentheses should be silent");
+    // …and the pause is there.
+    let pauses = |s: &str| {
+        t.translate_to_codes(s)
+            .expect("codes")
+            .iter()
+            .filter(|c| c.code == espeak_ng::phoneme::PHON_PAUSE)
+            .count()
+    };
+    assert_eq!(pauses("a (b) c"), pauses("a b c") + 4, "brackets should pause");
 }
 
 #[test]
@@ -400,18 +419,17 @@ fn numero_sign_reads_number_word() {
     if let Some(t) = en() {
         assert!(t.text_to_ipa("№5").unwrap().contains("njˈuːmə"), "en №5 = numero five");
     }
-    // Other languages have no numero word in espeak-ng, so the sign is dropped
-    // (the bare number is spoken).
+    // Other languages have no numero word of their own, so the character is
+    // named in the default voice — C's `LookupCharName` fallback, which it
+    // reaches as well, though its switch then loses the English reading
+    // (`$textmode`) and leaves nothing.  See GAPS.md §3c #62.
     for lang in ["fr", "es", "uk", "pl"] {
         let Some(t) = Translator::new(lang, None).ok() else {
             eprintln!("[SKIP] no {lang} data");
             continue;
         };
-        assert_eq!(
-            t.text_to_ipa("№5").unwrap(),
-            t.text_to_ipa("5").unwrap(),
-            "{lang} №5 should drop the sign"
-        );
+        let got = t.text_to_ipa("№5").unwrap();
+        assert!(got.contains("(en)") && got.contains("njˈuːmə"), "{lang} №5: {got}");
     }
 }
 
@@ -462,7 +480,12 @@ fn hebrew_and_ukrainian_operators() {
                 "he {expr} dropped the operator: {got:?}");
             assert!(!got.trim().is_empty());
         }
-        assert!(he.text_to_ipa("-5").unwrap().contains("mˈinus"), "he -5: {}", he.text_to_ipa("-5").unwrap());
+        // A leading `-` before a number is an *operator*: it is read from the
+        // language's own rules or list, and Hebrew's data has neither, so the
+        // sign is dropped — as it is in C.
+        assert_eq!(he.text_to_ipa("-5").unwrap(), he.text_to_ipa("5").unwrap(), "he -5");
+        // The sign written literally still reads by its dictionary name.
+        assert!(he.text_to_ipa("−").unwrap().contains("sˈimnə"), "he −: {}", he.text_to_ipa("−").unwrap());
         assert!(he.text_to_ipa("20°").unwrap().contains("maʔˈalot"), "he 20°: {}", he.text_to_ipa("20°").unwrap());
     }
     if let Some(uk) = Translator::new("uk", None).ok() {
@@ -485,8 +508,12 @@ fn degree_sign_reads_across_languages() {
         let bare = t.text_to_ipa("20").unwrap();
         assert_ne!(deg.replace(' ', ""), bare.replace(' ', ""),
             "{lang} 20° dropped the degree sign: {deg:?}");
-        // A negative temperature composes the minus + degree reading.
-        assert!(t.text_to_ipa("-40°").unwrap().split_whitespace().count() >= 3,
-            "{lang} -40° should read minus … degrees: {}", t.text_to_ipa("-40°").unwrap());
+        // A negative temperature composes the minus + degree reading, where
+        // the language's data gives a reading for the hyphen (`sv`, `nb` do;
+        // `da`, `ru`, `bg` don't, and C drops the sign there too).
+        if matches!(lang, "sv" | "nb") {
+            assert!(t.text_to_ipa("-40°").unwrap().split_whitespace().count() >= 3,
+                "{lang} -40° should read minus … degrees: {}", t.text_to_ipa("-40°").unwrap());
+        }
     }
 }
