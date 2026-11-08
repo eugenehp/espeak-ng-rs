@@ -93,11 +93,14 @@ fn hundred_digits_keep_stress_marks_up_to_the_c_word_limit() {
     assert_eq!(t.text_to_ipa(&input).unwrap().trim_end(), expected);
 }
 
+// The fixture is espeak-ng master's own output (`-q --ipa -v en`): 126 clauses,
+// each cut to 200 phonemes of one word, like the C engine's clause buffer.
+const C_MASTER_100K: &str = include_str!("fixtures/en_digits_100k_c_master.ipa");
+
 #[test]
-fn hundred_thousand_digits_are_read_without_hanging() {
+fn hundred_thousand_digits_match_c_master_without_hanging() {
     let Some(t) = english() else { return };
     let input: String = (0..100_000).map(|i| char::from(b'1' + (i % 9) as u8)).collect();
     let got = t.text_to_ipa(&input).unwrap();
-    let head: String = got.chars().take(120).collect();
-    assert!(got.starts_with(&ONE_TO_NINE.repeat(4)), "{head}");
+    assert_eq!(got.trim_end(), C_MASTER_100K.trim_end());
 }
