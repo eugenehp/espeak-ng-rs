@@ -153,8 +153,7 @@ fn portuguese_number_words_keep_final_stress() {
         s.split_whitespace().last().is_some_and(|w| w.contains('ˈ'))
     };
     assert!(last_word_stressed(t.text_to_ipa("101").unwrap()), "101 stresses 'um'");
-    // Upstream no longer stresses the typed word: `sˈeɪŋtw i ũŋ`.  The port
-    // differs only in `tʊ` for `tw` (a known gap), so only the stable parts are pinned.
+    // Upstream reads sˈeɪŋtw i ũŋ; the port gives tʊ for tw (#47), so only the stable parts are pinned.
     let words = t.text_to_ipa("cento e um").unwrap();
     assert!(words.starts_with("sˈeɪŋt") && words.ends_with(" i u\u{303}ŋ"), "{words}");
     assert!(!last_word_stressed(words), "typed 'um' is unstressed, as upstream");

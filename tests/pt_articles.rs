@@ -1,5 +1,3 @@
-// tests/pt_articles.rs
-//
 // The plural articles `os` and `as` are flags-only list entries (`$u+ $nounf`),
 // while the singular `o`/`a` also have `$atend` pronunciations.  Removing the
 // plural `s` leaves the stem `o`/`a`, whose `$atend` entry must not apply

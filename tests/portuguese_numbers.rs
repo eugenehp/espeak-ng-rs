@@ -5,7 +5,7 @@
 // until the port honoured those, and were generated as text instead.  Reading
 // them from the list is not the same as reading the spelled-out word, and
 // upstream has the same split: `pt "1"` is `ˈum` (list phonemes) while `pt
-// "um"` is `ˈũm` (the letter-to-sound rules).
+// "um"` is `ũŋ` (the letter-to-sound rules, unstressed).
 //
 // Values from a locally built upstream `espeak-ng` (`f0fb11a8`).
 // Skips when the pt voice data is absent.
@@ -59,7 +59,7 @@ fn portuguese_decimals_read_with_virgula() {
     };
     let ipa = |s: &str| t.text_to_ipa(s).unwrap();
     // Comma is the decimal separator, and a fraction of at most two digits is
-    // read as one number (upstream `NUM_DFRACTION_2`): "3,14" is "três vírgula
+    // read as one number (upstream `NUM_DFRACTION_2`): "3,14" is "três vírgula
     // catorze", not "… um quatro".  A longer fraction falls back to digit by
     // digit.
     let cases: &[(&str, &str)] = &[
