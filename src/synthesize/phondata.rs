@@ -213,7 +213,7 @@ impl SpectSeq {
     /// Returns `None` if the data is truncated or the frame count is 0.
     pub fn parse(phondata: &[u8], offset: usize) -> Option<Self> {
         // Header: length_total(i16) + n_frames(u8) + sqflags(u8) = 4 bytes
-        if offset + 4 > phondata.len() { return None; }
+        if offset.checked_add(4)? > phondata.len() { return None; }
         let data = &phondata[offset..];
         let n_frames = data[2] as usize;
         if n_frames == 0 || n_frames > N_SEQ_FRAMES { return None; }
