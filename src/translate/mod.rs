@@ -948,7 +948,7 @@ impl NumberGrammar {
             "hi" | "or" | "pa" | "gu" | "mr" | "si" => BREAK_LAKH_HI,
             "ne" => BREAK_LAKH,
             "ur" | "sd" => BREAK_LAKH_UR,
-            "kn" | "ml" | "te" => BREAK_LAKH_DV,
+            "kn" | "ml" | "ta" | "te" => BREAK_LAKH_DV,
             "ko" => BREAK_MYRIADS,
             "shn" | "yue" => BREAK_INDIVIDUAL,
             _ => BREAK_THOUSANDS,

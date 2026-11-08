@@ -82,6 +82,18 @@ fn english_and_russian_keep_reading_long_numbers_as_cardinals() {
 }
 
 #[test]
+fn tamil_groups_digits_in_lakh_units() {
+    let out = need!("ta", "0123456789");
+    let words: Vec<&str> = out.split_whitespace().collect();
+    assert_eq!(words.len(), 4, "{out}");
+    assert_eq!(words[0], "sˈuɻijˌʌmonrˌʉiɹˌʌɳɖʉ", "{out}");
+    assert_eq!(words[1], "mˈuːnrʉnˌaːnɡʉ", "{out}");
+    let long = need!("ta", "12345678901234567");
+    assert_eq!(long.split_whitespace().count(), 6, "{long}");
+    assert!(long.ends_with("ˈonrʉˌiɹʌɳɖʉ mˈuːnrʉnˌaːnɡʉ ˈaɪndʉˌaːrʉʲˌeːɻʉ"), "{long}");
+}
+
+#[test]
 fn leading_zero_strings_of_five_digits_or_more_are_grouped() {
     assert_eq!(need!("de", "0123567"), "nˈʊl ˈaɪnstsvˈaɪdɾˈaɪ fˈʏnfzˈɛkszˈiːbən");
     assert_eq!(need!("ku", "0123567"), "sˈɪfr jˈɛkdˈʊsˈe pˈendʒʃˈɛʃhˈɛft");
