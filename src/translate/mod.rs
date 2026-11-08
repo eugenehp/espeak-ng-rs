@@ -4755,7 +4755,10 @@ fn word_to_phonemes_inner(
                     dict,
                     &stem,
                     &LookupCtx {
-                        lookup_symbol: true,
+                        // A stem is never the last word of the clause (the
+                        // suffix follows it), so its `$atend` entries are out.
+                        lookup_symbol: false,
+                        at_clause_end: false,
                         end_flags,
                         expect_verb: expect.verb,
                         expect_noun: expect.noun,
