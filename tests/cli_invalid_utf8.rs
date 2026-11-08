@@ -1,7 +1,4 @@
-// tests/cli_invalid_utf8.rs
-//
-// Invalid UTF-8 on stdin, in `-f` files and in argv is decoded lossily; the
-// valid text is still spoken and the exit status is 0 (as upstream does).
+// Invalid UTF-8 from stdin, -f files and argv is decoded lossily; the valid text is still spoken and the exit status is 0.
 
 use std::io::Write;
 use std::path::Path;
