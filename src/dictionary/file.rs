@@ -688,6 +688,12 @@ fn build_letter_bits(lang: &str) -> Box<[u8; 256]> {
             // Latin/default: use the English letter bits
             let en = crate::translate::english_letter_bits();
             bits.copy_from_slice(en.as_slice());
+            if lang == "en" {
+                for &c in b"aeiouy" {
+                    bits[c as usize] |= 1 << 6;
+                    bits[c.to_ascii_uppercase() as usize] |= 1 << 6;
+                }
+            }
         }
     }
 
