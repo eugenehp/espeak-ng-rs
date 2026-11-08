@@ -1,10 +1,13 @@
 // The marker that closes a language switch names the base voice's phoneme
-// table, not the voice tag. Expected values are from `espeak-ng -q --ipa -v <voice>`.
+// table, not the voice tag. Expected values are from `espeak-ng -q --ipa -v <voice>`
+// (identical on 1.52.0 and master). The tests need the full data set: set
+// ESPEAK_NG_DATA to an espeak-ng-data directory, otherwise they are skipped.
 
 use espeak_ng::Translator;
 
 fn ipa(voice: &str, word: &str) -> Option<String> {
-    Translator::new(voice, Some(std::path::Path::new("/usr/lib/x86_64-linux-gnu/espeak-ng-data"))).ok()?.text_to_ipa(word).ok()
+    let dir = std::env::var_os("ESPEAK_NG_DATA")?;
+    Translator::new(voice, Some(std::path::Path::new(&dir))).ok()?.text_to_ipa(word).ok()
 }
 
 #[test]
