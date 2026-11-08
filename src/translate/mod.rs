@@ -149,6 +149,15 @@ pub fn resolve_phoneme_table(data_dir: &Path, voice_tag: &str) -> String {
     phonemes.unwrap_or_else(|| voice_tag.to_string())
 }
 
+/// Name printed inside a (xx) language-switch marker. A marker back to the base voice (target == lang) names the active phoneme table; any other marker names target.
+pub fn switch_marker_name<'a>(phdata: &'a PhonemeData, target: &'a str, lang: &str) -> &'a str {
+    if target == lang {
+        phdata.active_table_name().unwrap_or(target)
+    } else {
+        target
+    }
+}
+
 /// Select `lang`'s phoneme table into `phdata`, trying in turn: the tag itself,
 /// its `phonemes <name>` voice directive, then the **primary BCP-47 subtag**.
 /// The last covers regional locales that ship only as a base table — `pt-br`→
