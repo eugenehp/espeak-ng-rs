@@ -996,26 +996,15 @@ fn input_encoding(b: Option<u32>) -> espeak_ng::Encoding {
 
 fn gather_text(cli: &Cli) -> std::io::Result<String> {
     let enc = input_encoding(cli.input_encoding);
-    // Decode raw input bytes with the `-b` encoding.  UTF-8 keeps the strict
-    // read_to_string path; other encodings decode byte-by-byte.
     let decode = |bytes: Vec<u8>| -> String {
         espeak_ng::encoding::decode_to_string(&bytes, enc)
             .unwrap_or_else(|_| String::from_utf8_lossy(&bytes).into_owned())
     };
-    let is_utf8 = matches!(enc, espeak_ng::Encoding::Utf8);
 
     if let Some(ref path) = cli.file_input {
-        if is_utf8 {
-            return std::fs::read_to_string(path);
-        }
         return Ok(decode(std::fs::read(path)?));
     }
     if cli.stdin_all || (cli.positionals.is_empty() && !std::io::stdin().is_terminal()) {
-        if is_utf8 {
-            let mut buf = String::new();
-            std::io::stdin().read_to_string(&mut buf)?;
-            return Ok(buf);
-        }
         let mut buf = Vec::new();
         std::io::stdin().read_to_end(&mut buf)?;
         return Ok(decode(buf));
