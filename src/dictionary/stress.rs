@@ -537,20 +537,24 @@ pub fn apply_special_attribute2(phonemes: &mut [u8], phdata: &PhonemeData, alt2:
 /// Returns (max_stress, vowel_count, stressed_syllable):
 /// - max_stress: the highest stress level found (-1 if none)
 /// - vowel_count: number of vowels found + 1 (boundary sentinels at 0 and count)
-/// - stressed_syllable: 0 if none, else the position of explicit primary stress
+/// - stressed_syllable: 0 if none, else the position of the fixed or explicit primary stress
 ///
 /// `control`: bit 0 = mark phUNSTRESSED vowels as STRESS_IS_UNSTRESSED (usually 1).
+///
+/// `fixed_syllable`: a syllable already fixed by the dictionary entry (0 if none).
+/// Stress-previous markers are ignored while nonzero.
 pub fn get_vowel_stress(
     phonemes: &mut Vec<u8>,
     phdata: &PhonemeData,
     vowel_stress: &mut [i8; 100],   // N_WORD_PHONEMES/2
     control: i32,
     stress_flags: u32,
+    fixed_syllable: i32,
 ) -> (i32, i32, i32) {
     let mut count = 1i32;
     let mut max_stress: i32 = -1;
     let mut stress: i32 = -1;
-    let mut stressed_syllable: i32 = 0;
+    let mut stressed_syllable: i32 = fixed_syllable;
     let mut primary_posn: i32 = 0;
 
     vowel_stress[0] = STRESS_IS_UNSTRESSED;
@@ -742,6 +746,7 @@ pub fn set_word_stress(
         &mut vowel_stress,
         1,  // control=1: mark phUNSTRESSED vowels
         opts.stress_flags,
+        stressed_syllable,
     );
     // An explicit primary-stress marker already in the phonemes (e.g. a `ˈ` from
     // Lojban's capital-stress notation) fixes the stressed syllable.  C's
@@ -1272,6 +1277,7 @@ pub fn change_word_stress(
         &mut phonetic,
         phdata,
         &mut vowel_stress,
+        0,
         0,
         0,
     );
