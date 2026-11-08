@@ -424,6 +424,15 @@ pub struct LangOptions {
     pub unpronouncable: u32,
 }
 
+const BREAK_THOUSANDS: u32 = 0x4924_9248;
+const BREAK_MYRIADS: u32 = 0x1111_1110;
+const BREAK_LAKH: u32 = 0xaaaa_aaa8;
+const BREAK_LAKH_BN: u32 = 0x2492_4aa8;
+const BREAK_LAKH_DV: u32 = 0x0000_14a8;
+const BREAK_LAKH_HI: u32 = 0x0001_4aa8;
+const BREAK_LAKH_UR: u32 = 0x0000_52a8;
+const BREAK_INDIVIDUAL: u32 = 0x0000_0018;
+
 /// Language-specific number rendering rules.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NumberGrammar {
@@ -512,6 +521,12 @@ pub struct NumberGrammar {
     /// Slavic scale-word declension (gender + case agreement on "thousand",
     /// "million", …).  See `SlavicThousands`.
     pub thousands_variant: SlavicThousands,
+    /// Longest run of 5 to 32 digits read as a cardinal; longer runs up to 32
+    /// digits are spelled in groups (upstream `langopts.max_digits`).
+    pub max_digits: u8,
+    /// Bit `n` set: a digit group ends when `n` digits remain, for the
+    /// digit-by-digit reading (upstream `langopts.break_numbers`).
+    pub break_numbers: u32,
 }
 
 /// Slavic scale-word (thousand/million/…) declension.  The scale word takes a
@@ -921,6 +936,23 @@ impl NumberGrammar {
         if lang == "ar" {
             grammar.tens = TensGrammar::UnitsThenConjunction;
         }
+        grammar.max_digits = match lang {
+            "en" | "lv" | "ltg" => 33,
+            "ka" | "ru" | "uk" => 32,
+            "ne" => 22,
+            "ko" => 20,
+            _ => 14,
+        };
+        grammar.break_numbers = match lang {
+            "bn" | "as" | "bpy" => BREAK_LAKH_BN,
+            "hi" | "or" | "pa" | "gu" | "mr" | "si" => BREAK_LAKH_HI,
+            "ne" => BREAK_LAKH,
+            "ur" | "sd" => BREAK_LAKH_UR,
+            "kn" | "ml" | "ta" | "te" => BREAK_LAKH_DV,
+            "ko" => BREAK_MYRIADS,
+            "shn" | "yue" => BREAK_INDIVIDUAL,
+            _ => BREAK_THOUSANDS,
+        };
         // C `LOPT_APOSTROPHE`: Hebrew keeps a word-final apostrophe.
         grammar.apostrophe = if lang == "he" { 2 } else { 0 };
         // C `NUM_1900`: 1900–1999 read as "nineteen hundred …".
@@ -956,6 +988,8 @@ impl Default for NumberGrammar {
             combining_one: None,
             elide_tens_vowel: false,
             thousands_variant: SlavicThousands::None,
+            max_digits: 14,
+            break_numbers: BREAK_THOUSANDS,
         }
     }
 }
@@ -3797,6 +3831,50 @@ fn cardinal_pronunciation(
     Some(result)
 }
 
+const MAX_GROUPED_DIGITS: usize = 32;
+
+/// Whether C splits the run into digit groups: 5 to 32 digits that exceed
+/// max_digits or start with 0, or more than 32 digits (spelled as one group).
+fn reads_digit_by_digit(digits: &str, grammar: &NumberGrammar) -> bool {
+    let n = digits.len();
+    n > MAX_GROUPED_DIGITS
+        || (n > 4 && (n > usize::from(grammar.max_digits) || digits.starts_with('0')))
+}
+
+fn digit_groups<'a>(digits: &'a str, grammar: &NumberGrammar) -> Vec<&'a str> {
+    let n = digits.len();
+    if n > MAX_GROUPED_DIGITS {
+        return vec![digits];
+    }
+    let mut starts: Vec<usize> = (1..n).filter(|j| grammar.break_numbers & (1 << (n - j)) != 0).collect();
+    starts.insert(0, 0);
+    starts.push(n);
+    starts.windows(2).map(|w| &digits[w[0]..w[1]]).collect()
+}
+
+/// Each group of digits is one word, stressed on its own, with the digit
+/// names run together inside it.
+fn spelled_digit_groups(
+    digits: &str,
+    dict: &Dictionary,
+    phdata: &PhonemeData,
+    stress_opts: &StressOpts,
+    grammar: &NumberGrammar,
+) -> Vec<u8> {
+    let mut out = Vec::new();
+    for group in digit_groups(digits, grammar) {
+        let mut word = Pronunciation::default();
+        for d in group.bytes() {
+            word.append_lookup_suffix(&lookup_num_phonemes(dict, &num_key(d - b'0')));
+        }
+        let mut phonemes = word.finish();
+        set_word_stress(&mut phonemes, phdata, stress_opts, Some(0), -1, 0);
+        out.extend(phonemes.iter().copied().take_while(|&b| b != 0));
+    }
+    out.push(0);
+    out
+}
+
 /// Whether a scale group is *exact* — the whole number has no non-zero digit
 /// below this scale (so `1000` is exact at the thousands scale, `1234` is not).
 /// A scale-less (units) group is always "exact".  Used to select the `_0M{n}x`
@@ -3986,6 +4064,10 @@ fn translate_number_token(
             // whose numbers this port spells out as *text* instead — Portuguese
             // — go through the rules and keep `found_in_list = false`.)
             .map(|wr| WordResult { found_in_list: true, ..wr }),
+        NumberToken::Cardinal(digits) if reads_digit_by_digit(digits, grammar) => {
+            let phonemes = spelled_digit_groups(digits, dict, phdata, stress_opts, grammar);
+            Some(WordResult { phonemes, dict_flags: 0, found_in_list: true })
+        }
         _ => {
             let mut phonemes = number_token_to_phonemes(token, dict, grammar)?;
             set_word_stress(&mut phonemes, phdata, stress_opts, Some(0), -1, 0);

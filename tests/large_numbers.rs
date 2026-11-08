@@ -44,14 +44,15 @@ fn billion_and_below_are_unchanged() {
 #[test]
 fn german_long_scale_billion_is_ten_to_the_twelfth() {
     // German uses the long scale: 10^12 = "Billion" (not the short-scale
-    // trillion), 10^18 = "Trillion".  Both require the higher scale words.
+    // trillion).
+    // 10^18 has 19 digits, above de max_digits, so C reads it as digits.
     let Some(t) = Translator::new("de", None).ok() else {
         eprintln!("[SKIP] no de data");
         return;
     };
     let ipa = |s: &str| t.text_to_ipa(s).unwrap();
     assert!(ipa("1000000000000").contains("bɪljˈoːn"), "de 10^12 = Billion: {}", ipa("1000000000000"));
-    assert!(ipa("1000000000000000000").contains("tɾɪljˈoːn"), "de 10^18 = Trillion: {}", ipa("1000000000000000000"));
+    assert!(!ipa("1000000000000000000").contains("tɾɪljˈoːn"), "de 10^18 is read as digits: {}", ipa("1000000000000000000"));
 }
 
 #[test]
