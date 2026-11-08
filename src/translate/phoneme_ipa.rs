@@ -210,7 +210,7 @@ pub fn codes_to_ipa_opts(
             // C writes the marker through `WritePhMnemonic` like a phoneme name,
             // so `--sep` separates it and `--tie` goes inside it: `(en).ð.ə.(de)`
             // and `(-e-n)`.
-            let marker = format!("({target})");
+            let marker = format!("({})", super::switch_marker_name(phdata, target, lang));
             if let Some(sep) = sep {
                 // A closing marker took the word space back, so the phoneme
                 // before it is still the one to separate from.

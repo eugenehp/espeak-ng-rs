@@ -885,7 +885,10 @@ fn format_x(
             while target == lang && out.ends_with(' ') {
                 out.pop();
             }
-            out.push_str(&format!("({target})"));
+            out.push_str(&format!(
+                "({})",
+                espeak_ng::translate::switch_marker_name(phdata, target, lang)
+            ));
             if trailing_space {
                 out.push(' ');
             }
