@@ -521,8 +521,8 @@ pub struct NumberGrammar {
     /// Slavic scale-word declension (gender + case agreement on "thousand",
     /// "million", …).  See `SlavicThousands`.
     pub thousands_variant: SlavicThousands,
-    /// Longest digit string read as one number; longer ones are read digit by
-    /// digit (upstream `langopts.max_digits`).
+    /// Longest run of 5 to 32 digits read as a cardinal; longer runs up to 32
+    /// digits are spelled in groups (upstream `langopts.max_digits`).
     pub max_digits: u8,
     /// Bit `n` set: a digit group ends when `n` digits remain, for the
     /// digit-by-digit reading (upstream `langopts.break_numbers`).
@@ -3833,8 +3833,8 @@ fn cardinal_pronunciation(
 
 const MAX_GROUPED_DIGITS: usize = 32;
 
-/// C `TranslateClause` flags a run of 5 to 32 digits as individual digits when
-/// it exceeds `max_digits` or starts with a zero; a longer run is one group.
+/// Whether C splits the run into digit groups: 5 to 32 digits that exceed
+/// max_digits or start with 0, or more than 32 digits (spelled as one group).
 fn reads_digit_by_digit(digits: &str, grammar: &NumberGrammar) -> bool {
     let n = digits.len();
     n > MAX_GROUPED_DIGITS

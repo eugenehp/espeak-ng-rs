@@ -1,9 +1,4 @@
-// tests/max_digits.rs
-//
-// C `langopts.max_digits`: a digit string longer than the language's limit
-// (14 unless the language sets another) is read digit by digit, in groups of
-// three digits run together.  The limit is 33 for en, 32 for ru/uk/ka, 22 for
-// ne and 20 for ko.  Expected strings come from C espeak-ng master (f0fb11a).
+// C langopts.max_digits (default 14): a run of 5 to 32 digits above the limit, or starting with 0, is spelled in groups set by break_numbers; longer runs are one word. Limits: en/lv/ltg 33, ru/uk/ka 32, ne 22, ko 20. Expected strings come from C espeak-ng master (f0fb11a).
 
 use espeak_ng::Translator;
 
