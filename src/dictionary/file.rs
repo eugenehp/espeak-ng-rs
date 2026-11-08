@@ -452,7 +452,12 @@ fn build_groups(data: &[u8], rules_offset: usize) -> Result<Groups, Error> {
         pos += 1; // skip RULE_GROUP_START
 
         // Check for special group types
-        if rules[pos] == RULE_REPLACEMENTS {
+        let Some(&kind) = rules.get(pos) else {
+            return Err(Error::InvalidData(
+                format!("bad rules data: truncated after RULE_GROUP_START at offset {}", rules_offset + pos)));
+        };
+
+        if kind == RULE_REPLACEMENTS {
             // The table starts at `(&RULE_REPLACEMENTS + 4) & ~3` — C rounds the
             // (memory) address *down* to a 4-byte boundary (`((intptr_t)p+4) &
             // ~3` in dictionary.c); `data` is itself 4-aligned, so the same
@@ -470,9 +475,12 @@ fn build_groups(data: &[u8], rules_offset: usize) -> Result<Groups, Error> {
             continue;
         }
 
-        if rules[pos] == RULE_LETTERGP2 {
+        if kind == RULE_LETTERGP2 {
             // p[0] = RULE_LETTERGP2, p[1] = group-index byte
-            let idx_byte = rules[pos + 1];
+            let Some(&idx_byte) = rules.get(pos + 1) else {
+                return Err(Error::InvalidData(
+                    format!("bad rules data: truncated RULE_LETTERGP2 at offset {}", rules_offset + pos)));
+            };
             let ix = if idx_byte < b'A' {
                 // negative wrap-around: (idx_byte - 'A') mod 256 as signed
                 (idx_byte as i16 - b'A' as i16 + 256) as usize
