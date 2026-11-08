@@ -14,6 +14,12 @@ use crate::phoneme::load::PhonemeData;
 
 pub const N_WORD_PHONEMES: usize = 200;
 
+/// Vowel count after which `get_vowel_stress` ignores the rest of the word (C `GetVowelStress` limit).
+const MAX_WORD_VOWELS: i32 = (N_WORD_PHONEMES / 2 - 1) as i32;
+
+/// `control` bit: skip the C `N_WORD_PHONEMES` bounds, for words composed from number words.
+pub const STRESS_UNBOUNDED: i32 = 1 << 8;
+
 // Stress level values (signed byte in C, i8 here)
 const STRESS_IS_DIMINISHED:   i8  = 0;
 const STRESS_IS_UNSTRESSED:   i8  = 1;
@@ -561,7 +567,8 @@ pub fn get_vowel_stress(
     let mut i = 0usize;
     let _phon_prev_stress = PHON_STRESS_PREV;
 
-    while i < original.len() {
+    let unbounded = control & STRESS_UNBOUNDED != 0;
+    while i < original.len() && (unbounded || count < MAX_WORD_VOWELS) {
         let phcode = original[i];
         if phcode == 0 { break; }
         i += 1;
@@ -731,16 +738,22 @@ pub fn set_word_stress(
     }
 
     // Build internal phoneme copy for GetVowelStress
-    let mut phonetic: Vec<u8> = phonemes.clone();
-    // Ensure null-terminated
-    if phonetic.last() != Some(&0) { phonetic.push(0); }
+    let unbounded = control & STRESS_UNBOUNDED != 0;
+    let mut phonetic: Vec<u8> = phonemes
+        .iter()
+        .copied()
+        .take_while(|&b| b != 0)
+        .take(if unbounded { usize::MAX } else { N_WORD_PHONEMES })
+        .collect();
+    phonetic.push(0);
 
     let mut vowel_stress = [0i8; 100];
     let (mut max_stress, vowel_count, detected_primary) = get_vowel_stress(
         &mut phonetic,
         phdata,
         &mut vowel_stress,
-        1,  // control=1: mark phUNSTRESSED vowels
+        // Bit 0: mark phUNSTRESSED vowels.
+        1 | (control & STRESS_UNBOUNDED),
         opts.stress_flags,
     );
     // An explicit primary-stress marker already in the phonemes (e.g. a `ˈ` from
@@ -1161,7 +1174,7 @@ pub fn set_word_stress(
     };
 
     let mut pi = 0usize;
-    while pi < phonetic_slice.len() {
+    while pi < phonetic_slice.len() && (unbounded || output.len() < N_WORD_PHONEMES - 3) {
         let phcode = phonetic_slice[pi];
         pi += 1;
         if phcode == 0 { break; }

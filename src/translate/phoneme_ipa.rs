@@ -160,6 +160,7 @@ pub fn codes_to_ipa_opts(
     for (n, &i) in real.iter().enumerate() {
         rank[i] = n;
     }
+    let starts = super::word_starts(codes, &real);
 
     let mut out = String::new();
     // The table the codes that follow belong to; `None` = the clause's own.
@@ -287,7 +288,7 @@ pub fn codes_to_ipa_opts(
                         continue;
                     }
                 }
-                let nb = neighbours_at(codes, &real, rank[i], phdata);
+                let nb = neighbours_at(codes, &real, &starts, rank[i], phdata);
                 let name = write_ph_mnemonic_ipa(phdata, code, &nb);
                 if let Some(sep) = sep {
                     // Not before the clause's first phoneme, not straight after
@@ -331,6 +332,7 @@ pub fn codes_to_ipa_opts(
 fn neighbours_at(
     codes: &[PhonemeCode],
     real: &[usize],
+    starts: &[bool],
     n: usize,
     phdata: &PhonemeData,
 ) -> Neighbours {
@@ -357,7 +359,6 @@ fn neighbours_at(
             _ => None,
         })
         .unwrap_or(1);
-    let starts = super::word_starts(codes, real);
     Neighbours {
         prev: at(n.checked_sub(1).and_then(|k| real.get(k))),
         this: codes[i].code,
