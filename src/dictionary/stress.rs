@@ -537,12 +537,12 @@ pub fn apply_special_attribute2(phonemes: &mut [u8], phdata: &PhonemeData, alt2:
 /// Returns (max_stress, vowel_count, stressed_syllable):
 /// - max_stress: the highest stress level found (-1 if none)
 /// - vowel_count: number of vowels found + 1 (boundary sentinels at 0 and count)
-/// - stressed_syllable: 0 if none, else the position of explicit primary stress
+/// - stressed_syllable: 0 if none, else the position of the fixed or explicit primary stress
 ///
 /// `control`: bit 0 = mark phUNSTRESSED vowels as STRESS_IS_UNSTRESSED (usually 1).
 ///
 /// `fixed_syllable`: a syllable already fixed by the dictionary entry (0 if none).
-/// While it is set, stress-previous markers do nothing.
+/// Stress-previous markers are ignored while nonzero.
 pub fn get_vowel_stress(
     phonemes: &mut Vec<u8>,
     phdata: &PhonemeData,
