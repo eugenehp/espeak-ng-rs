@@ -3149,14 +3149,11 @@ struct ScaleGroup {
     scale: Option<u8>,
 }
 
-/// Longest digit run spoken as a number; upstream breaks anything longer than
+/// Longest digit run spoken as a number; espeak-ng breaks anything longer than
 /// this into individual digits.
 const MAX_GROUPED_DIGITS: usize = 32;
 
-/// Split a decimal digit string into three-digit groups, most-significant
-/// first.  Scale `k` covers 10^(3k): 1 = thousand, 2 = million, 3 = billion,
-/// 4 = trillion, … up to `MAX_GROUPED_DIGITS` digits.  `digits` must be ASCII
-/// digits only.
+/// Three-digit groups, most significant first; scale `k` is 10^(3k). `digits` must be ASCII digits.
 fn split_scale_groups(digits: &str, dict: &Dictionary) -> Vec<ScaleGroup> {
     let count = digits.len().div_ceil(3);
     let mut groups: Vec<ScaleGroup> = digits
@@ -3174,7 +3171,7 @@ fn split_scale_groups(digits: &str, dict: &Dictionary) -> Vec<ScaleGroup> {
         .collect();
     // Fold any non-zero group whose scale word this language does not define
     // down into the next-lower scale (×1000), so magnitude is still conveyed.
-    // A language with every scale word (en/de/ru up to 10^18) is untouched; one
+    // A language that defines every scale word is untouched; one
     // that stops earlier (French has no `_0M4` past "milliard") still reads
     // 10^12 as "dix cent milliards" rather than dropping to a bare "un".
     // Groups are ordered most-significant first, so each carry lands on a group
@@ -4033,8 +4030,7 @@ fn translate_number_token(
             .map(|wr| WordResult { found_in_list: true, ..wr }),
         _ => {
             let mut phonemes = number_token_to_phonemes(token, dict, grammar)?;
-            // A digit run too long to group goes through C's letter-to-sound
-            // path, which bounds the word; composed number words are not bounded.
+            // Over-long runs are bounded like C's word buffer; composed number words are not.
             let control = match token {
                 NumberToken::Cardinal(digits) if digits.len() > MAX_GROUPED_DIGITS => 0,
                 _ => STRESS_UNBOUNDED,

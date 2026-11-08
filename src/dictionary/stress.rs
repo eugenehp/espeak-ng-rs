@@ -14,12 +14,10 @@ use crate::phoneme::load::PhonemeData;
 
 pub const N_WORD_PHONEMES: usize = 200;
 
-/// `GetVowelStress` stops reading a word's phonemes once it holds this many
-/// syllables (`N_WORD_PHONEMES/2 - 1`); the rest of the word is dropped.
+/// Vowel count after which `get_vowel_stress` ignores the rest of the word (C `GetVowelStress` limit).
 const MAX_WORD_VOWELS: i32 = (N_WORD_PHONEMES / 2 - 1) as i32;
 
-/// `control` bit: the word was composed from number words.  C never runs
-/// `SetWordStress` over those, so the `N_WORD_PHONEMES` bounds do not apply.
+/// `control` bit: skip the C `N_WORD_PHONEMES` bounds, for words composed from number words.
 pub const STRESS_UNBOUNDED: i32 = 1 << 8;
 
 // Stress level values (signed byte in C, i8 here)
@@ -754,7 +752,8 @@ pub fn set_word_stress(
         &mut phonetic,
         phdata,
         &mut vowel_stress,
-        1 | (control & STRESS_UNBOUNDED),  // control=1: mark phUNSTRESSED vowels
+        // Bit 0: mark phUNSTRESSED vowels.
+        1 | (control & STRESS_UNBOUNDED),
         opts.stress_flags,
     );
     // An explicit primary-stress marker already in the phonemes (e.g. a `ˈ` from

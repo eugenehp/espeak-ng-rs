@@ -1,8 +1,4 @@
-// tests/long_digit_strings.rs
-//
-// Digit strings past the `u64` range (20+ digits) used to fail to parse and the
-// token was dropped.  Upstream reads them group by group up to 32 digits and
-// digit by digit beyond that.  Expected strings are espeak-ng 1.52.0 output.
+// Expected strings are espeak-ng 1.52.0 output.
 
 use espeak_ng::Translator;
 
