@@ -592,6 +592,9 @@ pub struct HundredsGrammar {
     /// "honderd EN een" / "honderd EN twintig" but "honderd vier-en-dertig";
     /// Swahili "mia moja NA moja" but "mia moja thelethini na nne".
     pub conjunction_before_simple_remainder: bool,
+    /// Put the conjunction in front of the hundreds of a group that follows a
+    /// higher group — upstream `NUM_AND_HUNDRED`.
+    pub conjunction_before_hundreds: bool,
     /// Whether to omit the explicit `one` before `hundred` (in the compose path,
     /// `_{n}` + `_0C`): French "cent", not "un cent".
     pub omit_one_prefix: bool,
@@ -912,6 +915,7 @@ impl NumberGrammar {
         if matches!(lang, "bg" | "he") {
             grammar.hundreds.conjunction_before_simple_remainder = true;
         }
+        grammar.hundreds.conjunction_before_hundreds = matches!(lang, "ar" | "ku");
         // C `NUM_AND_UNITS`: a conjunction joins tens→units ("si O chahar",
         // "shloshim VE arba").  Arabic also has `NUM_SWAP_TENS`, so its units
         // come first ("arba'a WA thalathun").
@@ -3100,6 +3104,10 @@ impl Pronunciation {
         }
     }
 
+    fn insert_at(&mut self, at: usize, src: &[u8]) {
+        self.bytes.splice(at..at, src.iter().copied());
+    }
+
     fn append_lookup_suffix(&mut self, src: &[u8]) {
         self.bytes.extend_from_slice(trim_lookup(src));
     }
@@ -3293,6 +3301,23 @@ fn append_cardinal_group(
         return;
     }
 
+    dst.start_word();
+    let group_start = dst.bytes.len();
+    append_group_body(dst, group, dict, grammar, exact, preceded);
+    if preceded && grammar.hundreds.conjunction_before_hundreds && group.value >= 100 {
+        let and = lookup_num_phonemes(dict, "_0and");
+        dst.insert_at(group_start, trim_lookup(&and));
+    }
+}
+
+fn append_group_body(
+    dst: &mut Pronunciation,
+    group: ScaleGroup,
+    dict: &Dictionary,
+    grammar: &NumberGrammar,
+    exact: bool,
+    preceded: bool,
+) {
     if let Some(scale) = group.scale {
         append_scale_word(dst, group.value, scale, dict, grammar, exact);
     } else {
