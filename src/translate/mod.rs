@@ -196,11 +196,11 @@ use crate::dictionary::rules::is_letter_wc;
 use crate::dictionary::rules::translate_rules_phdata;
 use crate::dictionary::{
     FLAG_PREFIX_REMOVED, FLAG_SUFX, FLAG_SUFX_E_ADDED, FLAG_SUFFIX_REMOVED, FLAG_SUFFIX_VOWEL,
-    FLAG_SUFX_S, LETTERGP_B, LETTERGP_VOWEL2, SUFX_A, SUFX_E, SUFX_I, SUFX_M, SUFX_P,
+    FLAG_SUFX_S, LETTERGP_B, LETTERGP_VOWEL2, N_WORD_PHONEMES, SUFX_A, SUFX_E, SUFX_I, SUFX_M, SUFX_P,
 };
 use crate::dictionary::stress::{set_word_stress, promote_strend_stress, change_word_stress,
                                apply_word_final_devoicing, apply_alt_stress_upgrade,
-                               apply_special_attribute2, StressOpts};
+                               apply_special_attribute2, StressOpts, STRESS_UNBOUNDED};
 
 use ipa_table::{
     en_ipa_override,
@@ -1744,6 +1744,95 @@ pub fn parse_embedded_commands(text: &str) -> (String, Vec<EmbeddedCmd>) {
     (out, cmds)
 }
 
+/// C's `N_TR_SOURCE`: the source bytes one clause can hold.
+const CLAUSE_SOURCE_BYTES: usize = 800;
+
+/// Clause ends at the last byte that fits (C `ReadClause`).
+const CLAUSE_HARD_BYTES: usize = CLAUSE_SOURCE_BYTES - 4;
+/// Past this size, the next non-alphanumeric byte ends the clause.
+const CLAUSE_SOFT_BYTES: usize = CLAUSE_SOURCE_BYTES - 75;
+
+/// Splits `text` at the hard clause limit, flagging each piece after which a clause ends. Updates `used`.
+fn clause_pieces(text: &str, used: &mut usize) -> Vec<(String, bool)> {
+    let mut pieces: Vec<(String, bool)> = Vec::new();
+    let mut current = String::new();
+    for c in text.chars() {
+        current.push(c);
+        *used += c.len_utf8();
+        if *used >= CLAUSE_HARD_BYTES {
+            pieces.push((std::mem::take(&mut current), true));
+            *used = 0;
+        }
+    }
+    if !current.is_empty() {
+        pieces.push((current, false));
+    }
+    pieces
+}
+
+/// Adds the clause boundaries C's `ReadClause` inserts when its source buffer fills.
+fn split_overlong_clauses(tokens: Vec<Token>) -> Vec<Token> {
+    let mut out = Vec::with_capacity(tokens.len());
+    let mut used = 0usize;
+    let mut after_space = true;
+    for token in tokens {
+        match token {
+            Token::ClauseBoundary(_) => {
+                used = 0;
+                after_space = true;
+                out.push(token);
+            }
+            Token::Space => {
+                if !after_space {
+                    used += 1;
+                }
+                after_space = true;
+                out.push(token);
+                if used > CLAUSE_SOFT_BYTES {
+                    out.push(Token::ClauseBoundary(ssml::SSML_BREAK));
+                    used = 0;
+                }
+            }
+            Token::Word(word) => {
+                after_space = false;
+                for (piece, ends) in clause_pieces(&word, &mut used) {
+                    out.push(Token::Word(piece));
+                    if ends {
+                        out.push(Token::ClauseBoundary(ssml::SSML_BREAK));
+                        after_space = true;
+                    }
+                }
+            }
+            Token::Number(NumberToken::Cardinal(digits)) => {
+                after_space = false;
+                for (piece, ends) in clause_pieces(&digits, &mut used) {
+                    out.push(Token::Number(NumberToken::Cardinal(piece)));
+                    if ends {
+                        out.push(Token::ClauseBoundary(ssml::SSML_BREAK));
+                        after_space = true;
+                    }
+                }
+            }
+            Token::Number(number) => {
+                after_space = false;
+                used += number.surface().len();
+                out.push(Token::Number(number));
+            }
+            Token::Punctuation(c) | Token::Operator(c) => {
+                after_space = false;
+                used += c.len_utf8();
+                out.push(token);
+                if used > CLAUSE_SOFT_BYTES {
+                    out.push(Token::ClauseBoundary(ssml::SSML_BREAK));
+                    used = 0;
+                    after_space = true;
+                }
+            }
+            other => out.push(other),
+        }
+    }
+    out
+}
 
 pub fn tokenize_opts(text: &str, grammar: &NumberGrammar) -> Vec<Token> {
     let text = normalize_number_symbols(text);
@@ -3150,28 +3239,29 @@ struct ScaleGroup {
     scale: Option<u8>,
 }
 
-/// The largest scale group that fits in a `u64`: 10^18 (scale 6).  `u64::MAX`
-/// is ≈1.8×10^19, so the scale-6 group can be up to 18.
-const MAX_SCALE_GROUP: u32 = 6;
+/// Longest digit run spoken as a number; espeak-ng breaks anything longer than
+/// this into individual digits.
+const MAX_GROUPED_DIGITS: usize = 32;
 
-/// Split a value into three-digit groups, most-significant first.  Scale `k`
-/// covers 10^(3k): 1 = thousand, 2 = million, 3 = billion, 4 = trillion, … up
-/// to the largest that fits in a `u64`.  Leading zero groups are emitted but
-/// skipped by `append_cardinal_group`, so small numbers are unaffected; this
-/// fixes large numbers ≥ 10^12, which previously overflowed the billion group
-/// (`1_000_000_000_000` → "ten hundred billion" instead of "one trillion").
-fn split_scale_groups(value: u64, dict: &Dictionary) -> Vec<ScaleGroup> {
-    let mut groups = Vec::with_capacity(MAX_SCALE_GROUP as usize + 1);
-    for scale in (0..=MAX_SCALE_GROUP).rev() {
-        let divisor = 1_000u64.pow(scale);
-        groups.push(ScaleGroup {
-            value: ((value / divisor) % 1_000) as u32,
-            scale: if scale == 0 { None } else { Some(scale as u8) },
-        });
-    }
+/// Three-digit groups, most significant first; scale `k` is 10^(3k). `digits` must be ASCII digits.
+fn split_scale_groups(digits: &str, dict: &Dictionary) -> Vec<ScaleGroup> {
+    let count = digits.len().div_ceil(3);
+    let mut groups: Vec<ScaleGroup> = digits
+        .as_bytes()
+        .rchunks(3)
+        .rev()
+        .enumerate()
+        .map(|(index, chunk)| {
+            let scale = count - 1 - index;
+            ScaleGroup {
+                value: chunk.iter().fold(0, |acc, &b| acc * 10 + u32::from(b.wrapping_sub(b'0'))),
+                scale: if scale == 0 { None } else { u8::try_from(scale).ok() },
+            }
+        })
+        .collect();
     // Fold any non-zero group whose scale word this language does not define
     // down into the next-lower scale (×1000), so magnitude is still conveyed.
-    // A language with every scale word (en/de/ru up to 10^18) is untouched; one
+    // A language that defines every scale word is untouched; one
     // that stops earlier (French has no `_0M4` past "milliard") still reads
     // 10^12 as "dix cent milliards" rather than dropping to a bare "un".
     // Groups are ordered most-significant first, so each carry lands on a group
@@ -3753,23 +3843,22 @@ fn cardinal_pronunciation(
         for _ in 0..n_leading {
             result.push_lookup_word(&lookup_num_phonemes(dict, "_0"));
         }
-        let value: u64 = digits.parse().ok()?;
-        if value == 0 {
+        if digits.bytes().all(|b| b == b'0') {
             // "000" → the leading zeros plus a final "zero" (an all-zero run).
             result.push_lookup_word(&lookup_num_phonemes(dict, "_0"));
         } else {
-            let mut spoken = false;
-            for group in split_scale_groups(value, dict) {
-                let exact = scale_group_is_exact(value, group.scale);
-                append_cardinal_group(&mut result, group, dict, grammar, exact, spoken);
-                spoken |= group.value != 0;
-            }
+            push_cardinal_groups(&mut result, digits, dict, grammar);
         }
         return Some(result);
     }
 
-    let value: u64 = digits.parse().ok()?;
-    if value == 0 {
+    if digits.len() > MAX_GROUPED_DIGITS {
+        let mut result = Pronunciation::default();
+        push_individual_digits(&mut result, digits, dict);
+        return Some(result);
+    }
+
+    if digits == "0" {
         let mut pronunciation = Pronunciation::default();
         pronunciation.push_lookup_word(&lookup_num_phonemes(dict, "_0"));
         return Some(pronunciation);
@@ -3782,28 +3871,65 @@ fn cardinal_pronunciation(
     // every language, so `en 1500` was "fifteen hundred" where upstream says
     // "one thousand five hundred", `de 1100` "elfhundert" for "ein tausend ein
     // hundert" — and `en 1984` missed the year reading entirely.
-    if grammar.year_1900 && (1900..=1999).contains(&value) {
-        return Some(num3_phonemes(dict, value as u32, false, grammar));
+    if grammar.year_1900 && digits.len() == 4 {
+        if let Some(year) = digits.parse::<u32>().ok().filter(|y| (1900..=1999).contains(y)) {
+            return Some(num3_phonemes(dict, year, false, grammar));
+        }
     }
 
     let mut result = Pronunciation::default();
+    push_cardinal_groups(&mut result, digits, dict, grammar);
+    Some(result)
+}
+
+fn push_cardinal_groups(
+    result: &mut Pronunciation,
+    digits: &str,
+    dict: &Dictionary,
+    grammar: &NumberGrammar,
+) {
     let mut spoken = false;
-    for group in split_scale_groups(value, dict) {
-        let exact = scale_group_is_exact(value, group.scale);
-        append_cardinal_group(&mut result, group, dict, grammar, exact, spoken);
+    for group in split_scale_groups(digits, dict) {
+        let exact = scale_group_is_exact(digits, group.scale);
+        append_cardinal_group(result, group, dict, grammar, exact, spoken);
         spoken |= group.value != 0;
     }
+}
 
-    Some(result)
+fn push_individual_digits(result: &mut Pronunciation, digits: &str, dict: &Dictionary) {
+    let words: Vec<Vec<u8>> = (0..10u8)
+        .map(|d| lookup_num_phonemes(dict, &num_key(d)))
+        .collect();
+    let mut word: Vec<u8> = Vec::new();
+    let spoken = digits
+        .bytes()
+        .filter_map(|d| words.get(usize::from(d.wrapping_sub(b'0'))));
+    for (ix, digit) in spoken.enumerate() {
+        let mut piece = trim_lookup(digit).to_vec();
+        if ix % 2 == 1 {
+            piece.push(crate::phoneme::PHON_PAUSE_NOLINK);
+        }
+        // C's `AppendPhonemes` drops a piece that would reach the word buffer
+        // size, so a long digit run is cut at a whole digit.
+        if word.len() + piece.len() < N_WORD_PHONEMES {
+            word.extend_from_slice(&piece);
+        }
+    }
+    if !word.is_empty() {
+        result.push_lookup_word(&word);
+    }
 }
 
 /// Whether a scale group is *exact* — the whole number has no non-zero digit
 /// below this scale (so `1000` is exact at the thousands scale, `1234` is not).
 /// A scale-less (units) group is always "exact".  Used to select the `_0M{n}x`
 /// variant scale word.
-fn scale_group_is_exact(value: u64, scale: Option<u8>) -> bool {
+fn scale_group_is_exact(digits: &str, scale: Option<u8>) -> bool {
     match scale {
-        Some(s) => value % 1000u64.pow(s as u32) == 0,
+        Some(s) => {
+            let trailing_zeros = digits.len() - digits.trim_end_matches('0').len();
+            trailing_zeros >= 3 * usize::from(s)
+        }
         None => true,
     }
 }
@@ -3922,9 +4048,15 @@ fn try_ordinal_number(
         return None;
     }
 
-    let value: u64 = ordinal.digits.parse().ok()?;
+    let digits = ordinal.digits.as_str();
+    if digits.is_empty()
+        || digits.len() > MAX_GROUPED_DIGITS
+        || !digits.bytes().all(|b| b.is_ascii_digit())
+    {
+        return None;
+    }
     let mut pronunciation = Pronunciation::default();
-    let groups = split_scale_groups(value, dict);
+    let groups = split_scale_groups(digits, dict);
     // For a zero value there is no non-zero group; fall back to the *last* group
     // (the units, scale-less) so "0th" renders "zeroth" instead of dropping the
     // number or attaching a spurious scale word.
@@ -3967,7 +4099,7 @@ fn try_ordinal_number(
     }
 
     let mut phonemes = pronunciation.finish();
-    set_word_stress(&mut phonemes, phdata, stress_opts, Some(0), -1, 0);
+    set_word_stress(&mut phonemes, phdata, stress_opts, Some(0), -1, STRESS_UNBOUNDED);
     Some(WordResult { phonemes, dict_flags: 0, found_in_list: false })
 }
 
@@ -3988,7 +4120,12 @@ fn translate_number_token(
             .map(|wr| WordResult { found_in_list: true, ..wr }),
         _ => {
             let mut phonemes = number_token_to_phonemes(token, dict, grammar)?;
-            set_word_stress(&mut phonemes, phdata, stress_opts, Some(0), -1, 0);
+            // Over-long runs are bounded like C's word buffer; composed number words are not.
+            let control = match token {
+                NumberToken::Cardinal(digits) if digits.len() > MAX_GROUPED_DIGITS => 0,
+                _ => STRESS_UNBOUNDED,
+            };
+            set_word_stress(&mut phonemes, phdata, stress_opts, Some(0), -1, control);
             Some(WordResult { phonemes, dict_flags: 0, found_in_list: true })
         }
     }
@@ -8309,7 +8446,7 @@ impl Translator {
         };
 
         let text = normalize_apostrophes(text);
-        let mut tokens = tokenize_opts(&text, &self.options.number_grammar);
+        let mut tokens = split_overlong_clauses(tokenize_opts(&text, &self.options.number_grammar));
         apply_roman_numerals(&mut tokens, lang);
         suppress_abbreviation_periods(&mut tokens, lang);
         apply_time_reading(&mut tokens, lang);
