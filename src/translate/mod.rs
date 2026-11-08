@@ -593,7 +593,7 @@ pub struct HundredsGrammar {
     /// Swahili "mia moja NA moja" but "mia moja thelethini na nne".
     pub conjunction_before_simple_remainder: bool,
     /// Put the conjunction in front of the hundreds of a group that follows a
-    /// higher group (Kurdish "hezar USEsedu") — upstream `NUM_AND_HUNDRED`.
+    /// higher group — upstream `NUM_AND_HUNDRED`.
     pub conjunction_before_hundreds: bool,
     /// Whether to omit the explicit `one` before `hundred` (in the compose path,
     /// `_{n}` + `_0C`): French "cent", not "un cent".
