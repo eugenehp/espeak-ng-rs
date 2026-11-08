@@ -1747,14 +1747,12 @@ pub fn parse_embedded_commands(text: &str) -> (String, Vec<EmbeddedCmd>) {
 /// C's `N_TR_SOURCE`: the source bytes one clause can hold.
 const CLAUSE_SOURCE_BYTES: usize = 800;
 
-/// Where `ReadClause` ends a clause that has no punctuation: at the last byte
-/// that fits, or at the first non-alphanumeric one past `CLAUSE_SOFT_BYTES`.
+/// Clause ends at the last byte that fits (C `ReadClause`).
 const CLAUSE_HARD_BYTES: usize = CLAUSE_SOURCE_BYTES - 4;
+/// Past this size, the next non-alphanumeric byte ends the clause.
 const CLAUSE_SOFT_BYTES: usize = CLAUSE_SOURCE_BYTES - 75;
 
-/// Cut `text` into the pieces that fill clauses.  `used` is the byte count of
-/// the clause so far.
-/// Each piece is paired with whether a clause ends after it.
+/// Splits `text` at the hard clause limit, flagging each piece after which a clause ends. Updates `used`.
 fn clause_pieces(text: &str, used: &mut usize) -> Vec<(String, bool)> {
     let mut pieces: Vec<(String, bool)> = Vec::new();
     let mut current = String::new();
@@ -1772,9 +1770,7 @@ fn clause_pieces(text: &str, used: &mut usize) -> Vec<(String, bool)> {
     pieces
 }
 
-/// Insert a clause boundary where C's `ReadClause` would end a clause because
-/// its `N_TR_SOURCE` buffer is full, so one unpunctuated run (a very long
-/// digit string) is read as several clauses rather than one huge word.
+/// Adds the clause boundaries C's `ReadClause` inserts when its source buffer fills.
 fn split_overlong_clauses(tokens: Vec<Token>) -> Vec<Token> {
     let mut out = Vec::with_capacity(tokens.len());
     let mut used = 0usize;

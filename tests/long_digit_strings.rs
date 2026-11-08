@@ -93,8 +93,7 @@ fn hundred_digits_keep_stress_marks_up_to_the_c_word_limit() {
     assert_eq!(t.text_to_ipa(&input).unwrap().trim_end(), expected);
 }
 
-// The fixture is espeak-ng master's own output (`-q --ipa -v en`): 126 clauses,
-// each cut to 200 phonemes of one word, like the C engine's clause buffer.
+// Output of espeak-ng at commit f0fb11a8: `-q --ipa -v en` on the test input.
 const C_MASTER_100K: &str = include_str!("fixtures/en_digits_100k_c_master.ipa");
 
 #[test]
