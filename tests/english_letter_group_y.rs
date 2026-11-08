@@ -1,10 +1,4 @@
-// tests/english_letter_group_y.rs
-//
-// English redefines letter group `Y` as "vowels, including y" (`tr_languages.c`,
-// `SetLetterBits(tr, 6, "aeiouy")`); other Latin languages keep the front
-// vowels `eiy`.  Rules such as `_) x (Y  z` and `_) kn (Y  n` need every vowel,
-// so word-initial `x` read `ks` and `kn` read `kn` before `a`, `o` and `u`.
-//
+// English redefines letter group Y as "aeiouy" (tr_languages.c, SetLetterBits(tr, 6, ...)); other Latin languages keep "eiy". Rules like "_) x (Y" and "_) kn (Y" depend on it.
 // Values from a locally built upstream `espeak-ng` 1.52.0.
 
 use espeak_ng::Translator;
