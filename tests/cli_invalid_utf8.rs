@@ -61,6 +61,7 @@ fn file_input_with_invalid_bytes() {
     assert_speaks_valid_parts(out.status.code(), &String::from_utf8_lossy(&out.stdout));
 }
 
+#[cfg(unix)]
 #[test]
 fn argv_with_invalid_bytes() {
     use std::os::unix::ffi::OsStrExt;
