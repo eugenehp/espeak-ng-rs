@@ -234,7 +234,7 @@ The crate reads compiled eSpeak NG data files at runtime.  The data resolution o
 4. `/usr/share/espeak-ng-data` (system installation)
 
 A complete copy of the compiled data directory, built from upstream eSpeak NG
-`master` (`f135499`, 1.53.0-dev), is bundled at `espeak-ng-data/` in this
+`master` (`f0fb11a8`, 1.53.0), is bundled at `espeak-ng-data/` in this
 repository. This makes the crate fully self-contained without requiring a system
 eSpeak NG installation.
 
@@ -249,6 +249,12 @@ The bundle contains:
 For selective embedding, the repository also contains per-language dictionary
 crates under `data-crates/espeak-ng-data-dict-<lang>` in addition to the
 aggregate `espeak-ng-data-dicts` crate.
+
+To refresh the bundle, build upstream eSpeak NG and copy the files that differ
+from its `espeak-ng-data/` over the bundled ones (keep `mbrola_ph/` and
+`voices/mb/`, which upstream does not build). Then copy each changed file into
+the matching `data-crates/*/data/` snapshot; `scripts/publish.sh` fails
+preflight while any snapshot differs from `espeak-ng-data/`.
 
 ```bash
 # Use bundled data explicitly
