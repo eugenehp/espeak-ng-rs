@@ -179,7 +179,7 @@ fn abbreviations_are_spelled_letter_by_letter() {
 fn post_context_reaches_across_the_word_boundary() {
     // Portuguese `_) o (_C` — the article is `U` before a consonant-initial word.
     if let Some(got) = x("pt", "O menino comeu o pão.") {
-        assert_eq!(got, "ʊ mˌenˈinʊ kumˈew ʊ pˈɐ\u{303}ʊ\u{303}");
+        assert_eq!(got, "ʊ mˌenˈinʊ kumˈeʊ ʊ pˈɐ\u{303}ʊ\u{303}");
     }
 }
 

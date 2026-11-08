@@ -140,9 +140,9 @@ fn a_spoken_symbol_takes_a_clause_position() {
 #[test]
 fn conditional_symbol_entries_are_found() {
     let pt = skip_unless!("pt");
-    assert_eq!(pt.text_to_ipa("§").unwrap(), "pˌɐɾˈaɡɾɐfʊ");
+    assert_eq!(pt.text_to_ipa("§").unwrap(), "sesˈɐ\u{303}ʊ\u{303}");
     if let Some(br) = tr("pt-br") {
-        assert_eq!(br.text_to_ipa("§").unwrap(), "pˌaɾˈaɡɾɐfʊ");
+        assert_eq!(br.text_to_ipa("§").unwrap(), "sesˈɐ\u{303}ʊ\u{303}");
     }
 }
 

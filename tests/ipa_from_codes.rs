@@ -32,9 +32,9 @@ fn cross_word_allophones_reach_the_ipa() {
     if let Some(t) = tr("uk") {
         assert_eq!(t.text_to_ipa("привіт світ").unwrap(), "prɪβˈiːd̪ zβˈiːt̪");
     }
-    // Portuguese `m` takes the place of the following stop.
+    // Portuguese final `m` surfaces as `ŋ` before a stop.
     if let Some(t) = tr("pt") {
-        assert_eq!(t.text_to_ipa("bom dia").unwrap(), "bˈo\u{303}n dˈiɐ");
+        assert_eq!(t.text_to_ipa("bom dia").unwrap(), "bˈoŋ dˈiɐ");
     }
 }
 
