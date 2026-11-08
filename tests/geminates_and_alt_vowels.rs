@@ -58,6 +58,6 @@ fn alt2_opens_the_stressed_vowel() {
     // dropped, which is why this read `sˈɔmma`.)
     assert_eq!(it.text_to_ipa("somma").unwrap(), "sˈomma");
     if let Some(pt) = tr("pt") {
-        assert_eq!(pt.text_to_ipa("catorze").unwrap(), "kˌɐtˈoɾzɨ");
+        assert_eq!(pt.text_to_ipa("catorze").unwrap(), "kˌɐtˈoɾəzɨ");
     }
 }

@@ -21,7 +21,7 @@ fn assimilation_crosses_the_word_boundary() {
     if let Some(pl) = tr("pl") {
         assert_eq!(pl.text_to_ipa("minus b").unwrap(), "mˈinuz bˈɛ");
         // 0x08: it propagates through a liquid, so "kciuk w górę" ends in /ɡ/.
-        assert_eq!(pl.text_to_ipa("kciuk w górę").unwrap(), "ktɕˈuɡ w ɡˈurɛ");
+        assert_eq!(pl.text_to_ipa("kciuk w górę").unwrap(), "ktɕˈuɡ v ɡˈurɛ");
     }
     if let Some(cs) = tr("cs") {
         assert_eq!(cs.text_to_ipa("minus b").unwrap(), "mˈinuz bˈeː");

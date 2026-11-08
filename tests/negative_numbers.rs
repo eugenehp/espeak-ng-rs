@@ -87,7 +87,7 @@ fn leading_minus_reads_the_sign_across_languages() {
     // Finnish's `__) - (_D  mi:nus` or a list entry like Greek's `- m'ion`.
     // A language whose data has neither drops it — C does too, so these lists
     // are the oracle's own split.
-    for lang in ["cs", "ro", "sv", "nb", "uk", "pt"] {
+    for lang in ["cs", "ro", "sv", "nb", "uk", "pt", "pl"] {
         let Some(t) = Translator::new(lang, None).ok() else {
             eprintln!("[SKIP] no {lang} data");
             continue;
@@ -96,7 +96,7 @@ fn leading_minus_reads_the_sign_across_languages() {
         let (five, minus5) = (ipa("5"), ipa("-5"));
         assert!(minus5 != five, "{lang} '-5' dropped the sign: {minus5:?} (5={five:?})");
     }
-    for lang in ["pl", "ru", "da", "tr", "bg"] {
+    for lang in ["ru", "da", "tr", "bg"] {
         let Some(t) = Translator::new(lang, None).ok() else {
             eprintln!("[SKIP] no {lang} data");
             continue;

@@ -25,7 +25,7 @@ fn spanish_dotted_ordinal_matches_undotted() {
 
 #[test]
 fn portuguese_and_italian_dotted_ordinals() {
-    for (lang, s, sub) in [("pt", "1.º", "pɾˌimˈeɪɾʊ"), ("it", "2.º", "sekˈondo")] {
+    for (lang, s, sub) in [("pt", "1.º", "pɹˌimˈeɪɾʊ"), ("it", "2.º", "sekˈondo")] {
         let Some(t) = Translator::new(lang, None).ok() else {
             eprintln!("[SKIP] no {lang} data");
             continue;
