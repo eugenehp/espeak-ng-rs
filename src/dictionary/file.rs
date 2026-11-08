@@ -688,10 +688,39 @@ fn build_letter_bits(lang: &str) -> Box<[u8; 256]> {
             // Latin/default: use the English letter bits
             let en = crate::translate::english_letter_bits();
             bits.copy_from_slice(en.as_slice());
+            if lang == "en" {
+                for &c in b"aeiouy" {
+                    bits[c as usize] |= 1 << 6;
+                    bits[c.to_ascii_uppercase() as usize] |= 1 << 6;
+                }
+            }
+            latin_vowel_letters(lang)
+                .iter()
+                .for_each(|&c| set_letter_vowel(&mut bits, c));
         }
     }
 
     bits
+}
+
+/// Letters promoted to vowels for lang (see set_letter_vowel); empty for languages with none.
+fn latin_vowel_letters(lang: &str) -> &'static [u8] {
+    let primary = lang.split(['-', '_']).next().unwrap_or(lang);
+    match primary {
+        "cy" => b"wy",
+        "sr" | "hr" | "bs" | "cs" | "sk" => b"yr",
+        "af" | "da" | "de" | "fi" | "fr" | "hu" | "is" | "it" | "nl" | "nb" | "no" | "pl"
+        | "pt" | "sl" | "sq" | "sv" => b"y",
+        _ => b"",
+    }
+}
+
+/// Makes c (either case) a vowel: sets groups A and VOWEL2, clears all other groups, keeps front-vowel group Y.
+fn set_letter_vowel(bits: &mut [u8; 256], c: u8) {
+    [c, c.to_ascii_uppercase()].iter().for_each(|&ch| {
+        let slot = &mut bits[usize::from(ch)];
+        *slot = (*slot & 0x40) | 0x81;
+    });
 }
 
 #[cfg(test)]

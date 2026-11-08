@@ -9217,7 +9217,10 @@ fn set_regressive_voicing(codes: &mut [PhonemeCode], phdata: &PhonemeData, regre
 
     for i in (0..codes.len()).rev() {
         // A word boundary is a marker, not a phoneme; note it and move on.
-        if codes[i].is_boundary || codes[i].marker.is_some() {
+        if codes[i].is_boundary
+            || codes[i].marker.is_some()
+            || codes[i].code == crate::phoneme::PHON_END_WORD
+        {
             // A *clause* boundary is a pause phoneme in C's list, and a pause
             // resets the voicing in force — which is what devoices Polish
             // `flag.` before a clause starting with a voiced consonant
