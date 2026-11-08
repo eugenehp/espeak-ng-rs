@@ -703,8 +703,7 @@ fn build_letter_bits(lang: &str) -> Box<[u8; 256]> {
     bits
 }
 
-/// Letters that `InitTranslator`'s per-language `SetLetterVowel` calls
-/// promote to vowels.
+/// Letters promoted to vowels for lang (see set_letter_vowel); empty for languages with none.
 fn latin_vowel_letters(lang: &str) -> &'static [u8] {
     let primary = lang.split(['-', '_']).next().unwrap_or(lang);
     match primary {
@@ -716,8 +715,7 @@ fn latin_vowel_letters(lang: &str) -> &'static [u8] {
     }
 }
 
-/// Port of `SetLetterVowel`: the letter joins groups A and VOWEL2 and leaves
-/// every group except the front-vowel group Y.
+/// Makes c (either case) a vowel: sets groups A and VOWEL2, clears all other groups, keeps front-vowel group Y.
 fn set_letter_vowel(bits: &mut [u8; 256], c: u8) {
     [c, c.to_ascii_uppercase()].iter().for_each(|&ch| {
         let slot = &mut bits[usize::from(ch)];
