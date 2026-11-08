@@ -149,9 +149,7 @@ pub fn resolve_phoneme_table(data_dir: &Path, voice_tag: &str) -> String {
     phonemes.unwrap_or_else(|| voice_tag.to_string())
 }
 
-/// The name a `(xx)` language-switch marker prints for `target`. A marker that
-/// returns to the base voice (`target == lang`) names the phoneme table in
-/// force (`pt` → `pt-pt`, `pt-br` → `pt`); any other marker names its target.
+/// Name printed inside a (xx) language-switch marker. A marker back to the base voice (target == lang) names the active phoneme table; any other marker names target.
 pub fn switch_marker_name<'a>(phdata: &'a PhonemeData, target: &'a str, lang: &str) -> &'a str {
     if target == lang {
         phdata.active_table_name().unwrap_or(target)

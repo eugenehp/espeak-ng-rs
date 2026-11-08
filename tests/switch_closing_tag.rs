@@ -1,7 +1,4 @@
-// The marker that closes a language switch names the base voice's phoneme
-// table, not the voice tag. Expected values are from `espeak-ng -q --ipa -v <voice>`
-// (identical on 1.52.0 and master). The tests need the full data set: set
-// ESPEAK_NG_DATA to an espeak-ng-data directory, otherwise they are skipped.
+// A marker closing a language switch names the base voice's phoneme table, not the voice tag. Expected values come from espeak-ng -q --ipa -v <voice>. Without ESPEAK_NG_DATA the tests return early and pass vacuously.
 
 use espeak_ng::Translator;
 
