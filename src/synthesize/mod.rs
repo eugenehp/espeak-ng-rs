@@ -45,17 +45,17 @@
 //
 // ## Formant Synthesis
 //
+pub mod bytecode;
+pub mod engine;
 pub mod envelopes;
 pub mod intonation;
-pub mod targets;
-pub mod engine;
-pub mod phondata;
-pub mod bytecode;
-pub mod wavegen;
-pub mod setlengths;
-pub mod sample;
 pub mod klatt;
+pub mod phondata;
+pub mod sample;
+pub mod setlengths;
+pub mod targets;
 pub mod tempo;
+pub mod wavegen;
 
 use crate::error::{Error, Result};
 use crate::phoneme::{PH_PAUSE, PH_VOWEL};
@@ -138,11 +138,11 @@ impl Frame {
 #[derive(Debug, Clone, Default)]
 pub struct Resonator {
     /// Feed-forward coefficient `a` (see Klatt 1980).
-    pub a:  f64,
+    pub a: f64,
     /// First feedback coefficient `b`.
-    pub b:  f64,
+    pub b: f64,
     /// Second feedback coefficient `c`.
-    pub c:  f64,
+    pub c: f64,
     /// Delay element `y[n-1]`.
     pub x1: f64,
     /// Delay element `y[n-2]`.
@@ -264,7 +264,8 @@ impl VoiceParams {
     /// True when any formant carries a non-unity freq/height/width scale (so the
     /// frame formants must be pre-scaled before synthesis).
     pub fn formant_scaling_active(&self) -> bool {
-        self.formant_freq_pct.iter()
+        self.formant_freq_pct
+            .iter()
             .chain(self.formant_height_pct.iter())
             .chain(self.formant_width_pct.iter())
             .any(|&p| p != 100)
@@ -287,30 +288,30 @@ impl VoiceParams {
 impl Default for VoiceParams {
     fn default() -> Self {
         VoiceParams {
-            speed_percent:  100,
-            pitch_hz:       118,  // male default
+            speed_percent: 100,
+            pitch_hz: 118,             // male default
             pitch_range_units: 3888.0, // espeak's default `pitch 82 118`
             stress_lengths: None,
             intonation_group: 1,
-            pitch_range:    100,
-            formant_scale:  100,
-            sample_rate:    22050,
-            amplitude:      80,
+            pitch_range: 100,
+            formant_scale: 100,
+            sample_rate: 22050,
+            amplitude: 80,
             no_final_pause: false,
-            rand_seed:      0,
-            user_rate_wpm:  175,
-            user_pitch:     50,
-            user_volume:    100,
+            rand_seed: 0,
+            user_rate_wpm: 175,
+            user_pitch: 50,
+            user_volume: 100,
             formant_factor: 256,
-            tone_adjust:    wavegen::set_tone_adjust(&wavegen::DEFAULT_TONE_POINTS),
-            klatt:          false,
-            formant_freq_pct:   [100; 7],
+            tone_adjust: wavegen::set_tone_adjust(&wavegen::DEFAULT_TONE_POINTS),
+            klatt: false,
+            formant_freq_pct: [100; 7],
             formant_height_pct: [100; 7],
-            formant_width_pct:  [100; 7],
+            formant_width_pct: [100; 7],
             echo_delay_samples: 0,
-            echo_amp:           0,
-            flutter:            0,
-            stress_amps:        [0; 8],
+            echo_amp: 0,
+            flutter: 0,
+            stress_amps: [0; 8],
         }
     }
 }
@@ -399,9 +400,10 @@ impl Synthesizer {
         }
         let segments = engine::parse_ipa(phonemes, &self.voice);
         if segments.is_empty() {
-            return Err(Error::InvalidData(
-                format!("no recognisable phonemes in {:?}", phonemes)
-            ));
+            return Err(Error::InvalidData(format!(
+                "no recognisable phonemes in {:?}",
+                phonemes
+            )));
         }
         let pcm = engine::synthesize_segments(&segments, &self.voice);
         Ok(pcm)
@@ -510,7 +512,11 @@ impl Synthesizer {
                 AnnCode::Embedded(_) => {}
                 AnnCode::WordBoundary => {
                     // Close the word: every phoneme in it shares its top stress.
-                    let top = out[word_start..].iter().map(|p| p.stress_level).max().unwrap_or(0);
+                    let top = out[word_start..]
+                        .iter()
+                        .map(|p| p.stress_level)
+                        .max()
+                        .unwrap_or(0);
                     for p in &mut out[word_start..] {
                         p.word_stress = top;
                     }
@@ -528,11 +534,18 @@ impl Synthesizer {
                     let syl = syllable.unwrap_or_default();
                     let ph = phdata.get(info.code);
                     let (samples, prepause) = match synthesize_phoneme_info(
-                        info, phdata, speed_factor, self.voice.formant_factor,
+                        info,
+                        phdata,
+                        speed_factor,
+                        self.voice.formant_factor,
                         self.voice.stress_lengths.as_ref(),
-                    )
-                    {
-                        PhonemeRender::Frames { frames, lead_silence, trail_silence, .. } => (
+                    ) {
+                        PhonemeRender::Frames {
+                            frames,
+                            lead_silence,
+                            trail_silence,
+                            ..
+                        } => (
                             frames.iter().map(|f| f.length as usize * 64).sum::<usize>()
                                 + trail_silence,
                             lead_silence,
@@ -568,7 +581,11 @@ impl Synthesizer {
                 }
             }
         }
-        let top = out[word_start..].iter().map(|p| p.stress_level).max().unwrap_or(0);
+        let top = out[word_start..]
+            .iter()
+            .map(|p| p.stress_level)
+            .max()
+            .unwrap_or(0);
         for p in &mut out[word_start..] {
             p.word_stress = top;
         }
@@ -595,7 +612,8 @@ impl Synthesizer {
     ) -> Result<(PcmBuffer, Vec<usize>, Vec<usize>)> {
         let mut word_marks = Vec::new();
         let mut sentence_marks = Vec::new();
-        let pcm = self.synthesize_codes_marked(codes, phdata, &mut word_marks, &mut sentence_marks)?;
+        let pcm =
+            self.synthesize_codes_marked(codes, phdata, &mut word_marks, &mut sentence_marks)?;
         Ok((pcm, word_marks, sentence_marks))
     }
 
@@ -659,7 +677,13 @@ impl Synthesizer {
         let mut word_marks = Vec::new();
         let mut sentence_marks = Vec::new();
         let mut sink = Some(sink);
-        let tail = self.render(codes, phdata, &mut word_marks, &mut sentence_marks, &mut sink)?;
+        let tail = self.render(
+            codes,
+            phdata,
+            &mut word_marks,
+            &mut sentence_marks,
+            &mut sink,
+        )?;
         Ok((tail, word_marks, sentence_marks))
     }
 
@@ -804,8 +828,7 @@ impl Synthesizer {
                             // own rate uses, or a scoped `<prosody rate>` would
                             // stretch further than the whole-utterance form.
                             let f = setlengths::speed_duration_factor(embed_rate as u32);
-                            let base =
-                                setlengths::speed_duration_factor(self.voice.user_rate_wpm);
+                            let base = setlengths::speed_duration_factor(self.voice.user_rate_wpm);
                             embed_speed = if base > 0.0 { f / base } else { 1.0 };
                         }
                         'P' => {
@@ -826,8 +849,16 @@ impl Synthesizer {
                     }
                 }
                 AnnCode::Pause(ms) => {
-                    flush_run(&mut run_frames, &mut run_amps, &mut run_pitch, &mut run_speed, &mut run_centres,
-                              &mut output_i16, &self.voice, &mut wavephase);
+                    flush_run(
+                        &mut run_frames,
+                        &mut run_amps,
+                        &mut run_pitch,
+                        &mut run_speed,
+                        &mut run_centres,
+                        &mut output_i16,
+                        &self.voice,
+                        &mut wavephase,
+                    );
                     let n = sil_samples(*ms, embed_speed);
                     output_i16.extend(std::iter::repeat(0i16).take(n));
                 }
@@ -837,8 +868,16 @@ impl Synthesizer {
                     // which drives non-final lengthening).  Only the *marks* are
                     // new: the following clause starts a new sentence and a new
                     // word.
-                    flush_run(&mut run_frames, &mut run_amps, &mut run_pitch, &mut run_speed, &mut run_centres,
-                              &mut output_i16, &self.voice, &mut wavephase);
+                    flush_run(
+                        &mut run_frames,
+                        &mut run_amps,
+                        &mut run_pitch,
+                        &mut run_speed,
+                        &mut run_centres,
+                        &mut output_i16,
+                        &self.voice,
+                        &mut wavephase,
+                    );
                     let n = sil_samples(*ms, embed_speed);
                     output_i16.extend(std::iter::repeat(0i16).take(n));
                     let start = flushed + output_i16.len();
@@ -861,8 +900,16 @@ impl Synthesizer {
                     // Small inter-word gap.  espeak lets words flow together
                     // (the perceived gap comes mostly from stop prepauses), so
                     // this is short; a large fixed gap over-lengthens sentences.
-                    flush_run(&mut run_frames, &mut run_amps, &mut run_pitch, &mut run_speed, &mut run_centres,
-                              &mut output_i16, &self.voice, &mut wavephase);
+                    flush_run(
+                        &mut run_frames,
+                        &mut run_amps,
+                        &mut run_pitch,
+                        &mut run_speed,
+                        &mut run_centres,
+                        &mut output_i16,
+                        &self.voice,
+                        &mut wavephase,
+                    );
                     let n = sil_samples(WORD_GAP_MS, embed_speed);
                     output_i16.extend(std::iter::repeat(0i16).take(n));
                     word_idx += 1;
@@ -870,8 +917,16 @@ impl Synthesizer {
                     word_marks.push(flushed + output_i16.len());
                 }
                 AnnCode::PrepauseSamples(n) => {
-                    flush_run(&mut run_frames, &mut run_amps, &mut run_pitch, &mut run_speed, &mut run_centres,
-                              &mut output_i16, &self.voice, &mut wavephase);
+                    flush_run(
+                        &mut run_frames,
+                        &mut run_amps,
+                        &mut run_pitch,
+                        &mut run_speed,
+                        &mut run_centres,
+                        &mut output_i16,
+                        &self.voice,
+                        &mut wavephase,
+                    );
                     output_i16.extend(std::iter::repeat(0i16).take(*n));
                 }
                 AnnCode::Phoneme(info) => {
@@ -912,17 +967,32 @@ impl Synthesizer {
                     } * embed_speed;
                     let is_vowel = info.ph_type == 2;
                     match synthesize_phoneme_info(
-                        info, phdata, ph_speed, self.voice.formant_factor,
+                        info,
+                        phdata,
+                        ph_speed,
+                        self.voice.formant_factor,
                         self.voice.stress_lengths.as_ref(),
                     ) {
-                        PhonemeRender::Frames { frames, amp_factor, lead_silence, trail_silence } => {
+                        PhonemeRender::Frames {
+                            frames,
+                            amp_factor,
+                            lead_silence,
+                            trail_silence,
+                        } => {
                             // `PauseBefore <ms>`: a real gap, so the formant run
                             // ends here (German puts 15-30 ms before /r/ after a
                             // stop).
                             if lead_silence > 0 {
-                                flush_run(&mut run_frames, &mut run_amps, &mut run_pitch,
-                                          &mut run_speed, &mut run_centres, &mut output_i16,
-                                          &self.voice, &mut wavephase);
+                                flush_run(
+                                    &mut run_frames,
+                                    &mut run_amps,
+                                    &mut run_pitch,
+                                    &mut run_speed,
+                                    &mut run_centres,
+                                    &mut output_i16,
+                                    &self.voice,
+                                    &mut wavephase,
+                                );
                                 output_i16.extend(std::iter::repeat(0i16).take(lead_silence));
                             }
                             // `+variant` per-stress amplitude override (no-op by default).
@@ -962,21 +1032,37 @@ impl Synthesizer {
                                         self.voice.pitch_range_units,
                                     );
                                 }
-                                _ => run_pitch
-                                    .extend(std::iter::repeat(ph_pitch).take(frames.len())),
+                                _ => {
+                                    run_pitch.extend(std::iter::repeat(ph_pitch).take(frames.len()))
+                                }
                             }
                             run_speed.extend(std::iter::repeat(embed_speed).take(frames.len()));
                             run_frames.extend(frames);
                             if trail_silence > 0 {
-                                flush_run(&mut run_frames, &mut run_amps, &mut run_pitch,
-                                          &mut run_speed, &mut run_centres, &mut output_i16,
-                                          &self.voice, &mut wavephase);
+                                flush_run(
+                                    &mut run_frames,
+                                    &mut run_amps,
+                                    &mut run_pitch,
+                                    &mut run_speed,
+                                    &mut run_centres,
+                                    &mut output_i16,
+                                    &self.voice,
+                                    &mut wavephase,
+                                );
                                 output_i16.extend(std::iter::repeat(0i16).take(trail_silence));
                             }
                         }
                         PhonemeRender::Pcm(pcm) => {
-                            flush_run(&mut run_frames, &mut run_amps, &mut run_pitch, &mut run_speed, &mut run_centres,
-                                      &mut output_i16, &self.voice, &mut wavephase);
+                            flush_run(
+                                &mut run_frames,
+                                &mut run_amps,
+                                &mut run_pitch,
+                                &mut run_speed,
+                                &mut run_centres,
+                                &mut output_i16,
+                                &self.voice,
+                                &mut wavephase,
+                            );
                             output_i16.extend_from_slice(&pcm);
                         }
                     }
@@ -984,19 +1070,32 @@ impl Synthesizer {
             }
         }
         // Flush any trailing formant run.
-        flush_run(&mut run_frames, &mut run_amps, &mut run_pitch, &mut run_speed, &mut run_centres,
-                  &mut output_i16, &self.voice, &mut wavephase);
+        flush_run(
+            &mut run_frames,
+            &mut run_amps,
+            &mut run_pitch,
+            &mut run_speed,
+            &mut run_centres,
+            &mut output_i16,
+            &self.voice,
+            &mut wavephase,
+        );
 
         // End-of-utterance trailing silence (only when there was speech, and
         // not when a streaming sink asked to stop early).
         // Suppressed by `-z` (`no_final_pause`).
         if (!output_i16.is_empty() || flushed > 0) && !self.voice.no_final_pause && !stopped {
-            output_i16.extend(std::iter::repeat(0i16).take(sil_samples(END_SILENCE_MS, embed_speed)));
+            output_i16
+                .extend(std::iter::repeat(0i16).take(sil_samples(END_SILENCE_MS, embed_speed)));
         }
 
         // `+variant` echo post-pass (no-op unless a variant set it) — applied last
         // so the echo tail can ring into the trailing silence.
-        apply_echo(&mut output_i16, self.voice.echo_delay_samples, self.voice.echo_amp);
+        apply_echo(
+            &mut output_i16,
+            self.voice.echo_delay_samples,
+            self.voice.echo_amp,
+        );
 
         Ok(output_i16)
     }
@@ -1084,7 +1183,11 @@ enum AnnCode {
 /// scaled by; a plain one is a clause-unit pause that follows the voice's rate.
 fn break_ms(cmd: crate::translate::EmbeddedCmd, speed_factor: f64) -> f64 {
     let ms = cmd.value.max(0) as f64;
-    if cmd.relative == 1 && speed_factor > 0.0 { ms / speed_factor } else { ms }
+    if cmd.relative == 1 && speed_factor > 0.0 {
+        ms / speed_factor
+    } else {
+        ms
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1153,7 +1256,10 @@ fn annotate_codes(
     let mut prev_wordstart = false;
 
     while i < n {
-        while pending_embedded.get(next_embedded).is_some_and(|(ix, _)| *ix <= i) {
+        while pending_embedded
+            .get(next_embedded)
+            .is_some_and(|(ix, _)| *ix <= i)
+        {
             let cmd = pending_embedded[next_embedded].1;
             next_embedded += 1;
             if cmd.letter == crate::translate::ssml::BREAK_LETTER {
@@ -1171,7 +1277,8 @@ fn annotate_codes(
         if pending_break_ms.is_some() && !(code == 0 && is_boundary) {
             if let Some(ms) = pending_break_ms.take().filter(|&ms| ms > 0.0) {
                 result.push(AnnCode::Pause(ms));
-                prev_code = 0; prev_type = 0; // silence breaks coarticulation
+                prev_code = 0;
+                prev_type = 0; // silence breaks coarticulation
                 word_start_pending = true;
             }
         }
@@ -1179,9 +1286,12 @@ fn annotate_codes(
         match code {
             // Clause pause (sentence boundary)
             0 if is_boundary => {
-                result.push(AnnCode::ClauseBoundary(pending_break_ms.take().unwrap_or(200.0)));
+                result.push(AnnCode::ClauseBoundary(
+                    pending_break_ms.take().unwrap_or(200.0),
+                ));
                 pending_stress = 0;
-                prev_code = 0; prev_type = 0; // phPAUSE breaks coarticulation
+                prev_code = 0;
+                prev_type = 0; // phPAUSE breaks coarticulation
                 word_start_pending = true;
             }
             0 => {
@@ -1194,7 +1304,8 @@ fn annotate_codes(
             // Explicit pause phoneme
             9 => {
                 result.push(AnnCode::Pause(80.0));
-                prev_code = 0; prev_type = 0;
+                prev_code = 0;
+                prev_type = 0;
                 word_start_pending = true;
             }
             // Lengthen (:)
@@ -1223,9 +1334,16 @@ fn annotate_codes(
                 while j < n {
                     let (nc, nb) = flat[j];
                     j += 1;
-                    if nb || nc == 9 { next_wordstart = true; continue; }
-                    if nc == 12 { continue; }
-                    if nc >= 1 && nc <= 7 { continue; }
+                    if nb || nc == 9 {
+                        next_wordstart = true;
+                        continue;
+                    }
+                    if nc == 12 {
+                        continue;
+                    }
+                    if nc >= 1 && nc <= 7 {
+                        continue;
+                    }
                     next_code = nc;
                     next_is_boundary = nb;
                     break;
@@ -1237,9 +1355,16 @@ fn annotate_codes(
                 while j < n {
                     let (nc, nb) = flat[j];
                     j += 1;
-                    if nb || nc == 9 { next2_wordstart = true; continue; }
-                    if nc == 12 { continue; }
-                    if nc >= 1 && nc <= 7 { continue; }
+                    if nb || nc == 9 {
+                        next2_wordstart = true;
+                        continue;
+                    }
+                    if nc == 12 {
+                        continue;
+                    }
+                    if nc >= 1 && nc <= 7 {
+                        continue;
+                    }
                     next2_code = nc;
                     break;
                 }
@@ -1255,21 +1380,30 @@ fn annotate_codes(
                     let mut has_more = false;
                     for jj in i..n {
                         let (c2, b2) = flat[jj];
-                        if b2 { break; } // END_WORD or pause boundary
-                        if c2 == 0 || c2 == 15 { break; }
-                        if c2 >= 1 && c2 <= 7 { continue; }
+                        if b2 {
+                            break;
+                        } // END_WORD or pause boundary
+                        if c2 == 0 || c2 == 15 {
+                            break;
+                        }
+                        if c2 >= 1 && c2 <= 7 {
+                            continue;
+                        }
                         if let Some(ph) = phdata.get(c2) {
-                            if ph.typ == 2 /* phVOWEL */ { has_more = true; break; }
+                            if ph.typ == 2
+                            /* phVOWEL */
+                            {
+                                has_more = true;
+                                break;
+                            }
                         }
                     }
                     has_more
                 };
 
                 // Pre-pause for stops/fricatives (mirrors prepause in setlengths.c)
-                let prepause_samples = compute_prepause(
-                    ph_type, next_type, next2_type, ph_lm, code,
-                    &mut result,
-                );
+                let prepause_samples =
+                    compute_prepause(ph_type, next_type, next2_type, ph_lm, code, &mut result);
 
                 let stress_level = setlengths::stress_code_to_level(pending_stress);
                 pending_stress = 0;
@@ -1357,7 +1491,6 @@ fn compute_prepause(
 // synthesize_phoneme_info — pass 2 workhorse
 // ---------------------------------------------------------------------------
 
-
 // ---------------------------------------------------------------------------
 // Coarticulation — vowel/consonant formant transitions (GAPS §36, Stages 3–5)
 // Ports FormantTransition2 / AdjustFormants / set_frame_rms from synthesize.c.
@@ -1377,14 +1510,14 @@ struct Transition {
 
 fn unpack_transition(data1: u32, data2: u32) -> Transition {
     Transition {
-        rms:    ((data1 >> 6) & 0x3f) as i32,
-        flags:  (data1 >> 12) as i32,
-        f2:     (data2 & 0x3f) as i32 * 50,
+        rms: ((data1 >> 6) & 0x3f) as i32,
+        flags: (data1 >> 12) as i32,
+        f2: (data2 & 0x3f) as i32 * 50,
         f2_min: (((data2 >> 6) & 0x1f) as i32 - 15) * 50,
         f2_max: (((data2 >> 11) & 0x1f) as i32 - 15) * 50,
         f3_adj: (((data2 >> 16) & 0x1f) as i32 - 15) * 50,
         f3_amp: ((data2 >> 21) & 0x1f) as i32 * 8,
-        f1:     ((data2 >> 26) & 0x7) as i32,
+        f1: ((data2 >> 26) & 0x7) as i32,
     }
 }
 
@@ -1408,8 +1541,13 @@ fn set_frame_rms(fr: &mut phondata::SpectFrame, new_rms: i32) {
 /// formants sit higher.
 fn adjust_formants(
     fr: &mut phondata::SpectFrame,
-    target: i32, min: i32, max: i32,
-    f1_adj: i32, mut f3_adj: i32, hf_reduce: i32, flags: i32,
+    target: i32,
+    min: i32,
+    max: i32,
+    f1_adj: i32,
+    mut f3_adj: i32,
+    hf_reduce: i32,
+    flags: i32,
     formant_factor: i32,
 ) {
     let target = target * formant_factor / 256;
@@ -1471,7 +1609,11 @@ fn smooth_spect(frames: &mut [phondata::SpectFrame], centre: usize) {
     // Cap frame[cur]'s formants toward frame[anchor] (the neighbour nearer the
     // centre), over a transition of `len` samples.  `break_lf` (FRFLAG_BREAK_LF)
     // keeps F1–F3 discontinuous (only smooth F4+).
-    let limit = |frames: &mut [phondata::SpectFrame], cur: usize, anchor: usize, len: i32, break_lf: bool| {
+    let limit = |frames: &mut [phondata::SpectFrame],
+                 cur: usize,
+                 anchor: usize,
+                 len: i32,
+                 break_lf: bool| {
         for pk in 0..6 {
             if break_lf && pk < 3 {
                 continue;
@@ -1540,8 +1682,17 @@ fn apply_vowel_transition(
             if t.rms & 0x20 != 0 {
                 set_frame_rms(fr, next_rms * (t.rms & 0x1f) / 30);
             }
-            adjust_formants(fr, t.f2, t.f2_min, t.f2_max, t.f1, t.f3_adj, t.f3_amp, t.flags,
-                            formant_factor);
+            adjust_formants(
+                fr,
+                t.f2,
+                t.f2_min,
+                t.f2_max,
+                t.f1,
+                t.f3_adj,
+                t.f3_amp,
+                t.flags,
+                formant_factor,
+            );
             if t.rms & 0x20 == 0 {
                 set_frame_rms(fr, t.rms * 2);
             }
@@ -1553,8 +1704,17 @@ fn apply_vowel_transition(
         if t.f2 != 0 || t.flags != 0 {
             let mut fr = frames[frames.len() - 1].clone();
             if t.f2 != 0 {
-                adjust_formants(&mut fr, t.f2, t.f2_min, t.f2_max, t.f1, t.f3_adj, t.f3_amp,
-                                t.flags, formant_factor);
+                adjust_formants(
+                    &mut fr,
+                    t.f2,
+                    t.f2_min,
+                    t.f2_max,
+                    t.f1,
+                    t.f3_adj,
+                    t.f3_amp,
+                    t.flags,
+                    formant_factor,
+                );
             }
             set_frame_rms(&mut fr, t.rms * 2);
             frames.push(fr);
@@ -1608,8 +1768,16 @@ fn flush_run(
         let k = run_centres.len();
         let mid = |a: usize, b: usize| (a + b) / 2;
         for i in 0..k {
-            let seg_start = if i == 0 { 0 } else { mid(run_centres[i - 1], run_centres[i]) };
-            let seg_end = if i == k - 1 { n } else { mid(run_centres[i], run_centres[i + 1]) };
+            let seg_start = if i == 0 {
+                0
+            } else {
+                mid(run_centres[i - 1], run_centres[i])
+            };
+            let seg_end = if i == k - 1 {
+                n
+            } else {
+                mid(run_centres[i], run_centres[i + 1])
+            };
             let c = run_centres[i];
             if seg_end > seg_start + 1 && c >= seg_start && c < seg_end {
                 smooth_spect(&mut run_frames[seg_start..seg_end], c - seg_start);
@@ -1628,9 +1796,7 @@ fn flush_run(
     let raw = if voice.klatt {
         klatt::synthesize_frames_klatt(run_frames, run_amps, run_pitch, voice.sample_rate)
     } else {
-        wavegen::synthesize_frames_seq(
-            run_frames, run_amps, run_pitch, run_speed, voice, wavephase,
-        )
+        wavegen::synthesize_frames_seq(run_frames, run_amps, run_pitch, run_speed, voice, wavephase)
     };
     output.extend_from_slice(&agc_clip(&raw));
     run_frames.clear();
@@ -1679,12 +1845,9 @@ fn synthesize_phoneme_info(
         translation_given: false,
         ..Default::default()
     };
-    let mut extract = bytecode::interpret_phoneme(
-        ph_tab.program,
-        &phdata.phonindex,
-        &nb,
-        |c| phdata.get(c).cloned(),
-    );
+    let mut extract = bytecode::interpret_phoneme(ph_tab.program, &phdata.phonindex, &nb, |c| {
+        phdata.get(c).cloned()
+    });
 
     // If no fmt_addr found, follow ChangePhoneme chain (for phonemes like @2→@, 02→0, etc.)
     // i_CHANGE_PHONEME(target_code) redirects synthesis to another phoneme's data.
@@ -1693,8 +1856,14 @@ fn synthesize_phoneme_info(
             if let Some(target_ph) = phdata.get(target_code) {
                 if target_ph.program > 0 {
                     let sub = bytecode::scan_phoneme(target_ph.program, &phdata.phonindex);
-                    if extract.fmt_addr.is_none() { extract.fmt_addr = sub.fmt_addr; extract.fmt_param = sub.fmt_param; }
-                    if extract.wav_addr.is_none() { extract.wav_addr = sub.wav_addr; extract.wav_param = sub.wav_param; }
+                    if extract.fmt_addr.is_none() {
+                        extract.fmt_addr = sub.fmt_addr;
+                        extract.fmt_param = sub.fmt_param;
+                    }
+                    if extract.wav_addr.is_none() {
+                        extract.wav_addr = sub.wav_addr;
+                        extract.wav_param = sub.wav_param;
+                    }
                 }
             }
         }
@@ -1703,10 +1872,10 @@ fn synthesize_phoneme_info(
     // `PauseBefore`/`PauseAfter <ms>` from the phoneme's own program (C keeps
     // them in `phdata.pd_param[]` and `synthesize.c` adds them to the phoneme's
     // prepause): German inserts 15-30 ms of silence before /r/ after a stop.
-    let lead_silence = (extract.pause_before_ms as f64 / 1000.0 * SAMPLERATE as f64
-        * speed_factor) as usize;
-    let trail_silence = (extract.pause_after_ms as f64 / 1000.0 * SAMPLERATE as f64
-        * speed_factor) as usize;
+    let lead_silence =
+        (extract.pause_before_ms as f64 / 1000.0 * SAMPLERATE as f64 * speed_factor) as usize;
+    let trail_silence =
+        (extract.pause_after_ms as f64 / 1000.0 * SAMPLERATE as f64 * speed_factor) as usize;
 
     // phSTOP(4) and phFRICATIVE(6): use WAV noise sample
     // phVSTOP(5) and phVFRICATIVE(7): fall through to formant synthesis
@@ -1715,7 +1884,10 @@ fn synthesize_phoneme_info(
         // the current render run in the caller).
         if let Some(wav_addr) = extract.wav_addr {
             if let Some(pcm) = sample::parse_wav_sample(
-                wav_addr, &phdata.phondata, speed_factor, extract.wav_param as i32,
+                wav_addr,
+                &phdata.phondata,
+                speed_factor,
+                extract.wav_param as i32,
             ) {
                 if lead_silence == 0 && trail_silence == 0 {
                     return PhonemeRender::Pcm(pcm);
@@ -1798,10 +1970,9 @@ fn synthesize_phoneme_info(
                     // prev-of-prev unknown here; not needed for NextVowelStarts.
                     ..Default::default()
                 };
-                bytecode::interpret_phoneme(
-                    prev.program, &phdata.phonindex, &prev_nb,
-                    |c| phdata.get(c).cloned(),
-                )
+                bytecode::interpret_phoneme(prev.program, &phdata.phonindex, &prev_nb, |c| {
+                    phdata.get(c).cloned()
+                })
             })
         } else {
             None
@@ -1815,7 +1986,11 @@ fn synthesize_phoneme_info(
             extract.vwlstart_addr
         } else {
             prev_extract.as_ref().and_then(|pe| {
-                if pe.pd_fornextph { pe.vwlstart_addr } else { None }
+                if pe.pd_fornextph {
+                    pe.vwlstart_addr
+                } else {
+                    None
+                }
             })
         };
         let mut used_external_onset = false;
@@ -1866,10 +2041,9 @@ fn synthesize_phoneme_info(
                     next: info.next2_code,
                     ..Default::default()
                 };
-                bytecode::interpret_phoneme(
-                    next.program, &phdata.phonindex, &next_nb,
-                    |c| phdata.get(c).cloned(),
-                )
+                bytecode::interpret_phoneme(next.program, &phdata.phonindex, &next_nb, |c| {
+                    phdata.get(c).cloned()
+                })
             });
             let vwlend_addr = extract
                 .vwlending_addr
@@ -1891,7 +2065,13 @@ fn synthesize_phoneme_info(
                     .map(|ne| ne.vowel_transition)
                     .unwrap_or([0; 4]);
                 if next_vt[2] != 0 || next_vt[3] != 0 {
-                    apply_vowel_transition(&mut seq.frames, next_vt[2], next_vt[3], 2, formant_factor);
+                    apply_vowel_transition(
+                        &mut seq.frames,
+                        next_vt[2],
+                        next_vt[3],
+                        2,
+                        formant_factor,
+                    );
                 }
             }
         }
@@ -1900,7 +2080,9 @@ fn synthesize_phoneme_info(
     // ── Duration calculation ──────────────────────────────────────────────
     // For vowels (typ=2): use CalcLengths formula.
     // For others: use raw frame lengths from the SPECT_SEQ.
-    if info.ph_type == 2 /* phVOWEL */ {
+    if info.ph_type == 2
+    /* phVOWEL */
+    {
         // A `length <n>` (or `LengthAdd <n>`) instruction inside the phoneme's
         // program overrides its declared `std_length` for this context — C seeds
         // `pd_param[i_SET_LENGTH]` with `std_length` and lets the program change
@@ -1920,7 +2102,11 @@ fn synthesize_phoneme_info(
         );
 
         // Extra lengthening from `:` modifier
-        let length_mod = if info.lengthen { length_mod * 4 / 3 } else { length_mod };
+        let length_mod = if info.lengthen {
+            length_mod * 4 / 3
+        } else {
+            length_mod
+        };
 
         let target_samples = length_mod_to_samples(length_mod, SAMPLERATE, speed_factor);
 
@@ -1944,12 +2130,15 @@ fn synthesize_phoneme_info(
             let body_end = n.saturating_sub(tail_count);
             let body_start = onset_count.min(body_end.saturating_sub(1));
             if body_end > body_start + 1 {
-                let raw_sum: usize = seq.frames[body_start..body_end-1].iter()
-                    .map(|f| f.length as usize).sum::<usize>().max(1);
+                let raw_sum: usize = seq.frames[body_start..body_end - 1]
+                    .iter()
+                    .map(|f| f.length as usize)
+                    .sum::<usize>()
+                    .max(1);
                 let scaled_sum = (raw_sum as f64 * 64.0 * speed_factor) as usize;
                 if scaled_sum > 0 {
                     let scale256 = target_samples * 256 / scaled_sum.max(1);
-                    for fr in &mut seq.frames[body_start..body_end-1] {
+                    for fr in &mut seq.frames[body_start..body_end - 1] {
                         let new_len = ((fr.length as usize * scale256 / 256).max(1) as u8).min(255);
                         fr.length = new_len;
                     }
@@ -1960,7 +2149,8 @@ fn synthesize_phoneme_info(
             if tail_count > 0 && body_end >= 1 {
                 let ms_to_stepsize = (SAMPLERATE as f64 / 1000.0) / 64.0;
                 for fr in &mut seq.frames[body_end - 1..n] {
-                    fr.length = ((fr.length as f64 * ms_to_stepsize * speed_factor).round() as usize)
+                    fr.length = ((fr.length as f64 * ms_to_stepsize * speed_factor).round()
+                        as usize)
                         .clamp(1, 255) as u8;
                 }
             }
@@ -1974,7 +2164,8 @@ fn synthesize_phoneme_info(
         // explicit target above, so this only affects consonants/sonorants.)
         let ms_to_stepsize = (SAMPLERATE as f64 / 1000.0) / 64.0;
         for fr in &mut seq.frames {
-            let new_len = ((fr.length as f64 * ms_to_stepsize * speed_factor).round() as usize).max(1);
+            let new_len =
+                ((fr.length as f64 * ms_to_stepsize * speed_factor).round() as usize).max(1);
             fr.length = new_len.min(255) as u8;
         }
     }
@@ -2009,15 +2200,29 @@ fn synthesize_phoneme_info(
     // from scripts/dump_c_frames.sh via scripts/compare_frames.py.
     if let Ok(path) = std::env::var("ESPEAK_RS_DUMP_FRAMES") {
         use std::io::Write;
-        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
-            let mnem = phdata.get(info.code).map(|p| p.mnemonic_str()).unwrap_or_default();
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+        {
+            let mnem = phdata
+                .get(info.code)
+                .map(|p| p.mnemonic_str())
+                .unwrap_or_default();
             let _ = writeln!(f, "PH {} nf={}", mnem, seq.frames.len());
             for fr in &seq.frames {
                 let _ = writeln!(
-                    f, "  len={} rms={} ffreq={},{},{},{},{},{},{}",
-                    fr.length, fr.rms,
-                    fr.ffreq[0], fr.ffreq[1], fr.ffreq[2], fr.ffreq[3],
-                    fr.ffreq[4], fr.ffreq[5], fr.ffreq[6],
+                    f,
+                    "  len={} rms={} ffreq={},{},{},{},{},{},{}",
+                    fr.length,
+                    fr.rms,
+                    fr.ffreq[0],
+                    fr.ffreq[1],
+                    fr.ffreq[2],
+                    fr.ffreq[3],
+                    fr.ffreq[4],
+                    fr.ffreq[5],
+                    fr.ffreq[6],
                 );
             }
         }
@@ -2048,13 +2253,25 @@ fn agc_clip(samples: &[i32]) -> Vec<i16> {
         let z = (z1 as i64 * agc) >> 8;
 
         if z >= 32768 {
-            let ov = if z1 != 0 { 8_388_608i64 / (z1 as i64).abs() - 1 } else { 0 };
-            if ov < agc { agc = ov.max(1); }
+            let ov = if z1 != 0 {
+                8_388_608i64 / (z1 as i64).abs() - 1
+            } else {
+                0
+            };
+            if ov < agc {
+                agc = ov.max(1);
+            }
             let z2 = (z1 as i64 * agc) >> 8;
             out.push(z2.clamp(-32767, 32767) as i16);
         } else if z <= -32768 {
-            let ov = if z1 != 0 { 8_388_608i64 / (z1 as i64).abs() - 1 } else { 0 };
-            if ov < agc { agc = ov.max(1); }
+            let ov = if z1 != 0 {
+                8_388_608i64 / (z1 as i64).abs() - 1
+            } else {
+                0
+            };
+            if ov < agc {
+                agc = ov.max(1);
+            }
             let z2 = (z1 as i64 * agc) >> 8;
             out.push(z2.clamp(-32767, 32767) as i16);
         } else {
@@ -2062,7 +2279,9 @@ fn agc_clip(samples: &[i32]) -> Vec<i16> {
         }
 
         // Gradually restore AGC (mirrors `if (agc < 256) agc++`)
-        if agc < 256 { agc += 1; }
+        if agc < 256 {
+            agc += 1;
+        }
     }
 
     out
@@ -2090,7 +2309,10 @@ mod tests {
         let base5 = setlengths::STRESS_AMPS_EN[5] as i32; // 22
         let mut v = VoiceParams::default();
         v.stress_amps[5] = base5 * 2;
-        assert!((v.stress_amp_ratio(5) - 2.0).abs() < 1e-9, "primary stress should double");
+        assert!(
+            (v.stress_amp_ratio(5) - 2.0).abs() < 1e-9,
+            "primary stress should double"
+        );
         // Unset levels stay at unity even when others are set.
         assert_eq!(v.stress_amp_ratio(0), 1.0);
         // Out-of-range level clamps to 7 (no panic).
@@ -2110,10 +2332,19 @@ mod tests {
         let flutter = 20; // ±2 %
         let vals: Vec<f64> = (0..40).map(|i| flutter_factor(i, flutter)).collect();
         // Deviation is bounded by flutter/1000.
-        assert!(vals.iter().all(|&v| (v - 1.0).abs() <= 0.020 + 1e-9), "flutter exceeds bound");
+        assert!(
+            vals.iter().all(|&v| (v - 1.0).abs() <= 0.020 + 1e-9),
+            "flutter exceeds bound"
+        );
         // It actually varies (not a constant) and both raises and lowers pitch.
-        assert!(vals.iter().any(|&v| v > 1.001), "flutter never raises pitch");
-        assert!(vals.iter().any(|&v| v < 0.999), "flutter never lowers pitch");
+        assert!(
+            vals.iter().any(|&v| v > 1.001),
+            "flutter never raises pitch"
+        );
+        assert!(
+            vals.iter().any(|&v| v < 0.999),
+            "flutter never lowers pitch"
+        );
         // Deterministic.
         assert_eq!(flutter_factor(7, flutter), flutter_factor(7, flutter));
     }
@@ -2155,7 +2386,11 @@ mod tests {
         pcm[0] = 30_000;
         apply_echo(&mut pcm, 50, 10_000); // huge gain
         assert!(pcm.iter().all(|&s| s >= i16::MIN && s <= i16::MAX));
-        assert_eq!(pcm[50], i16::MAX, "over-unity echo saturates, not overflows");
+        assert_eq!(
+            pcm[50],
+            i16::MAX,
+            "over-unity echo saturates, not overflows"
+        );
     }
 
     #[test]
@@ -2174,16 +2409,29 @@ mod tests {
         let mut out = Vec::new();
         let mut phase = i32::MAX;
         let voice = VoiceParams::default(); // klatt = false → relies on auto-select
-        flush_run(&mut frames, &mut amps, &mut pitch, &mut Vec::new(), &mut centres, &mut out, &voice, &mut phase);
+        flush_run(
+            &mut frames,
+            &mut amps,
+            &mut pitch,
+            &mut Vec::new(),
+            &mut centres,
+            &mut out,
+            &voice,
+            &mut phase,
+        );
         assert!(!out.is_empty(), "Klatt-flagged run produced no audio");
     }
-
-
 
     #[test]
     fn resonator_tick_accumulates() {
         // With a=1, b=0, c=0 the resonator is just a pass-through
-        let mut r = Resonator { a: 1.0, b: 0.0, c: 0.0, x1: 0.0, x2: 0.0 };
+        let mut r = Resonator {
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            x1: 0.0,
+            x2: 0.0,
+        };
         assert!((r.tick(1.0) - 1.0).abs() < 1e-12);
         assert!((r.tick(2.0) - 2.0).abs() < 1e-12);
     }
@@ -2191,7 +2439,13 @@ mod tests {
     #[test]
     fn resonator_tick_with_feedback() {
         // a=0, b=0.5, c=0 → exponential decay of x1
-        let mut r = Resonator { a: 0.0, b: 0.5, c: 0.0, x1: 1.0, x2: 0.0 };
+        let mut r = Resonator {
+            a: 0.0,
+            b: 0.5,
+            c: 0.0,
+            x1: 1.0,
+            x2: 0.0,
+        };
         let y0 = r.tick(0.0);
         assert!((y0 - 0.5).abs() < 1e-12);
         let y1 = r.tick(0.0);
@@ -2200,7 +2454,13 @@ mod tests {
 
     #[test]
     fn resonator_reset_clears_state() {
-        let mut r = Resonator { a: 1.0, b: 0.5, c: 0.0, x1: 99.0, x2: 99.0 };
+        let mut r = Resonator {
+            a: 1.0,
+            b: 0.5,
+            c: 0.0,
+            x1: 99.0,
+            x2: 99.0,
+        };
         r.reset();
         assert_eq!(r.x1, 0.0);
         assert_eq!(r.x2, 0.0);
@@ -2209,8 +2469,11 @@ mod tests {
     #[test]
     fn frame_c_size() {
         // Structural assertion: if we ever add/remove fields the test fails.
-        assert_eq!(Frame::C_SIZE, 64,
-            "Frame::C_SIZE must match the C struct frame_t");
+        assert_eq!(
+            Frame::C_SIZE,
+            64,
+            "Frame::C_SIZE must match the C struct frame_t"
+        );
     }
 
     #[test]
@@ -2282,13 +2545,16 @@ mod tests {
         fast_voice.speed_percent = 200; // double speed → half duration
 
         let s_normal = Synthesizer::new(VoiceParams::default());
-        let s_fast   = Synthesizer::new(fast_voice);
+        let s_fast = Synthesizer::new(fast_voice);
 
         let pcm_normal = s_normal.synthesize("hɛloʊ").unwrap();
-        let pcm_fast   = s_fast.synthesize("hɛloʊ").unwrap();
+        let pcm_fast = s_fast.synthesize("hɛloʊ").unwrap();
 
-        assert!(pcm_fast.len() < pcm_normal.len(),
+        assert!(
+            pcm_fast.len() < pcm_normal.len(),
             "fast speech must be shorter: fast={}, normal={}",
-            pcm_fast.len(), pcm_normal.len());
+            pcm_fast.len(),
+            pcm_normal.len()
+        );
     }
 }

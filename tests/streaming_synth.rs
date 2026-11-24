@@ -34,7 +34,10 @@ fn streamed_audio_matches_buffered_synth() {
 
     assert_eq!(rate, e.sample_rate());
     assert_eq!(finals, 1, "exactly one chunk is flagged final");
-    assert!(chunks > 1, "a four-clause utterance should arrive in several chunks");
+    assert!(
+        chunks > 1,
+        "a four-clause utterance should arrive in several chunks"
+    );
 
     let (buffered, _) = e.synth(MULTI).expect("synth");
     assert_eq!(streamed, buffered, "streaming must not change the audio");
@@ -49,7 +52,10 @@ fn single_clause_streams_as_one_chunk() {
     let mut chunks = 0;
     e.synth_streaming("hello world", |samples, is_final| {
         chunks += 1;
-        assert!(is_final, "a single clause should produce only a final chunk");
+        assert!(
+            is_final,
+            "a single clause should produce only a final chunk"
+        );
         streamed.extend_from_slice(samples);
         false
     })
@@ -91,7 +97,10 @@ fn callback_can_stop_early() {
 
     assert_eq!(chunks, 1, "stopping should end the callbacks");
     let (buffered, _) = e.synth(MULTI).expect("synth");
-    assert!(streamed < buffered.len(), "stopping should skip the rest of the utterance");
+    assert!(
+        streamed < buffered.len(),
+        "stopping should skip the rest of the utterance"
+    );
 }
 
 /// The events delivered on the final streaming chunk match `synth_with_events`.
@@ -121,8 +130,14 @@ fn streaming_events_match_the_buffered_path() {
     }
     // One `Sentence` event opens the utterance and one opens each clause after
     // a boundary — the trailing `.` closes a fifth, empty clause.
-    let sentences = final_events.iter().filter(|e| e.kind == EventKind::Sentence).count();
-    assert!(sentences >= 4, "one Sentence event per clause: {final_events:?}");
+    let sentences = final_events
+        .iter()
+        .filter(|e| e.kind == EventKind::Sentence)
+        .count();
+    assert!(
+        sentences >= 4,
+        "one Sentence event per clause: {final_events:?}"
+    );
 }
 
 /// SSML markup splices audio out of order, so it can't be streamed clause by
@@ -152,7 +167,11 @@ fn parallel_batch_matches_sequential() {
     let e = engine();
     let texts = ["one", "two three", "four five six", "", "seven"];
     let parallel = e.synth_many(&texts);
-    assert_eq!(parallel.len(), texts.len(), "results are returned per input");
+    assert_eq!(
+        parallel.len(),
+        texts.len(),
+        "results are returned per input"
+    );
     for (i, t) in texts.iter().enumerate() {
         let (pcm, rate) = parallel[i].as_ref().expect("synth_many item");
         let (expected, expected_rate) = e.synth(t).expect("sequential synth");

@@ -126,25 +126,25 @@ pub const MAXAMP_EOC_EN: u8 = 19;
 
 /// length_mods_en — for vowels that are NOT the last syllable in their word.
 pub const LENGTH_MODS_EN: [u8; 100] = [
-//   a    ,    t    s    n    d    z    r    N    (←next)
-    100, 120, 100, 105, 100, 110, 110, 100,  95, 100, // a  ← next2
+    //   a    ,    t    s    n    d    z    r    N    (←next)
+    100, 120, 100, 105, 100, 110, 110, 100, 95, 100, // a  ← next2
     105, 120, 105, 110, 125, 130, 135, 115, 125, 100, // ,
-    105, 120,  75, 100,  75, 105, 120,  85,  75, 100, // t
-    105, 120,  85, 105,  95, 115, 120, 100,  95, 100, // s
-    110, 120,  95, 105, 100, 115, 120, 100, 100, 100, // n
-    105, 120, 100, 105,  95, 115, 120, 110,  95, 100, // d
+    105, 120, 75, 100, 75, 105, 120, 85, 75, 100, // t
+    105, 120, 85, 105, 95, 115, 120, 100, 95, 100, // s
+    110, 120, 95, 105, 100, 115, 120, 100, 100, 100, // n
+    105, 120, 100, 105, 95, 115, 120, 110, 95, 100, // d
     105, 120, 100, 105, 105, 122, 125, 110, 105, 100, // z
     105, 120, 100, 105, 105, 122, 125, 110, 105, 100, // r
-    105, 120,  95, 105, 100, 115, 120, 110, 100, 100, // N
+    105, 120, 95, 105, 100, 115, 120, 110, 100, 100, // N
     100, 120, 100, 100, 100, 100, 100, 100, 100, 100, // default
 ];
 
 /// length_mods_en0 — for vowels that ARE the last syllable in their word.
 pub const LENGTH_MODS_EN0: [u8; 100] = [
-//   a    ,    t    s    n    d    z    r    N    (←next)
+    //   a    ,    t    s    n    d    z    r    N    (←next)
     100, 150, 100, 105, 110, 115, 110, 110, 110, 100, // a
     105, 150, 105, 110, 125, 135, 140, 115, 135, 100, // ,
-    105, 150,  90, 105,  90, 122, 135, 100,  90, 100, // t
+    105, 150, 90, 105, 90, 122, 135, 100, 90, 100, // t
     105, 150, 100, 105, 100, 122, 135, 100, 100, 100, // s
     105, 150, 100, 105, 105, 115, 135, 110, 105, 100, // n
     105, 150, 100, 105, 105, 122, 130, 120, 125, 100, // d
@@ -188,7 +188,11 @@ pub fn calc_vowel_length_mod(
     let stress = (stress as usize).min(7);
 
     // Choose table based on syllable position
-    let table = if more_syllables { &LENGTH_MODS_EN } else { &LENGTH_MODS_EN0 };
+    let table = if more_syllables {
+        &LENGTH_MODS_EN
+    } else {
+        &LENGTH_MODS_EN0
+    };
     let n2 = (next2_lm as usize).min(9);
     let n1 = (next_lm as usize).min(9);
     let base_mod = table[n2 * 10 + n1] as u32;
@@ -255,17 +259,21 @@ pub fn length_mod_to_samples(length_mod: u32, samplerate: u32, speed_factor: f64
 pub fn stress_code_to_level(code: u8) -> u8 {
     // Map code → raw level, then apply the 0↔1 swap
     let raw = match code {
-        0 => 0,   // no marker → diminished
-        2 => 0,   // % → unstressed/diminished  
-        3 => 2,   // %% → secondary
-        4 => 3,   // , → tertiary
-        5 => 4,   // (moderate)
-        6 => 6,   // ˈ → primary
-        7 => 7,   // ˈˈ → tonic
+        0 => 0, // no marker → diminished
+        2 => 0, // % → unstressed/diminished
+        3 => 2, // %% → secondary
+        4 => 3, // , → tertiary
+        5 => 4, // (moderate)
+        6 => 6, // ˈ → primary
+        7 => 7, // ˈˈ → tonic
         _ => 0,
     };
     // Apply 0↔1 swap (CalcLengths: `if stress <= 1: stress ^= 1`)
-    if raw <= 1 { raw ^ 1 } else { raw }
+    if raw <= 1 {
+        raw ^ 1
+    } else {
+        raw
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -281,7 +289,10 @@ mod tests {
         // oU at end of clause, stress=7 (tonic), std_length=110
         let length_mod = calc_vowel_length_mod(7, 1, 1, false, true, 110, None);
         // Expected: >= 300 (several hundred ms)
-        assert!(length_mod >= 300, "tonic EOC vowel should be long: {length_mod}");
+        assert!(
+            length_mod >= 300,
+            "tonic EOC vowel should be long: {length_mod}"
+        );
         let samp = length_mod_to_samples(length_mod, 22050, 1.0);
         assert!(samp > 5000, "tonic EOC vowel > 200ms: {samp}");
     }

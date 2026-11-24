@@ -21,29 +21,29 @@ use crate::phoneme::PhonemeTab;
 // Instruction opcode constants (mirrors synthesize.h)
 // ---------------------------------------------------------------------------
 
-pub const INSTN_RETURN:   u16 = 0x0001;
+pub const INSTN_RETURN: u16 = 0x0001;
 pub const INSTN_CONTINUE: u16 = 0x0002;
 
-pub const I_IPA_NAME:       u16 = 0x0d;  // group-0, operand = UTF-8 byte count
-pub const I_CHANGE_PHONEME: u16 = 0x01;  // group-0: (opcode<<8)|phoneme_code
+pub const I_IPA_NAME: u16 = 0x0d; // group-0, operand = UTF-8 byte count
+pub const I_CHANGE_PHONEME: u16 = 0x01; // group-0: (opcode<<8)|phoneme_code
 pub const I_REPLACE_NEXT_PHONEME: u16 = 0x02;
-pub const I_INSERT_PHONEME:       u16 = 0x03;
-pub const I_APPEND_PHONEME:       u16 = 0x04;
-pub const I_APPEND_IFNEXTVOWEL:   u16 = 0x05;
-pub const I_SET_LENGTH:           u16 = 0x0a;
-pub const I_ADD_LENGTH:           u16 = 0x0c;
-pub const I_PAUSE_BEFORE:         u16 = 0x07;
-pub const I_PAUSE_AFTER:          u16 = 0x08;
-pub const I_CALLPH:    u16 = 0x9100;
-pub const I_PITCHENV:  u16 = 0x9200;
-pub const I_AMPENV:    u16 = 0x9300;
-pub const I_VOWELIN:   u16 = 0xa100;
-pub const I_VOWELOUT:  u16 = 0xa200;
-pub const I_FMT:       u16 = 0xb000;
-pub const I_WAV:       u16 = 0xc000;
-pub const I_VWLSTART:  u16 = 0xd000;
+pub const I_INSERT_PHONEME: u16 = 0x03;
+pub const I_APPEND_PHONEME: u16 = 0x04;
+pub const I_APPEND_IFNEXTVOWEL: u16 = 0x05;
+pub const I_SET_LENGTH: u16 = 0x0a;
+pub const I_ADD_LENGTH: u16 = 0x0c;
+pub const I_PAUSE_BEFORE: u16 = 0x07;
+pub const I_PAUSE_AFTER: u16 = 0x08;
+pub const I_CALLPH: u16 = 0x9100;
+pub const I_PITCHENV: u16 = 0x9200;
+pub const I_AMPENV: u16 = 0x9300;
+pub const I_VOWELIN: u16 = 0xa100;
+pub const I_VOWELOUT: u16 = 0xa200;
+pub const I_FMT: u16 = 0xb000;
+pub const I_WAV: u16 = 0xc000;
+pub const I_VWLSTART: u16 = 0xd000;
 pub const I_VWLENDING: u16 = 0xe000;
-pub const I_WAVADD:    u16 = 0xf000;
+pub const I_WAVADD: u16 = 0xf000;
 
 // ---------------------------------------------------------------------------
 // num_instn_words — how many u16 words does this instruction consume?
@@ -70,7 +70,7 @@ pub fn num_instn_words(instn: u16) -> usize {
             let opcode = (instn >> 8) as u8;
             if opcode == I_IPA_NAME as u8 {
                 let data = (instn & 0xff) as usize; // UTF-8 byte count
-                1 + (data + 1) / 2                  // header + ceil(data/2) words
+                1 + (data + 1) / 2 // header + ceil(data/2) words
             } else {
                 1
             }
@@ -79,12 +79,20 @@ pub fn num_instn_words(instn: u16) -> usize {
             // Condition instruction: check for 2-word form
             // C: if ((n=instn&0x0f00)==0x600)||(n==0xd00)) return 2; return 1;
             let n = instn & 0x0f00;
-            if n == 0x0600 || n == 0x0d00 { 2 } else { 1 }
+            if n == 0x0600 || n == 0x0d00 {
+                2
+            } else {
+                1
+            }
         }
         6 => {
             // JUMP: check for 12-word switch form (SwitchOnVowelType)
             let type2 = (instn & 0x0f00) >> 9;
-            if type2 == 5 || type2 == 6 { 12 } else { 1 }
+            if type2 == 5 || type2 == 6 {
+                12
+            } else {
+                1
+            }
         }
         // 0xb (i_FMT), 0xc (i_WAV), 0xd (i_VWLSTART), 0xe (i_VWLENDING),
         // 0xf (i_WAVADD): 2 words (instruction + address word)
@@ -202,9 +210,7 @@ pub fn select_vowel_start(program: u16, phonindex: &[u8], next_start_type: u8) -
     }
     let voweltype = voweltype as usize;
     let max_words = phonindex.len() / 2;
-    let word = |i: usize| -> u16 {
-        u16::from_le_bytes([phonindex[i * 2], phonindex[i * 2 + 1]])
-    };
+    let word = |i: usize| -> u16 { u16::from_le_bytes([phonindex[i * 2], phonindex[i * 2 + 1]]) };
     let mut pc = program as usize;
     let scan_limit = pc + 128;
     while pc < max_words && pc < scan_limit {
@@ -261,10 +267,8 @@ pub fn scan_phoneme(program: u16, phonindex: &[u8]) -> PhonemeExtract {
                 // i_FMT: followed by one address word.
                 // Address = ((instn & 0xf) << 18) | (next_word << 2)
                 if result.fmt_addr.is_none() && pc + 1 < max_words {
-                    let next = u16::from_le_bytes([
-                        phonindex[(pc+1)*2],
-                        phonindex[(pc+1)*2 + 1],
-                    ]);
+                    let next =
+                        u16::from_le_bytes([phonindex[(pc + 1) * 2], phonindex[(pc + 1) * 2 + 1]]);
                     let addr = ((instn & 0xf) as u32) << 18 | ((next as u32) << 2);
                     result.fmt_addr = Some(addr);
                     // The param is stored in bits 11-4 of the instruction, sign-extended.
@@ -274,10 +278,8 @@ pub fn scan_phoneme(program: u16, phonindex: &[u8]) -> PhonemeExtract {
                 // (VWLSTART selection is handled separately by
                 // `select_vowel_start`, which does its own bounded scan.)
                 if pc + 2 < max_words {
-                    let next2 = u16::from_le_bytes([
-                        phonindex[(pc + 2) * 2],
-                        phonindex[(pc + 2) * 2 + 1],
-                    ]);
+                    let next2 =
+                        u16::from_le_bytes([phonindex[(pc + 2) * 2], phonindex[(pc + 2) * 2 + 1]]);
                     if next2 >> 12 == 0xf {
                         pc += 2;
                         continue;
@@ -288,10 +290,8 @@ pub fn scan_phoneme(program: u16, phonindex: &[u8]) -> PhonemeExtract {
             0xc => {
                 // i_WAV: sampled waveform
                 if result.wav_addr.is_none() && pc + 1 < max_words {
-                    let next = u16::from_le_bytes([
-                        phonindex[(pc+1)*2],
-                        phonindex[(pc+1)*2 + 1],
-                    ]);
+                    let next =
+                        u16::from_le_bytes([phonindex[(pc + 1) * 2], phonindex[(pc + 1) * 2 + 1]]);
                     let addr = ((instn & 0xf) as u32) << 18 | ((next as u32) << 2);
                     result.wav_addr = Some(addr);
                     result.wav_param = ((instn >> 4) & 0xff) as i8;
@@ -301,13 +301,10 @@ pub fn scan_phoneme(program: u16, phonindex: &[u8]) -> PhonemeExtract {
             0xd => {
                 // i_VWLSTART
                 if result.vwlstart_addr.is_none() && pc + 1 < max_words {
-                    let next = u16::from_le_bytes([
-                        phonindex[(pc+1)*2],
-                        phonindex[(pc+1)*2 + 1],
-                    ]);
-                    result.vwlstart_addr = Some(
-                        ((instn & 0xf) as u32) << 18 | ((next as u32) << 2)
-                    );
+                    let next =
+                        u16::from_le_bytes([phonindex[(pc + 1) * 2], phonindex[(pc + 1) * 2 + 1]]);
+                    result.vwlstart_addr =
+                        Some(((instn & 0xf) as u32) << 18 | ((next as u32) << 2));
                 }
                 pc += 2;
                 continue;
@@ -315,13 +312,10 @@ pub fn scan_phoneme(program: u16, phonindex: &[u8]) -> PhonemeExtract {
             0xe => {
                 // i_VWLENDING
                 if result.vwlending_addr.is_none() && pc + 1 < max_words {
-                    let next = u16::from_le_bytes([
-                        phonindex[(pc+1)*2],
-                        phonindex[(pc+1)*2 + 1],
-                    ]);
-                    result.vwlending_addr = Some(
-                        ((instn & 0xf) as u32) << 18 | ((next as u32) << 2)
-                    );
+                    let next =
+                        u16::from_le_bytes([phonindex[(pc + 1) * 2], phonindex[(pc + 1) * 2 + 1]]);
+                    result.vwlending_addr =
+                        Some(((instn & 0xf) as u32) << 18 | ((next as u32) << 2));
                 }
                 pc += 2;
                 continue;
@@ -329,13 +323,9 @@ pub fn scan_phoneme(program: u16, phonindex: &[u8]) -> PhonemeExtract {
             0xf => {
                 // i_WAVADD
                 if result.wav_addr.is_none() && pc + 1 < max_words {
-                    let next = u16::from_le_bytes([
-                        phonindex[(pc+1)*2],
-                        phonindex[(pc+1)*2 + 1],
-                    ]);
-                    result.wav_addr = Some(
-                        ((instn & 0xf) as u32) << 18 | ((next as u32) << 2)
-                    );
+                    let next =
+                        u16::from_le_bytes([phonindex[(pc + 1) * 2], phonindex[(pc + 1) * 2 + 1]]);
+                    result.wav_addr = Some(((instn & 0xf) as u32) << 18 | ((next as u32) << 2));
                 }
                 // WAVADD after FMT → this was the last instruction
                 break;
@@ -346,15 +336,26 @@ pub fn scan_phoneme(program: u16, phonindex: &[u8]) -> PhonemeExtract {
                 if instn2 == 1 && pc + 1 < max_words {
                     // i_CALLPH: the next word is the program index to call.
                     // data = ((instn & 0xf) << 16) | next_word
-                    let next = u16::from_le_bytes([phonindex[(pc+1)*2], phonindex[(pc+1)*2+1]]);
+                    let next =
+                        u16::from_le_bytes([phonindex[(pc + 1) * 2], phonindex[(pc + 1) * 2 + 1]]);
                     let called_prog = ((((instn & 0xf) as u32) << 16) | next as u32) as usize;
                     // Recursively scan the called program and merge results.
                     if called_prog > 0 && called_prog < max_words {
                         let sub = scan_phoneme(called_prog as u16, phonindex);
-                        if result.fmt_addr.is_none() { result.fmt_addr = sub.fmt_addr; result.fmt_param = sub.fmt_param; }
-                        if result.wav_addr.is_none() { result.wav_addr = sub.wav_addr; result.wav_param = sub.wav_param; }
-                        if result.vwlstart_addr.is_none() { result.vwlstart_addr = sub.vwlstart_addr; }
-                        if result.vwlending_addr.is_none() { result.vwlending_addr = sub.vwlending_addr; }
+                        if result.fmt_addr.is_none() {
+                            result.fmt_addr = sub.fmt_addr;
+                            result.fmt_param = sub.fmt_param;
+                        }
+                        if result.wav_addr.is_none() {
+                            result.wav_addr = sub.wav_addr;
+                            result.wav_param = sub.wav_param;
+                        }
+                        if result.vwlstart_addr.is_none() {
+                            result.vwlstart_addr = sub.vwlstart_addr;
+                        }
+                        if result.vwlending_addr.is_none() {
+                            result.vwlending_addr = sub.vwlending_addr;
+                        }
                         for k in 0..4 {
                             if result.vowel_transition[k] == 0 {
                                 result.vowel_transition[k] = sub.vowel_transition[k];
@@ -388,11 +389,13 @@ pub fn scan_phoneme(program: u16, phonindex: &[u8]) -> PhonemeExtract {
                     let t0 = ((instn as u32 & 0xff) << 16) | w(1);
                     let t1 = (w(2) << 16) | w(3);
                     match (instn >> 8) & 0xf {
-                        1 => { // i_VOWELIN
+                        1 => {
+                            // i_VOWELIN
                             result.vowel_transition[0] = t0;
                             result.vowel_transition[1] = t1;
                         }
-                        2 => { // i_VOWELOUT
+                        2 => {
+                            // i_VOWELOUT
                             result.vowel_transition[2] = t0;
                             result.vowel_transition[3] = t1;
                         }
@@ -428,33 +431,33 @@ pub fn scan_phoneme(program: u16, phonindex: &[u8]) -> PhonemeExtract {
 // `InterpretPhoneme(NULL, 0, ...)`, i.e. tr == NULL, control == 0).
 
 // Condition / instruction constants (mirror synthesize.h / phoneme.h).
-const COND_MARK:        u16 = 0x2000; // (instn & 0xe000) == 0x2000 → condition
-const COND_OR_FLAG:     u16 = 0x1000;
-const INSTN_NOT:        u16 = 0x0003;
-const JUMP_FALSE_MASK:  u16 = 0xf800;
-const JUMP_FALSE:       u16 = 0x6800;
+const COND_MARK: u16 = 0x2000; // (instn & 0xe000) == 0x2000 → condition
+const COND_OR_FLAG: u16 = 0x1000;
+const INSTN_NOT: u16 = 0x0003;
+const JUMP_FALSE_MASK: u16 = 0xf800;
+const JUMP_FALSE: u16 = 0x6800;
 
 // CONDITION_IS_* categories (bits 5-7 in attribute mode).
-const COND_IS_TYPE:  u16 = 0x00;
+const COND_IS_TYPE: u16 = 0x00;
 const COND_IS_PLACE: u16 = 0x20;
-const COND_IS_FLAG:  u16 = 0x40;
+const COND_IS_FLAG: u16 = 0x40;
 const COND_IS_OTHER: u16 = 0x80;
 
 // "other" condition codes (attribute-mode data value, bits 0-4).
 const OTHER_IS_AFTER_STRESS: u16 = 9;
-const OTHER_IS_NOT_VOWEL:    u16 = 10;
-const OTHER_IS_FINAL_VOWEL:  u16 = 11;
-const OTHER_IS_VOICED:       u16 = 12;
-const OTHER_IS_FIRST_VOWEL:  u16 = 13;
+const OTHER_IS_NOT_VOWEL: u16 = 10;
+const OTHER_IS_FINAL_VOWEL: u16 = 11;
+const OTHER_IS_VOICED: u16 = 12;
+const OTHER_IS_FIRST_VOWEL: u16 = 13;
 const OTHER_IS_SECOND_VOWEL: u16 = 14;
-const OTHER_IS_TRANSLATION:  u16 = 16;
-const OTHER_IS_BREAK:        u16 = 17;
-const OTHER_IS_WORD_START:   u16 = 18;
-const OTHER_IS_WORD_END:     u16 = 19;
+const OTHER_IS_TRANSLATION: u16 = 16;
+const OTHER_IS_BREAK: u16 = 17;
+const OTHER_IS_WORD_START: u16 = 18;
+const OTHER_IS_WORD_END: u16 = 19;
 
 // Phoneme type / flag constants (mirror phoneme.h).
-const PH_PAUSE:  u8 = 0;
-const PH_VOWEL:  u8 = 2;
+const PH_PAUSE: u8 = 0;
+const PH_VOWEL: u8 = 2;
 const PH_LIQUID: u8 = 3;
 const PH_VOICED_FLAG: u32 = 1 << 4; // phFLAGBIT_VOICED
 
@@ -756,7 +759,9 @@ where
                         // phoneme" → set pd_FORNEXTPH (C SwitchOnVowelType).
                         result.pd_fornextph = true;
                         if let Some((addr, param)) = switch_on_vowel_type(
-                            phonindex, pc, lookup(nb.next).map(|p| p.start_type),
+                            phonindex,
+                            pc,
+                            lookup(nb.next).map(|p| p.start_type),
                         ) {
                             sound_addr[2] = addr;
                             sound_param[2] = param;
@@ -765,9 +770,9 @@ where
                     }
                     6 => {
                         // PrevVowelEndings: pick VWLEND by prev vowel's end_type.
-                        if let Some((addr, param)) = switch_on_vowel_type(
-                            phonindex, pc, lookup(nb.prev).map(|p| p.end_type),
-                        ) {
+                        if let Some((addr, param)) =
+                            switch_on_vowel_type(phonindex, pc, lookup(nb.prev).map(|p| p.end_type))
+                        {
                             sound_addr[3] = addr;
                             sound_param[3] = param;
                         }
@@ -820,7 +825,8 @@ where
             0xb | 0xc | 0xd | 0xe | 0xf => {
                 // FMT / WAV / VWLSTART / VWLEND / ADDWAV.
                 let idx = (hi4 - 0xb) as usize; // 0..4
-                let addr = ((instn & 0xf) as u32) << 18 | ((word_at(phonindex, pc + 1) as u32) << 2);
+                let addr =
+                    ((instn & 0xf) as u32) << 18 | ((word_at(phonindex, pc + 1) as u32) << 2);
                 sound_addr[idx] = addr;
                 sound_param[idx] = ((instn >> 4) & 0xff) as i8; // signed char
                 let after = word_at(phonindex, pc + 2);
@@ -899,12 +905,7 @@ fn switch_on_vowel_type(
 
 /// Evaluate a single condition instruction at word-index `pc`.  Mirrors
 /// `InterpretCondition()` (synthesis stage) from synthdata.c.
-fn interpret_condition<F>(
-    pc: usize,
-    phonindex: &[u8],
-    nb: &Neighbours,
-    lookup: &F,
-) -> bool
+fn interpret_condition<F>(pc: usize, phonindex: &[u8], nb: &Neighbours, lookup: &F) -> bool
 where
     F: Fn(u8) -> Option<PhonemeTab>,
 {
@@ -1132,7 +1133,11 @@ where
         // "Don't change phonemes which are given for the word in the dictionary."
         return false;
     }
-    let wordstress = if nb.wordstress == STRESS_UNKNOWN { 4 } else { nb.wordstress };
+    let wordstress = if nb.wordstress == STRESS_UNKNOWN {
+        4
+    } else {
+        nb.wordstress
+    };
     if nb.reduce & 2 != 0 && level >= wordstress {
         // The most stressed syllable of an unstressed word counts as stressed.
         level = 4; // STRESS_IS_PRIMARY
@@ -1185,9 +1190,7 @@ pub fn compile_program(instns: &[ProgInstn]) -> Vec<u8> {
     for instn in instns {
         match *instn {
             ProgInstn::Fmt { addr, param } => {
-                let word = I_FMT
-                    | (((param as u8) as u16) << 4)
-                    | (((addr >> 18) & 0xf) as u16);
+                let word = I_FMT | (((param as u8) as u16) << 4) | (((addr >> 18) & 0xf) as u16);
                 out.extend_from_slice(&word.to_le_bytes());
                 out.extend_from_slice(&(((addr >> 2) & 0xffff) as u16).to_le_bytes());
             }
@@ -1246,7 +1249,10 @@ mod tests {
             ProgInstn::VwlStart { addr: vs },
             ProgInstn::VwlEnding { addr: ve },
             ProgInstn::Continue,
-            ProgInstn::Fmt { addr: fmt, param: 7 },
+            ProgInstn::Fmt {
+                addr: fmt,
+                param: 7,
+            },
             ProgInstn::Return,
         ]);
         let phonindex = pad(&bytecode);
@@ -1273,7 +1279,11 @@ mod tests {
         let phonindex = pad(&bytes);
 
         let r = scan_phoneme(PROG, &phonindex);
-        assert_eq!(r.fmt_addr, Some(addr), "CALLPH did not resolve the callee's FMT");
+        assert_eq!(
+            r.fmt_addr,
+            Some(addr),
+            "CALLPH did not resolve the callee's FMT"
+        );
         assert_eq!(r.fmt_param, 9);
     }
 
@@ -1292,7 +1302,7 @@ mod tests {
     /// Build a minimal phonindex with a single i_FMT instruction at program=1.
     fn make_fmt_phonindex(fmt_addr: u32) -> Vec<u8> {
         let instn: u16 = 0xb000 | (((fmt_addr >> 18) & 0xf) as u16);
-        let next:  u16 = ((fmt_addr >> 2) & 0xffff) as u16;
+        let next: u16 = ((fmt_addr >> 2) & 0xffff) as u16;
         let mut insns = vec![0u8; 4];
         insns[0..2].copy_from_slice(&instn.to_le_bytes());
         insns[2..4].copy_from_slice(&next.to_le_bytes());
@@ -1302,9 +1312,9 @@ mod tests {
     /// Build phonindex with: [i_IPA_NAME(2 bytes) | i_FMT]
     fn make_ipa_then_fmt(fmt_addr: u32) -> Vec<u8> {
         let ipa_instn: u16 = ((I_IPA_NAME as u16) << 8) | 2; // 0x0d02
-        let ipa_data:  u16 = u16::from_be_bytes([b'e', b':']);
+        let ipa_data: u16 = u16::from_be_bytes([b'e', b':']);
         let fmt_instn: u16 = 0xb000 | (((fmt_addr >> 18) & 0xf) as u16);
-        let fmt_next:  u16 = ((fmt_addr >> 2) & 0xffff) as u16;
+        let fmt_next: u16 = ((fmt_addr >> 2) & 0xffff) as u16;
         let mut insns = vec![0u8; 8];
         insns[0..2].copy_from_slice(&ipa_instn.to_le_bytes());
         insns[2..4].copy_from_slice(&ipa_data.to_le_bytes());
@@ -1350,7 +1360,7 @@ mod tests {
     #[test]
     fn scan_zero_program_returns_empty() {
         let phonindex = vec![0u8; 4];
-        let result = scan_phoneme(0, &phonindex);   // 0 = "no program"
+        let result = scan_phoneme(0, &phonindex); // 0 = "no program"
         assert!(result.fmt_addr.is_none());
         assert!(result.wav_addr.is_none());
     }
@@ -1360,7 +1370,7 @@ mod tests {
         // RETURN then FMT — should not find FMT
         let addr = 0x1000u32 * 4;
         let fmt_instn: u16 = 0xb000 | (((addr >> 18) & 0xf) as u16);
-        let fmt_next:  u16 = ((addr >> 2) & 0xffff) as u16;
+        let fmt_next: u16 = ((addr >> 2) & 0xffff) as u16;
         let mut insns = vec![0u8; 8];
         insns[0..2].copy_from_slice(&INSTN_RETURN.to_le_bytes());
         insns[2..4].copy_from_slice(&[0, 0]);
@@ -1402,7 +1412,7 @@ mod tests {
     fn scan_wav_only() {
         let addr = 0x2000u32 * 4;
         let wav_instn: u16 = 0xc000 | (((addr >> 18) & 0xf) as u16);
-        let wav_next:  u16 = ((addr >> 2) & 0xffff) as u16;
+        let wav_next: u16 = ((addr >> 2) & 0xffff) as u16;
         let mut insns = vec![0u8; 4];
         insns[0..2].copy_from_slice(&wav_instn.to_le_bytes());
         insns[2..4].copy_from_slice(&wav_next.to_le_bytes());
@@ -1416,9 +1426,9 @@ mod tests {
         let fmt_a = 0x1000u32 * 4;
         let wav_a = 0x2000u32 * 4;
         let fmt_instn: u16 = 0xb000 | (((fmt_a >> 18) & 0xf) as u16);
-        let fmt_next:  u16 = ((fmt_a >> 2) & 0xffff) as u16;
+        let fmt_next: u16 = ((fmt_a >> 2) & 0xffff) as u16;
         let add_instn: u16 = 0xf000 | (((wav_a >> 18) & 0xf) as u16);
-        let add_next:  u16 = ((wav_a >> 2) & 0xffff) as u16;
+        let add_next: u16 = ((wav_a >> 2) & 0xffff) as u16;
         let mut insns = vec![0u8; 8];
         insns[0..2].copy_from_slice(&fmt_instn.to_le_bytes());
         insns[2..4].copy_from_slice(&fmt_next.to_le_bytes());
@@ -1482,12 +1492,24 @@ mod tests {
         };
 
         // next = vowel → condition false → default FMT(B)
-        let nb_v = Neighbours { this: 10, next: 20, ..Default::default() };
+        let nb_v = Neighbours {
+            this: 10,
+            next: 20,
+            ..Default::default()
+        };
         let r = interpret_phoneme(PROG, &phonindex, &nb_v, &lookup);
-        assert_eq!(r.fmt_addr, Some(b), "next=vowel should reach default FMT(B)");
+        assert_eq!(
+            r.fmt_addr,
+            Some(b),
+            "next=vowel should reach default FMT(B)"
+        );
 
         // next = consonant → condition true → FMT(A)
-        let nb_c = Neighbours { this: 10, next: 30, ..Default::default() };
+        let nb_c = Neighbours {
+            this: 10,
+            next: 30,
+            ..Default::default()
+        };
         let r = interpret_phoneme(PROG, &phonindex, &nb_c, &lookup);
         assert_eq!(r.fmt_addr, Some(a), "next=consonant should reach FMT(A)");
     }
@@ -1516,12 +1538,20 @@ mod tests {
         };
 
         // prev = t → FMT(A)
-        let nb_t = Neighbours { this: 10, prev: 30, ..Default::default() };
+        let nb_t = Neighbours {
+            this: 10,
+            prev: 30,
+            ..Default::default()
+        };
         let r = interpret_phoneme(PROG, &phonindex, &nb_t, &lookup);
         assert_eq!(r.fmt_addr, Some(a), "prev=t should reach FMT(A)");
 
         // prev = p → FMT(B)
-        let nb_p = Neighbours { this: 10, prev: 31, ..Default::default() };
+        let nb_p = Neighbours {
+            this: 10,
+            prev: 31,
+            ..Default::default()
+        };
         let r = interpret_phoneme(PROG, &phonindex, &nb_p, &lookup);
         assert_eq!(r.fmt_addr, Some(b), "prev=p should reach default FMT(B)");
     }
@@ -1544,11 +1574,24 @@ mod tests {
         let fmt_s_i = 0xb000 | (((sub_addr >> 18) & 0xf) as u16);
         let fmt_s_n = ((sub_addr >> 2) & 0xffff) as u16;
         let phonindex = words_bytes(&[
-            callph_i, callph_d, fmt_m_i, fmt_m_n, INSTN_RETURN, fmt_s_i, fmt_s_n,
+            callph_i,
+            callph_d,
+            fmt_m_i,
+            fmt_m_n,
+            INSTN_RETURN,
+            fmt_s_i,
+            fmt_s_n,
         ]);
-        let nb = Neighbours { this: 10, ..Default::default() };
+        let nb = Neighbours {
+            this: 10,
+            ..Default::default()
+        };
         let r = interpret_phoneme(PROG, &phonindex, &nb, |_| None);
         // The sub sets FMT(sub); after RETURN the main FMT overwrites it.
-        assert_eq!(r.fmt_addr, Some(main_addr), "main FMT should win after CALLPH");
+        assert_eq!(
+            r.fmt_addr,
+            Some(main_addr),
+            "main FMT should win after CALLPH"
+        );
     }
 }

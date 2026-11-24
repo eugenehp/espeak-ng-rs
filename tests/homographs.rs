@@ -20,7 +20,8 @@ fn verb_form_after_to_and_modals() {
         let default = ipa(w);
         let after_to = ipa(&format!("to {w}"));
         assert_ne!(
-            after_to, format!("tuː {default}"),
+            after_to,
+            format!("tuː {default}"),
             "'to {w}' should switch to the verb form (default was {default})"
         );
     }
@@ -30,10 +31,22 @@ fn verb_form_after_to_and_modals() {
     assert_eq!(ipa("to use"), "tə jˈuːz");
     assert_eq!(ipa("will record"), "wɪl ɹɪkˈɔːd");
     // Subject pronouns are verb triggers too.
-    assert!(ipa("I live here").contains("lˈɪv"), "I live → lɪv: {}", ipa("I live here"));
-    assert!(ipa("we use it").contains("jˈuːz"), "we use → juːz: {}", ipa("we use it"));
+    assert!(
+        ipa("I live here").contains("lˈɪv"),
+        "I live → lɪv: {}",
+        ipa("I live here")
+    );
+    assert!(
+        ipa("we use it").contains("jˈuːz"),
+        "we use → juːz: {}",
+        ipa("we use it")
+    );
     // …but a determiner is not, so an adjective/noun context is unchanged.
-    assert!(ipa("the live wire").contains("lˈaɪv"), "the live → laɪv: {}", ipa("the live wire"));
+    assert!(
+        ipa("the live wire").contains("lˈaɪv"),
+        "the live → laɪv: {}",
+        ipa("the live wire")
+    );
 }
 
 #[test]
@@ -44,13 +57,25 @@ fn past_form_after_auxiliary_and_defaults() {
     };
     let ipa = |s: &str| t.text_to_ipa(s).unwrap();
     // "have read" → past "rˈɛd"; present "read" stays "rˈiːd".
-    assert!(ipa("I have read it").contains("ɹˈɛd"), "have read → red: {}", ipa("I have read it"));
-    assert!(ipa("I read books").contains("ɹˈiːd"), "read (pres) → reed: {}", ipa("I read books"));
+    assert!(
+        ipa("I have read it").contains("ɹˈɛd"),
+        "have read → red: {}",
+        ipa("I have read it")
+    );
+    assert!(
+        ipa("I read books").contains("ɹˈiːd"),
+        "read (pres) → reed: {}",
+        ipa("I read books")
+    );
     // No trigger → the default noun/adjective form is kept.  ("a" alone is the
     // letter name `ˈeɪ`; in running text it reduces, so the two don't compose.)
     assert_eq!(ipa("a record"), "ɐ ɹˈɛkɔːd");
     assert_eq!(ipa("record"), "ɹˈɛkɔːd");
-    assert!(ipa("a live show").contains("lˈaɪv"), "live (adj) stays: {}", ipa("a live show"));
+    assert!(
+        ipa("a live show").contains("lˈaɪv"),
+        "live (adj) stays: {}",
+        ipa("a live show")
+    );
 }
 
 #[test]
@@ -62,15 +87,39 @@ fn noun_form_after_determiner() {
     let ipa = |s: &str| t.text_to_ipa(s).unwrap();
     // `$noun` homographs default to the verb; a determiner shifts them to the
     // noun/adjective form (stress on the first syllable).
-    assert!(ipa("a convert").contains("kˈɒnvɜːt"), "a convert → noun: {}", ipa("a convert"));
-    assert!(ipa("a refund").contains("ɹˈiːfʌnd"), "a refund → noun: {}", ipa("a refund"));
-    assert!(ipa("an upset").contains("ˈʌpsɛt"), "an upset → noun: {}", ipa("an upset"));
+    assert!(
+        ipa("a convert").contains("kˈɒnvɜːt"),
+        "a convert → noun: {}",
+        ipa("a convert")
+    );
+    assert!(
+        ipa("a refund").contains("ɹˈiːfʌnd"),
+        "a refund → noun: {}",
+        ipa("a refund")
+    );
+    assert!(
+        ipa("an upset").contains("ˈʌpsɛt"),
+        "an upset → noun: {}",
+        ipa("an upset")
+    );
     // …and they stay verbs after a verb trigger.
     // The verb's first syllable reduces, as upstream has it (`tə kənvˈɜːt`):
     // English `0` is `IF nextVowel(isMaxStress) THEN ChangePhoneme(@)`, and the
     // stressed vowel is three phonemes away.
-    assert!(ipa("to convert").contains("kənvˈɜːt"), "to convert → verb: {}", ipa("to convert"));
+    assert!(
+        ipa("to convert").contains("kənvˈɜːt"),
+        "to convert → verb: {}",
+        ipa("to convert")
+    );
     // A non-$noun word after a determiner keeps its default (noun) pronunciation.
-    assert!(ipa("the record").contains("ɹˈɛkɔːd"), "the record stays default: {}", ipa("the record"));
-    assert!(ipa("a live show").contains("lˈaɪv"), "a live stays adj: {}", ipa("a live show"));
+    assert!(
+        ipa("the record").contains("ɹˈɛkɔːd"),
+        "the record stays default: {}",
+        ipa("the record")
+    );
+    assert!(
+        ipa("a live show").contains("lˈaɪv"),
+        "a live stays adj: {}",
+        ipa("a live show")
+    );
 }

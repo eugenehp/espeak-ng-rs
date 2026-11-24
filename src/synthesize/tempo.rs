@@ -108,7 +108,9 @@ fn resample_linear(s: &[i16], target_len: usize) -> Vec<i16> {
             let frac = src - idx as f64;
             let a = s[idx] as f64;
             let b = s[(idx + 1).min(s.len() - 1)] as f64;
-            (a + (b - a) * frac).round().clamp(i16::MIN as f64, i16::MAX as f64) as i16
+            (a + (b - a) * frac)
+                .round()
+                .clamp(i16::MIN as f64, i16::MAX as f64) as i16
         })
         .collect()
 }
@@ -173,10 +175,16 @@ mod tests {
         let fast = change_tempo(&s, 2.0, SR);
         // ~half the length.
         let ratio = fast.len() as f64 / s.len() as f64;
-        assert!((ratio - 0.5).abs() < 0.12, "expected ~0.5x length, got {ratio:.3}");
+        assert!(
+            (ratio - 0.5).abs() < 0.12,
+            "expected ~0.5x length, got {ratio:.3}"
+        );
         // Pitch preserved (not doubled, as naive resampling would).
         let f = est_freq(&fast);
-        assert!((f - 200.0).abs() < 20.0, "pitch should stay ~200 Hz, got {f:.0}");
+        assert!(
+            (f - 200.0).abs() < 20.0,
+            "pitch should stay ~200 Hz, got {f:.0}"
+        );
     }
 
     #[test]
@@ -184,9 +192,15 @@ mod tests {
         let s = sine(150.0, 20_000);
         let slow = change_tempo(&s, 0.5, SR);
         let ratio = slow.len() as f64 / s.len() as f64;
-        assert!((ratio - 2.0).abs() < 0.25, "expected ~2x length, got {ratio:.3}");
+        assert!(
+            (ratio - 2.0).abs() < 0.25,
+            "expected ~2x length, got {ratio:.3}"
+        );
         let f = est_freq(&slow);
-        assert!((f - 150.0).abs() < 15.0, "pitch should stay ~150 Hz, got {f:.0}");
+        assert!(
+            (f - 150.0).abs() < 15.0,
+            "pitch should stay ~150 Hz, got {f:.0}"
+        );
     }
 
     #[test]

@@ -37,18 +37,18 @@
 /// The Kirshenbaum-to-IPA array from dictionary.c, indexed by `char - 0x20`.
 /// Entries are Unicode codepoints (u32).
 pub const IPA1: [u32; 96] = [
-    0x20,  0x21,  0x22,  0x2b0, 0x24,  0x25,  0x0e6, 0x2c8, // 0x20-0x27
-    0x28,  0x29,  0x27e, 0x2b,  0x2cc, 0x2d,  0x2e,  0x2f,  // 0x28-0x2f
-    0x252, 0x31,  0x32,  0x25c, 0x34,  0x35,  0x36,  0x37,  // 0x30-0x37
-    0x275, 0x39,  0x2d0, 0x2b2, 0x3c,  0x3d,  0x3e,  0x294, // 0x38-0x3f
-    0x259, 0x251, 0x3b2, 0xe7,  0xf0,  0x25b, 0x46,  0x262, // 0x40-0x47
-    0x127, 0x26a, 0x25f, 0x4b,  0x26b, 0x271, 0x14b, 0x254, // 0x48-0x4f
+    0x20, 0x21, 0x22, 0x2b0, 0x24, 0x25, 0x0e6, 0x2c8, // 0x20-0x27
+    0x28, 0x29, 0x27e, 0x2b, 0x2cc, 0x2d, 0x2e, 0x2f, // 0x28-0x2f
+    0x252, 0x31, 0x32, 0x25c, 0x34, 0x35, 0x36, 0x37, // 0x30-0x37
+    0x275, 0x39, 0x2d0, 0x2b2, 0x3c, 0x3d, 0x3e, 0x294, // 0x38-0x3f
+    0x259, 0x251, 0x3b2, 0xe7, 0xf0, 0x25b, 0x46, 0x262, // 0x40-0x47
+    0x127, 0x26a, 0x25f, 0x4b, 0x26b, 0x271, 0x14b, 0x254, // 0x48-0x4f
     0x3a6, 0x263, 0x280, 0x283, 0x3b8, 0x28a, 0x28c, 0x153, // 0x50-0x57
-    0x3c7, 0xf8,  0x292, 0x32a, 0x5c,  0x5d,  0x5e,  0x5f,  // 0x58-0x5f
-    0x60,  0x61,  0x62,  0x63,  0x64,  0x65,  0x66,  0x261, // 0x60-0x67
-    0x68,  0x69,  0x6a,  0x6b,  0x6c,  0x6d,  0x6e,  0x6f,  // 0x68-0x6f
-    0x70,  0x71,  0x72,  0x73,  0x74,  0x75,  0x76,  0x77,  // 0x70-0x77
-    0x78,  0x79,  0x7a,  0x7b,  0x7c,  0x7d,  0x303, 0x7f,  // 0x78-0x7f
+    0x3c7, 0xf8, 0x292, 0x32a, 0x5c, 0x5d, 0x5e, 0x5f, // 0x58-0x5f
+    0x60, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x261, // 0x60-0x67
+    0x68, 0x69, 0x6a, 0x6b, 0x6c, 0x6d, 0x6e, 0x6f, // 0x68-0x6f
+    0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77, // 0x70-0x77
+    0x78, 0x79, 0x7a, 0x7b, 0x7c, 0x7d, 0x303, 0x7f, // 0x78-0x7f
 ];
 
 /// Convert an ASCII character (0x20..=0x7f) using the ipa1 table.
@@ -63,7 +63,9 @@ pub fn ipa1_char(c: u8) -> u32 {
 
 /// Encode a Unicode codepoint as UTF-8 bytes (up to 4 bytes).
 pub fn encode_utf8(cp: u32, buf: &mut Vec<u8>) {
-    if cp == 0 { return; }
+    if cp == 0 {
+        return;
+    }
     if cp < 0x80 {
         buf.push(cp as u8);
     } else if cp < 0x800 {
@@ -98,9 +100,15 @@ pub fn mnemonic_to_ipa(mnemonic: u32, is_vowel: bool) -> String {
     loop {
         let c = (mnem & 0xff) as u8;
         mnem >>= 8;
-        if c == 0 { break; }
-        if c == b'/' { break; } // variant indicator
-        if c == b'#' && is_vowel { break; } // subscript-h for consonants only
+        if c == 0 {
+            break;
+        }
+        if c == b'/' {
+            break;
+        } // variant indicator
+        if c == b'#' && is_vowel {
+            break;
+        } // subscript-h for consonants only
         if c == b'-' && is_vowel {
             // A '-' in a *vowel* mnemonic is a variant marker, not IPA — e.g.
             // French "@-" (the reducible "e caduc" schwa) must render "ə", not
@@ -133,22 +141,22 @@ pub fn mnemonic_to_ipa(mnemonic: u32, is_vowel: bool) -> String {
 /// precedence over both (see [`en_ipa_override`]).
 pub static EN_IPA_OVERRIDES: &[(u8, &str)] = &[
     // Syllabic consonants
-    (41, "m\u{0329}"),   // m- → m̩
-    (42, "n\u{0329}"),   // n- → n̩
+    (41, "m\u{0329}"),        // m- → m̩
+    (42, "n\u{0329}"),        // n- → n̩
     (43, "\u{014b}\u{0329}"), // N- → ŋ̩
-    (45, "l\u{0329}"),   // l- → l̩
+    (45, "l\u{0329}"),        // l- → l̩
     // Diphthongs and vowels needing override (ipa1 gives wrong result)
-    (111, "\u{0259}"),   // 3  → ə  (ipa1['3'] = ɜ, but '3' alone = ə in EN)
-    (118, "\u{0259}l"),  // @L → əl (ipa1 gives əɫ)
-    (129, "\u{0252}"),   // 0  → ɒ  (ipa1['0'] = ɒ ✓, but digit-first case)
-    (130, "\u{0252}"),   // 0# → ɒ
-    (131, "\u{0252}"),   // 02 → ɒ
-    (132, "\u{0252}"),   // O2 → ɒ  (ipa1['O'] = ɔ, wrong)
+    (111, "\u{0259}"),  // 3  → ə  (ipa1['3'] = ɜ, but '3' alone = ə in EN)
+    (118, "\u{0259}l"), // @L → əl (ipa1 gives əɫ)
+    (129, "\u{0252}"),  // 0  → ɒ  (ipa1['0'] = ɒ ✓, but digit-first case)
+    (130, "\u{0252}"),  // 0# → ɒ
+    (131, "\u{0252}"),  // 02 → ɒ
+    (132, "\u{0252}"),  // O2 → ɒ  (ipa1['O'] = ɔ, wrong)
     // Rhotic vowels
     (154, "a\u{026a}\u{0259}"), // aI3 → aɪə  (fire/hire/wire; mnemonic drops the
-                                // "3", giving a bare "aɪ" — the non-rhotic
-                                // offglide is restored, and the word-medial
-                                // linking-ɹ is added by the rhotic pass)
+    // "3", giving a bare "aɪ" — the non-rhotic
+    // offglide is restored, and the word-medial
+    // linking-ɹ is added by the rhotic pass)
     (156, "\u{0259}\u{0279}"), // IR  → əɹ
     (157, "\u{028c}\u{0279}"), // VR  → ʌɹ
 ];
@@ -212,7 +220,7 @@ pub fn phoneme_ipa_lang(code: u8, mnemonic: u32, is_vowel: bool, use_en_override
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// The primary-stress IPA marker: ˈ (U+02C8)
-pub const IPA_STRESS_PRIMARY:   &str = "\u{02c8}";
+pub const IPA_STRESS_PRIMARY: &str = "\u{02c8}";
 /// The secondary-stress IPA marker: ˌ (U+02CC)
 pub const IPA_STRESS_SECONDARY: &str = "\u{02cc}";
 /// The length mark: ː (U+02D0)
@@ -240,39 +248,39 @@ pub enum PendingStress {
 pub const PH_STRESS: u8 = 1;
 #[allow(missing_docs)]
 /// Phoneme type: vowel (`phVOWEL`).
-pub const PH_VOWEL:  u8 = 2;
+pub const PH_VOWEL: u8 = 2;
 #[allow(missing_docs)]
 /// Phoneme type: pause (`phPAUSE`).
-pub const PH_PAUSE:  u8 = 0;
+pub const PH_PAUSE: u8 = 0;
 
 /// Unstressed marker code (`%`).
-pub const PHON_STRESS_U:     u8 = 2;
+pub const PHON_STRESS_U: u8 = 2;
 /// Stress-down marker code (`%%`).
-pub const PHON_STRESS_D:     u8 = 3;
+pub const PHON_STRESS_D: u8 = 3;
 /// Secondary stress code (`,`).
-pub const PHON_STRESS_2:     u8 = 4;
+pub const PHON_STRESS_2: u8 = 4;
 /// Tertiary stress code.
-pub const PHON_STRESS_3:     u8 = 5;
+pub const PHON_STRESS_3: u8 = 5;
 /// Primary stress code (`ˈ`).
-pub const PHON_STRESS_P:     u8 = 6;
+pub const PHON_STRESS_P: u8 = 6;
 /// Priority-primary stress code (`ˈˈ`).
-pub const PHON_STRESS_P2:    u8 = 7;
+pub const PHON_STRESS_P2: u8 = 7;
 /// Revert-to-previous-stress code.
-pub const PHON_STRESS_PREV:  u8 = 8;
+pub const PHON_STRESS_PREV: u8 = 8;
 /// Pause code.
-pub const PHON_PAUSE:        u8 = 9;
+pub const PHON_PAUSE: u8 = 9;
 /// Short pause code.
-pub const PHON_PAUSE_SHORT:  u8 = 10;
+pub const PHON_PAUSE_SHORT: u8 = 10;
 /// No-link pause code.
 pub const PHON_PAUSE_NOLINK: u8 = 11;
 /// Length mark code (`ː`).
-pub const PHON_LENGTHEN:     u8 = 12;
+pub const PHON_LENGTHEN: u8 = 12;
 /// Schwa code (`ə`).
-pub const PHON_SCHWA:        u8 = 13;
+pub const PHON_SCHWA: u8 = 13;
 /// Short schwa code.
-pub const PHON_SCHWA_SHORT:  u8 = 14;
+pub const PHON_SCHWA_SHORT: u8 = 14;
 /// End-of-word boundary code (`||`).
-pub const PHON_END_WORD:     u8 = 15;
+pub const PHON_END_WORD: u8 = 15;
 /// Tonic stress code.
 pub const PHON_STRESS_TONIC: u8 = 26;
 /// Clause-boundary pause code.
@@ -281,8 +289,17 @@ pub const PHON_PAUSE_CLAUSE: u8 = 27;
 /// Is this phoneme code a stress-level marker?
 #[inline]
 pub fn is_stress_code(code: u8) -> bool {
-    matches!(code, PHON_STRESS_U | PHON_STRESS_D | PHON_STRESS_2 | PHON_STRESS_3
-                 | PHON_STRESS_P | PHON_STRESS_P2 | PHON_STRESS_PREV | PHON_STRESS_TONIC)
+    matches!(
+        code,
+        PHON_STRESS_U
+            | PHON_STRESS_D
+            | PHON_STRESS_2
+            | PHON_STRESS_3
+            | PHON_STRESS_P
+            | PHON_STRESS_P2
+            | PHON_STRESS_PREV
+            | PHON_STRESS_TONIC
+    )
 }
 
 /// Is this a pause/boundary code?

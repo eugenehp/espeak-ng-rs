@@ -13,7 +13,10 @@ use espeak_ng::Translator;
 fn tr(lang: &str) -> Option<Translator> {
     match Translator::new_default(lang) {
         Ok(t) => Some(t),
-        Err(_) => { eprintln!("[SKIP] no {lang} dict"); None }
+        Err(_) => {
+            eprintln!("[SKIP] no {lang} dict");
+            None
+        }
     }
 }
 
@@ -40,11 +43,27 @@ fn only_digit_both_sides_and_only_ascii_hyphen() {
     let Some(t) = tr("en") else { return };
     let ipa = |s: &str| t.text_to_ipa(s).unwrap();
     // A letter on either side → no "dash".
-    assert!(!ipa("x-5").contains("dˈaʃ"), "x-5 has no dash: {}", ipa("x-5"));
-    assert!(!ipa("5-x").contains("dˈaʃ"), "5-x has no dash: {}", ipa("5-x"));
+    assert!(
+        !ipa("x-5").contains("dˈaʃ"),
+        "x-5 has no dash: {}",
+        ipa("x-5")
+    );
+    assert!(
+        !ipa("5-x").contains("dˈaʃ"),
+        "5-x has no dash: {}",
+        ipa("5-x")
+    );
     // En dash / em dash are not the ASCII hyphen espeak reads as "dash".
-    assert!(!ipa("5–10").contains("dˈaʃ"), "en-dash is silent: {}", ipa("5–10"));
-    assert!(!ipa("5—10").contains("dˈaʃ"), "em-dash is silent: {}", ipa("5—10"));
+    assert!(
+        !ipa("5–10").contains("dˈaʃ"),
+        "en-dash is silent: {}",
+        ipa("5–10")
+    );
+    assert!(
+        !ipa("5—10").contains("dˈaʃ"),
+        "em-dash is silent: {}",
+        ipa("5—10")
+    );
 }
 
 #[test]

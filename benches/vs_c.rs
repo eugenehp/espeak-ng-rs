@@ -30,9 +30,7 @@
 //
 //   cargo bench --features bundled-espeak -- "text_to_ipa/issue4_regional"
 
-use criterion::{
-    black_box, criterion_group, BenchmarkId, Criterion, Throughput,
-};
+use criterion::{black_box, criterion_group, BenchmarkId, Criterion, Throughput};
 use std::time::Duration;
 
 // ---------------------------------------------------------------------------
@@ -69,9 +67,7 @@ fn espeak_available() -> bool {
     if let Some(data) = espeak_data() {
         cmd.env("ESPEAK_DATA_PATH", data);
     }
-    cmd.output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    cmd.output().map(|o| o.status.success()).unwrap_or(false)
 }
 
 /// Run the espeak-ng CLI and return the IPA string.
@@ -101,20 +97,13 @@ fn ipa_verify_corpus() -> Vec<(&'static str, &'static str)> {
     let mut v = Vec::new();
     v.extend([
         ("en", "hello"),
-        (
-            "en",
-            "The quick brown fox jumps over the lazy dog.",
-        ),
+        ("en", "The quick brown fox jumps over the lazy dog."),
         ("fr", "bonjour"),
         ("de", "Guten Tag"),
         ("es", "hola"),
     ]);
     for voice in ["en-us", "en-rp"] {
-        for text in [
-            "When choices cease",
-            "unseen",
-            "seen or unseen,",
-        ] {
+        for text in ["When choices cease", "unseen", "seen or unseen,"] {
             v.push((voice, text));
         }
     }
@@ -148,8 +137,10 @@ fn verify_ipa_benchmark_corpus() {
             "  lang={lang:?} text={text:?}\n    C: {c_ipa}\n    R: {r_ipa}\n\n"
         ));
     }
-    msg.push_str("Build with --features bundled-espeak so both use the same data tree,\n\
-                  or set SKIP_IPA_VERIFY=1 to benchmark timings only.\n");
+    msg.push_str(
+        "Build with --features bundled-espeak so both use the same data tree,\n\
+                  or set SKIP_IPA_VERIFY=1 to benchmark timings only.\n",
+    );
     panic!("{msg}");
 }
 
@@ -161,15 +152,21 @@ fn bench_encoding(c: &mut Criterion) {
     use espeak_ng::encoding::{decode_utf8_to_string, TextDecoder};
 
     let inputs: &[(&str, &str)] = &[
-        ("ascii_short",  "Hello world"),
-        ("ascii_long",   "The quick brown fox jumps over the lazy dog. \
-                          Pack my box with five dozen liquor jugs."),
-        ("latin_accents","Héllo wörld, cömplex áccentüation tëst"),
-        ("cyrillic",     "Привет мир, это тест кириллического декодирования"),
-        ("japanese",     "日本語のテキストデコードのベンチマーク"),
-        ("mixed",        "Hello мир 日本語 مرحبا Héllo"),
-        ("emoji",        "Hello 😀🌍🎵 world 🦀"),
-        ("long_utf8",    &"café résumé naïve über fiancée".repeat(100)),
+        ("ascii_short", "Hello world"),
+        (
+            "ascii_long",
+            "The quick brown fox jumps over the lazy dog. \
+                          Pack my box with five dozen liquor jugs.",
+        ),
+        ("latin_accents", "Héllo wörld, cömplex áccentüation tëst"),
+        (
+            "cyrillic",
+            "Привет мир, это тест кириллического декодирования",
+        ),
+        ("japanese", "日本語のテキストデコードのベンチマーク"),
+        ("mixed", "Hello мир 日本語 مرحبا Héllo"),
+        ("emoji", "Hello 😀🌍🎵 world 🦀"),
+        ("long_utf8", &"café résumé naïve über fiancée".repeat(100)),
     ];
 
     let mut group = c.benchmark_group("encoding/utf8_decode");
@@ -206,17 +203,21 @@ fn bench_encoding_name_lookup(c: &mut Criterion) {
     use espeak_ng::encoding::Encoding;
 
     let names = [
-        "UTF-8", "ISO-8859-1", "ISO-8859-15", "KOI8-R",
-        "US-ASCII", "ISO-10646-UCS-2", "bogus", "",
+        "UTF-8",
+        "ISO-8859-1",
+        "ISO-8859-15",
+        "KOI8-R",
+        "US-ASCII",
+        "ISO-10646-UCS-2",
+        "bogus",
+        "",
     ];
 
     let mut group = c.benchmark_group("encoding/name_lookup");
     for name in &names {
-        group.bench_with_input(
-            BenchmarkId::new("rust", name),
-            name,
-            |b, &name| b.iter(|| black_box(Encoding::from_name(black_box(name)))),
-        );
+        group.bench_with_input(BenchmarkId::new("rust", name), name, |b, &name| {
+            b.iter(|| black_box(Encoding::from_name(black_box(name))))
+        });
     }
     group.finish();
 }
@@ -232,7 +233,13 @@ fn bench_resonator(c: &mut Criterion) {
     group.measurement_time(Duration::from_secs(5));
 
     // Typical F1 formant filter at 22050 Hz
-    let baseline = Resonator { a: 0.014, b: 1.940, c: -0.957, x1: 0.0, x2: 0.0 };
+    let baseline = Resonator {
+        a: 0.014,
+        b: 1.940,
+        c: -0.957,
+        x1: 0.0,
+        x2: 0.0,
+    };
 
     group.bench_function("tick_single", |b| {
         let mut r = baseline.clone();
@@ -270,13 +277,21 @@ fn bench_resonator(c: &mut Criterion) {
 
 fn bench_rust_text_to_ipa(c: &mut Criterion) {
     let inputs: &[(&str, &str, &str)] = &[
-        ("en", "word",      "hello"),
-        ("en", "sentence",  "The quick brown fox jumps over the lazy dog."),
-        ("en", "paragraph", "Once upon a time, in a land far away, there lived \
-                             a small dragon who could not breathe fire."),
-        ("fr", "word",      "bonjour"),
-        ("de", "word",      "Guten Tag"),
-        ("es", "word",      "hola"),
+        ("en", "word", "hello"),
+        (
+            "en",
+            "sentence",
+            "The quick brown fox jumps over the lazy dog.",
+        ),
+        (
+            "en",
+            "paragraph",
+            "Once upon a time, in a land far away, there lived \
+                             a small dragon who could not breathe fire.",
+        ),
+        ("fr", "word", "bonjour"),
+        ("de", "word", "Guten Tag"),
+        ("es", "word", "hola"),
     ];
 
     let mut group = c.benchmark_group("text_to_ipa/rust");
@@ -319,15 +334,23 @@ fn bench_c_cli(c: &mut Criterion) {
     }
 
     let inputs: &[(&str, &str, &str)] = &[
-        ("en", "word",      "hello"),
-        ("en", "sentence",  "The quick brown fox jumps over the lazy dog."),
-        ("en", "paragraph", "Once upon a time, in a land far away, there lived \
-                             a small dragon who could not breathe fire."),
-        ("fr", "word",      "bonjour"),
-        ("de", "word",      "Guten Tag"),
-        ("es", "word",      "hola"),
-        ("ru", "word",      "привет"),
-        ("zh", "word",      "你好"),
+        ("en", "word", "hello"),
+        (
+            "en",
+            "sentence",
+            "The quick brown fox jumps over the lazy dog.",
+        ),
+        (
+            "en",
+            "paragraph",
+            "Once upon a time, in a land far away, there lived \
+                             a small dragon who could not breathe fire.",
+        ),
+        ("fr", "word", "bonjour"),
+        ("de", "word", "Guten Tag"),
+        ("es", "word", "hola"),
+        ("ru", "word", "привет"),
+        ("zh", "word", "你好"),
     ];
 
     let mut group = c.benchmark_group("text_to_ipa/c_cli");
@@ -355,17 +378,11 @@ fn bench_c_cli(c: &mut Criterion) {
 
 fn bench_issue4_regional(c: &mut Criterion) {
     if !espeak_available() {
-        eprintln!(
-            "\n[SKIP] bench_issue4_regional: espeak-ng not available (see bench_c_cli).\n"
-        );
+        eprintln!("\n[SKIP] bench_issue4_regional: espeak-ng not available (see bench_c_cli).\n");
         return;
     }
 
-    let texts: &[&str] = &[
-        "When choices cease",
-        "unseen",
-        "seen or unseen,",
-    ];
+    let texts: &[&str] = &["When choices cease", "unseen", "seen or unseen,"];
     let voices: &[&str] = &["en-us", "en-rp"];
 
     let mut group = c.benchmark_group("text_to_ipa/issue4_regional");
@@ -407,11 +424,11 @@ fn bench_latency(c: &mut Criterion) {
     }
 
     let phrases: &[(&str, &str, &str)] = &[
-        ("en", "en/hi",           "Hi"),
-        ("en", "en/hello",        "hello"),
-        ("en", "en/hello_world",  "Hello world"),
-        ("fr", "fr/bonjour",      "Bonjour"),
-        ("de", "de/guten",        "Guten Morgen"),
+        ("en", "en/hi", "Hi"),
+        ("en", "en/hello", "hello"),
+        ("en", "en/hello_world", "Hello world"),
+        ("fr", "fr/bonjour", "Bonjour"),
+        ("de", "de/guten", "Guten Morgen"),
     ];
 
     let mut group = c.benchmark_group("latency/first_phoneme");
@@ -443,11 +460,15 @@ fn bench_ffi(c: &mut Criterion) {
     use espeak_ng::oracle;
 
     let inputs: &[(&str, &str, &str)] = &[
-        ("en", "word",     "hello"),
-        ("en", "sentence", "The quick brown fox jumps over the lazy dog."),
-        ("fr", "word",     "bonjour"),
-        ("de", "word",     "Guten Tag"),
-        ("es", "word",     "hola"),
+        ("en", "word", "hello"),
+        (
+            "en",
+            "sentence",
+            "The quick brown fox jumps over the lazy dog.",
+        ),
+        ("fr", "word", "bonjour"),
+        ("de", "word", "Guten Tag"),
+        ("es", "word", "hola"),
     ];
 
     let mut group = c.benchmark_group("text_to_ipa/ffi_vs_rust");
@@ -510,7 +531,5 @@ fn main() {
         verify_ipa_benchmark_corpus();
     }
     all_benchmarks();
-    Criterion::default()
-        .configure_from_args()
-        .final_summary();
+    Criterion::default().configure_from_args().final_summary();
 }

@@ -14,7 +14,10 @@ fn reads(lang: &str, cases: &[(&str, &str)]) {
     };
     for (word, frag) in cases {
         let got = t.text_to_ipa(word).unwrap();
-        assert!(!got.trim().is_empty(), "{lang} {word:?} produced no phonemes");
+        assert!(
+            !got.trim().is_empty(),
+            "{lang} {word:?} produced no phonemes"
+        );
         assert!(
             got.contains(frag),
             "{lang} {word:?}: expected to contain {frag:?}, got {got:?}",
@@ -25,7 +28,10 @@ fn reads(lang: &str, cases: &[(&str, &str)]) {
 #[test]
 fn urdu_words_read() {
     // اردو → "urdu", کتاب → "kitab", پاکستان → "pakistan".
-    reads("ur", &[("اردو", "rd"), ("کتاب", "kɪtˈaːb"), ("پاکستان", "stˈaːn")]);
+    reads(
+        "ur",
+        &[("اردو", "rd"), ("کتاب", "kɪtˈaːb"), ("پاکستان", "stˈaːn")],
+    );
 }
 
 #[test]

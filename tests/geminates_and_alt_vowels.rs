@@ -38,7 +38,7 @@ fn italian_geminates_are_doubled() {
     assert_eq!(it.text_to_ipa("mamma").unwrap(), "mˈamma");
     assert_eq!(it.text_to_ipa("bello").unwrap(), "bˈɛllo"); // liquid
     assert_eq!(it.text_to_ipa("rosso").unwrap(), "rˈosso"); // fricative
-    // A phoneme that is *itself* long keeps its own mnemonic.
+                                                            // A phoneme that is *itself* long keeps its own mnemonic.
     assert_eq!(it.text_to_ipa("faccina").unwrap(), "fatʃːˈina");
 }
 

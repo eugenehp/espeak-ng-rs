@@ -21,8 +21,14 @@ fn compound_ordinals_are_one_word() {
     // etc. as a trailing word — guard against that stress pattern.
     for (input, tail_of_20s) in [("21.", "tsvˈantsɪçtə"), ("22.", "tsvˈantsɪçtə")] {
         let got = ipa(input);
-        assert!(got.ends_with(tail_of_20s), "{input} should end like '…zwanzigste': {got}");
-        assert!(!got.contains("ˈeːɾstə"), "{input} must not read a separate 'erste': {got}");
+        assert!(
+            got.ends_with(tail_of_20s),
+            "{input} should end like '…zwanzigste': {got}"
+        );
+        assert!(
+            !got.contains("ˈeːɾstə"),
+            "{input} must not read a separate 'erste': {got}"
+        );
     }
     // 21. reads as one compound cardinal + suffix (matches '20.' ending).
     assert_eq!(ipa("21."), format!("ˌaɪn ʊnt{}", ipa("20.")));
@@ -32,7 +38,11 @@ fn compound_ordinals_are_one_word() {
     assert_eq!(ipa("20."), "tsvˈantsɪçtə");
     assert_eq!(ipa("100."), "hˈʊndɜtstə");
     // A German date reads naturally.
-    assert!(ipa("der 21. Mai").contains("ʊnttsvˈantsɪçtə"), "{}", ipa("der 21. Mai"));
+    assert!(
+        ipa("der 21. Mai").contains("ʊnttsvˈantsɪçtə"),
+        "{}",
+        ipa("der 21. Mai")
+    );
 }
 
 #[test]
@@ -45,14 +55,26 @@ fn dutch_compound_ordinals_are_one_word() {
     };
     let ipa = |s: &str| t.text_to_ipa(s).unwrap();
     for input in ["21e", "22e", "33e"] {
-        assert!(!ipa(input).contains("ˈɪːrstə"), "{input} must not read a separate 'eerste': {}", ipa(input));
+        assert!(
+            !ipa(input).contains("ˈɪːrstə"),
+            "{input} must not read a separate 'eerste': {}",
+            ipa(input)
+        );
     }
     // 21e = "een en" + the '20e' ending (one compound word).  The compound
     // demotes the second element's stress to secondary, as upstream does
     // (`ˈeːnɛntʋˌɪntəxstə`), so compare the segments rather than the marks.
-    let strip = |s: String| s.chars().filter(|c| !matches!(c, 'ˈ' | 'ˌ')).collect::<String>();
+    let strip = |s: String| {
+        s.chars()
+            .filter(|c| !matches!(c, 'ˈ' | 'ˌ'))
+            .collect::<String>()
+    };
     assert_eq!(strip(ipa("21e")), format!("eːnɛn{}", strip(ipa("20e"))));
-    assert!(ipa("21e").contains("tʋˌɪntəx"), "the compound's tail is secondary: {}", ipa("21e"));
+    assert!(
+        ipa("21e").contains("tʋˌɪntəx"),
+        "the compound's tail is secondary: {}",
+        ipa("21e")
+    );
     // Round/small unchanged.
     assert_eq!(ipa("1e"), "ˈɪːrstə");
     assert_eq!(ipa("100e"), "hˈɔndɛrtstə");
@@ -76,8 +98,16 @@ fn german_one_apocopates_in_compounds() {
         assert!(!got.contains("aɪns"), "{n} must not use 'eins': {got}");
     }
     // …but 101 / 1001 keep "eins" (they end in it).
-    assert!(ipa("101").ends_with("ˈaɪns"), "101 = hunderteins: {}", ipa("101"));
-    assert!(ipa("1001").ends_with("ˈaɪns"), "1001 = tausendeins: {}", ipa("1001"));
+    assert!(
+        ipa("101").ends_with("ˈaɪns"),
+        "101 = hunderteins: {}",
+        ipa("101")
+    );
+    assert!(
+        ipa("1001").ends_with("ˈaɪns"),
+        "1001 = tausendeins: {}",
+        ipa("1001")
+    );
 }
 
 #[test]

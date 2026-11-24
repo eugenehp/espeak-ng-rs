@@ -30,10 +30,14 @@ fn sinhala_words_read_with_vowel_signs_and_virama() {
     assert_eq!(ipa("ක්"), "k");
 
     // Real words read cleanly (no diacritic names leaking in).
-    for (word, want) in [("ආයුබෝවන්", "ˈaːjubˌoːwən"), ("ලංකා", "lˈɐŋkaː")] {
+    for (word, want) in [("ආයුබෝවන්", "ˈaːjubˌoːwən"), ("ලංකා", "lˈɐŋkaː")]
+    {
         assert_eq!(ipa(word), want, "si {word}");
     }
     // Sanity: no leftover Sinhala combining marks and non-empty.
     let thanks = ipa("ස්තූතියි");
-    assert!(!thanks.trim().is_empty() && !thanks.contains("pill"), "si thanks: {thanks}");
+    assert!(
+        !thanks.trim().is_empty() && !thanks.contains("pill"),
+        "si thanks: {thanks}"
+    );
 }

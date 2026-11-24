@@ -12,7 +12,10 @@ fn en() -> Option<Translator> {
 
 #[test]
 fn emoji_read_as_names() {
-    let Some(t) = en() else { eprintln!("[SKIP] no en data"); return };
+    let Some(t) = en() else {
+        eprintln!("[SKIP] no en data");
+        return;
+    };
     let ipa = |s: &str| t.text_to_ipa(s).unwrap();
     // Each emoji reads the same as spelling out its name.
     let cases: &[(&str, &str)] = &[

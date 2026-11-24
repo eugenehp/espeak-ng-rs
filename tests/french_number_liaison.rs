@@ -25,19 +25,25 @@ fn seg(t: &Translator, text: &str) -> String {
 
 #[test]
 fn hundreds_and_thousands_drop_internal_liaison() {
-    let Ok(t) = Translator::new_default("fr") else { eprintln!("[SKIP] no fr dict"); return };
+    let Ok(t) = Translator::new_default("fr") else {
+        eprintln!("[SKIP] no fr dict");
+        return;
+    };
     // hundreds: multiplier ends in a liaison consonant, "cent" (/s/) is a consonant.
-    assert_eq!(seg(&t, "200"), "døsɑ̃");     // deux cent  — was "døzsɑ̃"
-    assert_eq!(seg(&t, "300"), "tʁwasɑ̃");   // trois cent — was "tʁwazsɑ̃"
-    assert_eq!(seg(&t, "600"), "sisɑ̃");     // six cent   — was "sizsɑ̃"
-    // thousands: liaison sits before the END_WORD separator, then "mille" (/m/).
-    assert_eq!(seg(&t, "2000"), "dø mil");   // deux mille — was "døz mil"
-    assert_eq!(seg(&t, "6000"), "si mil");   // six mille  — was "siz mil"
+    assert_eq!(seg(&t, "200"), "døsɑ̃"); // deux cent  — was "døzsɑ̃"
+    assert_eq!(seg(&t, "300"), "tʁwasɑ̃"); // trois cent — was "tʁwazsɑ̃"
+    assert_eq!(seg(&t, "600"), "sisɑ̃"); // six cent   — was "sizsɑ̃"
+                                        // thousands: liaison sits before the END_WORD separator, then "mille" (/m/).
+    assert_eq!(seg(&t, "2000"), "dø mil"); // deux mille — was "døz mil"
+    assert_eq!(seg(&t, "6000"), "si mil"); // six mille  — was "siz mil"
 }
 
 #[test]
 fn liaison_kept_before_a_vowel() {
-    let Ok(t) = Translator::new_default("fr") else { eprintln!("[SKIP] no fr dict"); return };
+    let Ok(t) = Translator::new_default("fr") else {
+        eprintln!("[SKIP] no fr dict");
+        return;
+    };
     // 21 = "vingt et un": the /t/ of "vingt" precedes "et" (vowel) → kept.
     assert_eq!(seg(&t, "21"), "vɛ̃teœ̃");
     // Across a token boundary the /z/ still surfaces before a vowel-initial word.
@@ -48,10 +54,13 @@ fn liaison_kept_before_a_vowel() {
 
 #[test]
 fn plain_word_liaison_unchanged() {
-    let Ok(t) = Translator::new_default("fr") else { eprintln!("[SKIP] no fr dict"); return };
+    let Ok(t) = Translator::new_default("fr") else {
+        eprintln!("[SKIP] no fr dict");
+        return;
+    };
     // The pre-existing cross-token behaviour must be preserved.
-    assert_eq!(seg(&t, "deux chats"), "dø ʃa");   // consonant-initial → dropped
-    assert_eq!(seg(&t, "deux cents"), "dø sɑ̃");  // spelled out, two tokens
+    assert_eq!(seg(&t, "deux chats"), "dø ʃa"); // consonant-initial → dropped
+    assert_eq!(seg(&t, "deux cents"), "dø sɑ̃"); // spelled out, two tokens
 }
 
 // six / dix / huit carry a `3`-liaison (`ph_french` z3 / t3): [z]/[t] before a
@@ -59,7 +68,10 @@ fn plain_word_liaison_unchanged() {
 // pause — the third case the port used to drop ("six" → "si", not "sis").
 #[test]
 fn three_liaison_citation_form_before_pause() {
-    let Ok(t) = Translator::new_default("fr") else { eprintln!("[SKIP] no fr dict"); return };
+    let Ok(t) = Translator::new_default("fr") else {
+        eprintln!("[SKIP] no fr dict");
+        return;
+    };
     // Isolation / end of utterance → citation consonant surfaces.
     assert_eq!(seg(&t, "six"), "sis");
     assert_eq!(seg(&t, "dix"), "dis");
@@ -75,7 +87,10 @@ fn three_liaison_citation_form_before_pause() {
 
 #[test]
 fn three_liaison_vowel_and_consonant_contexts() {
-    let Ok(t) = Translator::new_default("fr") else { eprintln!("[SKIP] no fr dict"); return };
+    let Ok(t) = Translator::new_default("fr") else {
+        eprintln!("[SKIP] no fr dict");
+        return;
+    };
     // Before a vowel-initial word → voiced liaison ([z]) / linking [t].
     assert_eq!(seg(&t, "six ans"), "siz ɑ̃");
     assert_eq!(seg(&t, "dix ans"), "diz ɑ̃");

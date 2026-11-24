@@ -21,7 +21,10 @@ fn tens_elide_before_uno_and_otto() {
     for n in ["41", "48", "81", "88", "91", "98"] {
         let got = ipa(n);
         // Must not contain the un-elided "…a uno/otto" (a separate vowel then stress).
-        assert!(!got.contains("aˈuno") && !got.contains("aˈɔ"), "{n} not elided: {got}");
+        assert!(
+            !got.contains("aˈuno") && !got.contains("aˈɔ"),
+            "{n} not elided: {got}"
+        );
     }
     // Within hundreds too: 131 = "cento trentuno".
     assert!(ipa("131").ends_with("trˈeːntˈuno"), "{}", ipa("131"));
@@ -47,6 +50,10 @@ fn other_languages_unaffected() {
         assert_eq!(t.text_to_ipa("31").unwrap(), "θˈɜːti wˈɒn");
     }
     if let Some(t) = Translator::new("es", None).ok() {
-        assert!(t.text_to_ipa("31").unwrap().contains("tɾˈeɪnta"), "{}", t.text_to_ipa("31").unwrap());
+        assert!(
+            t.text_to_ipa("31").unwrap().contains("tɾˈeɪnta"),
+            "{}",
+            t.text_to_ipa("31").unwrap()
+        );
     }
 }

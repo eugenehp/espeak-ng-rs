@@ -39,9 +39,7 @@ pub const ESPEAK_DATA_DIR: &str = "/usr/share/espeak-ng-data";
 pub fn data_available() -> bool {
     use std::path::Path;
     let base = Path::new(ESPEAK_DATA_DIR);
-    base.join("phontab").exists()
-        && base.join("en_dict").exists()
-        && base.join("phondata").exists()
+    base.join("phontab").exists() && base.join("en_dict").exists() && base.join("phondata").exists()
 }
 
 // ---------------------------------------------------------------------------
@@ -89,13 +87,14 @@ pub fn try_espeak_ipa(lang: &str, text: &str) -> Option<String> {
 /// Use `try_espeak_ipa` when the binary may be absent.
 #[allow(dead_code)]
 pub fn espeak_ipa(lang: &str, text: &str) -> String {
-    try_espeak_ipa(lang, text)
-        .unwrap_or_else(|| panic!(
+    try_espeak_ipa(lang, text).unwrap_or_else(|| {
+        panic!(
             "espeak-ng binary not found or failed \
              (lang={lang:?}, text={text:?}). \
              Install espeak-ng or skip oracle tests with \
              `cargo test --lib` / `cargo test --test encoding_integration`."
-        ))
+        )
+    })
 }
 
 /// Run `espeak-ng` and return its Kirshenbaum (ASCII) phoneme output,
@@ -122,22 +121,17 @@ pub fn try_espeak_phonemes(lang: &str, text: &str) -> Option<String> {
 /// Panics if `espeak-ng` is not on PATH.
 #[allow(dead_code)]
 pub fn espeak_phonemes(lang: &str, text: &str) -> String {
-    try_espeak_phonemes(lang, text)
-        .unwrap_or_else(|| panic!("espeak-ng not found"))
+    try_espeak_phonemes(lang, text).unwrap_or_else(|| panic!("espeak-ng not found"))
 }
 
 /// Synthesize `text` to a WAV file and return the raw bytes,
 /// or `None` if the binary is not available.
 #[allow(dead_code)]
 pub fn try_espeak_wav(lang: &str, text: &str) -> Option<Vec<u8>> {
-    static COUNTER: std::sync::atomic::AtomicU64 =
-        std::sync::atomic::AtomicU64::new(0);
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let tmpfile = std::env::temp_dir().join(format!(
-        "espeak_oracle_{}_{}.wav",
-        std::process::id(),
-        n,
-    ));
+    let tmpfile =
+        std::env::temp_dir().join(format!("espeak_oracle_{}_{}.wav", std::process::id(), n,));
 
     let status = espeak_cmd()
         .args(["-v", lang, "-w", tmpfile.to_str().unwrap(), "--", text])
@@ -157,8 +151,7 @@ pub fn try_espeak_wav(lang: &str, text: &str) -> Option<Vec<u8>> {
 /// Panics if `espeak-ng` is not on PATH.
 #[allow(dead_code)]
 pub fn espeak_wav(lang: &str, text: &str) -> Vec<u8> {
-    try_espeak_wav(lang, text)
-        .unwrap_or_else(|| panic!("espeak-ng not found"))
+    try_espeak_wav(lang, text).unwrap_or_else(|| panic!("espeak-ng not found"))
 }
 
 // ---------------------------------------------------------------------------

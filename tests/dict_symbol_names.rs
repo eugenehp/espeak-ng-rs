@@ -78,11 +78,17 @@ fn clause_punctuation_is_not_read_by_name() {
     // so they break the clause rather than being read.
     for s in ["❓", "❗", "‼"] {
         let got = en.text_to_ipa(&format!("a {s} b")).unwrap();
-        assert_eq!(got, "ˈeɪ\nbˈiː", "{s} should break the clause, not speak: {got}");
+        assert_eq!(
+            got, "ˈeɪ\nbˈiː",
+            "{s} should break the clause, not speak: {got}"
+        );
     }
     // `⁉` carries *both* properties, which matches none of C's cases, so it is
     // read by name.
-    assert_eq!(en.text_to_ipa("⁉").unwrap(), "ɛksklɐmˈeɪʃən kwˈɛstʃən mˈɑːk");
+    assert_eq!(
+        en.text_to_ipa("⁉").unwrap(),
+        "ɛksklɐmˈeɪʃən kwˈɛstʃən mˈɑːk"
+    );
 }
 
 /// An operator the tokenizer synthesises from a leading `-` keeps the word for
@@ -113,14 +119,23 @@ fn clause_end_stress_applies_to_the_whole_reading() {
     assert_eq!(en.text_to_ipa("👍 the").unwrap(), "θˈʌmz ˌʌp ðə");
     // Spanish and Italian promote their articles/prepositions the same way.
     if let Some(es) = tr("es") {
-        assert_eq!(es.text_to_ipa("™").unwrap(), "sˈimbolo ðˈe mˈaɾka kˌomeɾθjˈal");
+        assert_eq!(
+            es.text_to_ipa("™").unwrap(),
+            "sˈimbolo ðˈe mˈaɾka kˌomeɾθjˈal"
+        );
     }
     if let Some(it) = tr("it") {
-        assert_eq!(it.text_to_ipa("😀").unwrap(), "fatʃːˈina kˈon ˈun ɡrˈan sorɾˈizo");
+        assert_eq!(
+            it.text_to_ipa("😀").unwrap(),
+            "fatʃːˈina kˈon ˈun ɡrˈan sorɾˈizo"
+        );
     }
     // `$unstressend` goes the other way: Hungarian reduces those words.
     if let Some(hu) = tr("hu") {
-        assert_eq!(hu.text_to_ipa("→").unwrap(), "jˌobː ˌoldɑlrɑ mˈutɑtoː ɲˈiːl");
+        assert_eq!(
+            hu.text_to_ipa("→").unwrap(),
+            "jˌobː ˌoldɑlrɑ mˈutɑtoː ɲˈiːl"
+        );
     }
 }
 
@@ -130,9 +145,17 @@ fn clause_end_stress_applies_to_the_whole_reading() {
 #[test]
 fn a_spoken_symbol_takes_a_clause_position() {
     let en = skip_unless!("en");
-    assert!(en.text_to_ipa("a ÷").unwrap().starts_with('ɐ'), "{:?}", en.text_to_ipa("a ÷"));
+    assert!(
+        en.text_to_ipa("a ÷").unwrap().starts_with('ɐ'),
+        "{:?}",
+        en.text_to_ipa("a ÷")
+    );
     // A comma ends the clause, so "a" takes its clause-final form.
-    assert!(en.text_to_ipa("a ,").unwrap().starts_with("ˈeɪ"), "{:?}", en.text_to_ipa("a ,"));
+    assert!(
+        en.text_to_ipa("a ,").unwrap().starts_with("ˈeɪ"),
+        "{:?}",
+        en.text_to_ipa("a ,")
+    );
 }
 
 /// Symbol entries can sit behind a dictionary condition — Portuguese names `§`

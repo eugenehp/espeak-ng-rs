@@ -108,7 +108,10 @@ impl MbrolaTable {
     /// [<name2>]`; `//` starts a comment and `volume <n>` sets the output
     /// volume.  Lines with fewer than 5 fields are ignored, as in C.
     pub fn compile(source: &str) -> Self {
-        let mut table = MbrolaTable { volume: 20, entries: Vec::new() };
+        let mut table = MbrolaTable {
+            volume: 20,
+            entries: Vec::new(),
+        };
 
         for raw in source.lines() {
             // C reads at most 39 bytes per line (`fgets(buf, sizeof(phoneme))`),
@@ -142,7 +145,11 @@ impl MbrolaTable {
                     "VWL" => NEXT_ANY_VOWEL,
                     other => string_to_word(other),
                 },
-                mbr_name: if f[4] == "NULL" { 0 } else { string_to_word(f[4]) },
+                mbr_name: if f[4] == "NULL" {
+                    0
+                } else {
+                    string_to_word(f[4])
+                },
                 mbr_name2: f.get(5).map(|s| string_to_word(s)).unwrap_or(0),
                 percent,
                 control,
@@ -160,7 +167,10 @@ impl MbrolaTable {
         let rd = |o: usize| -> u32 {
             u32::from_le_bytes([bytes[o], bytes[o + 1], bytes[o + 2], bytes[o + 3]])
         };
-        let mut table = MbrolaTable { volume: rd(0), entries: Vec::new() };
+        let mut table = MbrolaTable {
+            volume: rd(0),
+            entries: Vec::new(),
+        };
         let mut o = 4;
         while o + 24 <= bytes.len() {
             let name = rd(o);
@@ -185,8 +195,14 @@ impl MbrolaTable {
         let mut out = Vec::with_capacity(4 + (self.entries.len() + 1) * 24);
         out.extend_from_slice(&self.volume.to_le_bytes());
         for e in &self.entries {
-            for w in [e.name, e.next_phoneme, e.mbr_name, e.mbr_name2, e.percent as u32, e.control]
-            {
+            for w in [
+                e.name,
+                e.next_phoneme,
+                e.mbr_name,
+                e.mbr_name2,
+                e.percent as u32,
+                e.control,
+            ] {
                 out.extend_from_slice(&w.to_le_bytes());
             }
         }
@@ -209,7 +225,12 @@ impl MbrolaTable {
     /// consumed (and cleared) by the next phoneme.
     pub fn mbr_name(&self, ctx: &MbrContext, prefix: &mut u32) -> MbrName {
         let mut mnem = string_to_word(&ctx.mnemonic);
-        let mut out = MbrName { name: mnem, name2: 0, split: 0, control: 0 };
+        let mut out = MbrName {
+            name: mnem,
+            name2: 0,
+            split: 0,
+            control: 0,
+        };
 
         for pr in &self.entries {
             if mnem != pr.name {
@@ -565,7 +586,11 @@ pub fn set_pitch2(
     pitch1: i32,
     pitch2: i32,
 ) -> (i32, i32) {
-    let (pitch1, pitch2) = if pitch1 > pitch2 { (pitch2, pitch1) } else { (pitch1, pitch2) };
+    let (pitch1, pitch2) = if pitch1 > pitch2 {
+        (pitch2, pitch1)
+    } else {
+        (pitch1, pitch2)
+    };
     let base = voice_pitch_base;
     let range = voice_pitch_range;
     let pitch_base = base + pitch1 * range / 2;
@@ -609,7 +634,9 @@ pub fn write_pho(lines: &[PhoLine]) -> String {
 /// Resolve an eSpeak MBROLA voice reference to its diphone-database name:
 /// `mb-en1` / `mb/en1` → `en1`; a non-MBROLA voice → `None`.
 pub fn mbrola_database(voice: &str) -> Option<&str> {
-    voice.strip_prefix("mb-").or_else(|| voice.strip_prefix("mb/"))
+    voice
+        .strip_prefix("mb-")
+        .or_else(|| voice.strip_prefix("mb/"))
 }
 
 /// Locate an MBROLA diphone database directory under `data_dir`, returning
@@ -677,11 +704,26 @@ mod tests {
         // C writes `"%s\t"` then `"%d\t%s"` where the pitch string starts with
         // a space, so a line with pitch reads `name<TAB>ms<TAB> 0 120`.
         let lines = vec![
-            PhoLine { phoneme: "_".into(), duration_ms: 50, pitch: vec![] },
-            PhoLine { phoneme: "h".into(), duration_ms: 61, pitch: vec![(0, 120)] },
-            PhoLine { phoneme: "@".into(), duration_ms: 76, pitch: vec![(0, 118), (50, 115)] },
+            PhoLine {
+                phoneme: "_".into(),
+                duration_ms: 50,
+                pitch: vec![],
+            },
+            PhoLine {
+                phoneme: "h".into(),
+                duration_ms: 61,
+                pitch: vec![(0, 120)],
+            },
+            PhoLine {
+                phoneme: "@".into(),
+                duration_ms: 76,
+                pitch: vec![(0, 118), (50, 115)],
+            },
         ];
-        assert_eq!(write_pho(&lines), "_\t50\nh\t61\t 0 120\n@\t76\t 0 118 50 115\n");
+        assert_eq!(
+            write_pho(&lines),
+            "_\t50\nh\t61\t 0 120\n@\t76\t 0 118 50 115\n"
+        );
     }
 
     #[test]
@@ -729,8 +771,8 @@ mod tests {
         for entry in std::fs::read_dir(&dir).expect("mbrola_ph directory") {
             let path = entry.unwrap().path();
             let bytes = std::fs::read(&path).unwrap();
-            let table = MbrolaTable::parse(&bytes)
-                .unwrap_or_else(|e| panic!("{}: {e:?}", path.display()));
+            let table =
+                MbrolaTable::parse(&bytes).unwrap_or_else(|e| panic!("{}: {e:?}", path.display()));
             assert_eq!(
                 table.to_bytes(),
                 bytes,
@@ -739,7 +781,10 @@ mod tests {
             );
             checked += 1;
         }
-        assert!(checked >= 40, "expected the full set of phtrans tables, saw {checked}");
+        assert!(
+            checked >= 40,
+            "expected the full set of phtrans tables, saw {checked}"
+        );
     }
 
     /// The `compilembrola.c` source format compiles to exactly the bytes the
@@ -831,7 +876,11 @@ mod tests {
         assert_eq!(prefix, string_to_word("?"));
 
         let m = t.mbr_name(&ctx("a", "t", PH_STOP), &mut prefix);
-        assert_eq!(word_to_string(m.name), "?a", "prefix moved onto the next name");
+        assert_eq!(
+            word_to_string(m.name),
+            "?a",
+            "prefix moved onto the next name"
+        );
         assert_eq!(prefix, 0, "the prefix is consumed");
     }
 
@@ -844,20 +893,32 @@ mod tests {
         let mut c = ctx("h", "a", PH_VOWEL);
         assert_eq!(word_to_string(t.mbr_name(&c, &mut prefix).name), "H");
         c.newword = false;
-        assert_eq!(word_to_string(t.mbr_name(&c, &mut prefix).name), "h", "not word-initial");
+        assert_eq!(
+            word_to_string(t.mbr_name(&c, &mut prefix).name),
+            "h",
+            "not word-initial"
+        );
 
         let mut c = ctx("a", "t", PH_STOP);
         c.stress_level = 4;
         c.word_stress = 4;
         assert_eq!(word_to_string(t.mbr_name(&c, &mut prefix).name), "A");
         c.stress_level = 1;
-        assert_eq!(word_to_string(t.mbr_name(&c, &mut prefix).name), "a", "unstressed");
+        assert_eq!(
+            word_to_string(t.mbr_name(&c, &mut prefix).name),
+            "a",
+            "unstressed"
+        );
 
         let mut c = ctx("n", "t", PH_STOP);
         c.next_newword = true;
         assert_eq!(word_to_string(t.mbr_name(&c, &mut prefix).name), "N");
         c.next_newword = false;
-        assert_eq!(word_to_string(t.mbr_name(&c, &mut prefix).name), "n", "not word-final");
+        assert_eq!(
+            word_to_string(t.mbr_name(&c, &mut prefix).name),
+            "n",
+            "not word-final"
+        );
     }
 
     fn vowel(mnem: &str, env: u8) -> MbrPhoneme {
@@ -883,7 +944,10 @@ mod tests {
     fn pitch_targets_span_the_phoneme() {
         let p = vowel("a", 3);
         let pts = write_pitch(&p, 0, false);
-        assert!(pts.len() >= 3, "expected several pitch targets, got {pts:?}");
+        assert!(
+            pts.len() >= 3,
+            "expected several pitch targets, got {pts:?}"
+        );
         assert_eq!(pts[0].0, 0, "first target is at the phoneme start");
         assert_eq!(pts.last().unwrap().0, 100, "last target is at the end");
         for &(pos, hz) in &pts {
@@ -891,7 +955,10 @@ mod tests {
             assert!((50..400).contains(&hz), "{hz} Hz is not a plausible F0");
         }
         // Positions must be non-decreasing, or MBROLA rejects the line.
-        assert!(pts.windows(2).all(|w| w[0].0 <= w[1].0), "{pts:?} is not monotonic");
+        assert!(
+            pts.windows(2).all(|w| w[0].0 <= w[1].0),
+            "{pts:?} is not monotonic"
+        );
 
         // `final_only` collapses to a single end-of-phoneme target.
         let f = write_pitch(&p, 0, true);
@@ -903,7 +970,10 @@ mod tests {
     #[test]
     fn linear_envelopes_have_no_intermediate_targets() {
         let pts = write_pitch(&vowel("a", 1), 0, false);
-        assert_eq!(pts.iter().map(|p| p.0).collect::<Vec<_>>(), vec![0, 80, 100]);
+        assert_eq!(
+            pts.iter().map(|p| p.0).collect::<Vec<_>>(),
+            vec![0, 80, 100]
+        );
     }
 
     /// End to end: a phoneme list becomes a `.pho` script, with the vowel's
@@ -919,7 +989,10 @@ mod tests {
                 newword: true,
                 ..Default::default()
             },
-            MbrPhoneme { mnemonic: "oU".into(), ..vowel("oU", 3) },
+            MbrPhoneme {
+                mnemonic: "oU".into(),
+                ..vowel("oU", 3)
+            },
             MbrPhoneme {
                 mnemonic: "_".into(),
                 ph_type: PH_PAUSE,
@@ -942,7 +1015,10 @@ mod tests {
     #[test]
     fn a_split_vowel_becomes_two_lines() {
         let t = MbrolaTable::compile("0  aI@ NULL 60 aI @\n");
-        let phonemes = vec![MbrPhoneme { mnemonic: "aI@".into(), ..vowel("aI@", 3) }];
+        let phonemes = vec![MbrPhoneme {
+            mnemonic: "aI@".into(),
+            ..vowel("aI@", 3)
+        }];
         let lines = t.translate(&phonemes);
         assert_eq!(lines.len(), 2);
         assert_eq!(lines[0].phoneme, "aI");

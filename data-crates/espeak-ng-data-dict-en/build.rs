@@ -20,26 +20,35 @@ fn main() {
 
     // Generate the static array
     let mut code = String::new();
-    code.push_str("/// All data files embedded in this crate.
-");
-    code.push_str("///
-");
-    code.push_str("/// Each entry is `(relative_path, file_bytes)`.
-");
-    code.push_str("pub static ALL_FILES: &[(&str, &[u8])] = &[
-");
+    code.push_str(
+        "/// All data files embedded in this crate.
+",
+    );
+    code.push_str(
+        "///
+",
+    );
+    code.push_str(
+        "/// Each entry is `(relative_path, file_bytes)`.
+",
+    );
+    code.push_str(
+        "pub static ALL_FILES: &[(&str, &[u8])] = &[
+",
+    );
     for rel in &entries {
-        let abs_expr = format!(
-            r#"concat!(env!("CARGO_MANIFEST_DIR"), "/data/{rel}")"#
-        );
-        code.push_str(&format!("    ({rel:?}, include_bytes!({abs_expr})),
-"));
+        let abs_expr = format!(r#"concat!(env!("CARGO_MANIFEST_DIR"), "/data/{rel}")"#);
+        code.push_str(&format!(
+            "    ({rel:?}, include_bytes!({abs_expr})),
+"
+        ));
     }
-    code.push_str("];
-");
+    code.push_str(
+        "];
+",
+    );
 
-    fs::write(format!("{out_dir}/files.rs"), code)
-        .expect("could not write generated files.rs");
+    fs::write(format!("{out_dir}/files.rs"), code).expect("could not write generated files.rs");
 
     println!("cargo:rerun-if-changed=data");
     println!("cargo:rerun-if-changed=build.rs");

@@ -17,12 +17,26 @@ fn english_reads_trillion_quadrillion_quintillion() {
     let ipa = |s: &str| t.text_to_ipa(s).unwrap();
 
     let trillion = ipa("1000000000000");
-    assert!(trillion.contains("tɹˈɪliən"), "10^12 should be 'trillion': {trillion}");
+    assert!(
+        trillion.contains("tɹˈɪliən"),
+        "10^12 should be 'trillion': {trillion}"
+    );
     // The old bug produced "ten hundred billion" — guard against its return.
-    assert!(!trillion.contains("hˈʌndɹɪd"), "10^12 must not read '…hundred billion': {trillion}");
+    assert!(
+        !trillion.contains("hˈʌndɹɪd"),
+        "10^12 must not read '…hundred billion': {trillion}"
+    );
 
-    assert!(ipa("1000000000000000").contains("kwɒdɹ"), "10^15 should be 'quadrillion': {}", ipa("1000000000000000"));
-    assert!(ipa("1000000000000000000").contains("kwɪnt"), "10^18 should be 'quintillion': {}", ipa("1000000000000000000"));
+    assert!(
+        ipa("1000000000000000").contains("kwɒdɹ"),
+        "10^15 should be 'quadrillion': {}",
+        ipa("1000000000000000")
+    );
+    assert!(
+        ipa("1000000000000000000").contains("kwɪnt"),
+        "10^18 should be 'quintillion': {}",
+        ipa("1000000000000000000")
+    );
     assert_eq!(ipa("2000000000000"), "tˈuː tɹˈɪliən", "two trillion");
 }
 
@@ -50,8 +64,16 @@ fn german_long_scale_billion_is_ten_to_the_twelfth() {
         return;
     };
     let ipa = |s: &str| t.text_to_ipa(s).unwrap();
-    assert!(ipa("1000000000000").contains("bɪljˈoːn"), "de 10^12 = Billion: {}", ipa("1000000000000"));
-    assert!(ipa("1000000000000000000").contains("tɾɪljˈoːn"), "de 10^18 = Trillion: {}", ipa("1000000000000000000"));
+    assert!(
+        ipa("1000000000000").contains("bɪljˈoːn"),
+        "de 10^12 = Billion: {}",
+        ipa("1000000000000")
+    );
+    assert!(
+        ipa("1000000000000000000").contains("tɾɪljˈoːn"),
+        "de 10^18 = Trillion: {}",
+        ipa("1000000000000000000")
+    );
 }
 
 #[test]
@@ -64,7 +86,14 @@ fn language_without_the_scale_word_still_conveys_magnitude() {
     };
     let ipa = |s: &str| t.text_to_ipa(s).unwrap();
     let tr = ipa("1000000000000");
-    assert!(tr.contains("miljˈaʁ"), "fr 10^12 should still name 'milliard': {tr}");
+    assert!(
+        tr.contains("miljˈaʁ"),
+        "fr 10^12 should still name 'milliard': {tr}"
+    );
     // Must not degrade to just "un" (one).
-    assert_ne!(tr.trim(), "œ\u{303}", "fr 10^12 must not collapse to a bare 'un': {tr}");
+    assert_ne!(
+        tr.trim(),
+        "œ\u{303}",
+        "fr 10^12 must not collapse to a bare 'un': {tr}"
+    );
 }

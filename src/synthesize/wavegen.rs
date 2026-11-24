@@ -64,37 +64,29 @@ include!("sintab_data.rs");
 /// Peak shape table 2 (used by espeak-ng by default).
 /// Source: wavegen.c `pk_shape2[257]`.
 static PK_SHAPE2: [u8; 257] = [
-    255, 254, 254, 254, 254, 254, 254, 254, 254, 254, 253, 253, 253, 253, 252, 252,
-    252, 251, 251, 251, 250, 250, 249, 249, 248, 248, 247, 247, 246, 245, 245, 244,
-    243, 243, 242, 241, 239, 237, 235, 233, 231, 229, 227, 225, 223, 221, 218, 216,
-    213, 211, 208, 205, 203, 200, 197, 194, 191, 187, 184, 181, 178, 174, 171, 167,
-    163, 160, 156, 152, 148, 144, 140, 136, 132, 127, 123, 119, 114, 110, 105, 100,
-     96,  94,  91,  88,  86,  83,  81,  78,  76,  74,  71,  69,  66,  64,  62,  60,
-     57,  55,  53,  51,  49,  47,  44,  42,  40,  38,  36,  34,  32,  30,  29,  27,
-     25,  23,  21,  19,  18,  16,  14,  12,  11,   9,   7,   6,   4,   3,   1,   0,
-      0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-      0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-      0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-      0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-      0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-      0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-      0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-      0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-      0,
+    255, 254, 254, 254, 254, 254, 254, 254, 254, 254, 253, 253, 253, 253, 252, 252, 252, 251, 251,
+    251, 250, 250, 249, 249, 248, 248, 247, 247, 246, 245, 245, 244, 243, 243, 242, 241, 239, 237,
+    235, 233, 231, 229, 227, 225, 223, 221, 218, 216, 213, 211, 208, 205, 203, 200, 197, 194, 191,
+    187, 184, 181, 178, 174, 171, 167, 163, 160, 156, 152, 148, 144, 140, 136, 132, 127, 123, 119,
+    114, 110, 105, 100, 96, 94, 91, 88, 86, 83, 81, 78, 76, 74, 71, 69, 66, 64, 62, 60, 57, 55, 53,
+    51, 49, 47, 44, 42, 40, 38, 36, 34, 32, 30, 29, 27, 25, 23, 21, 19, 18, 16, 14, 12, 11, 9, 7,
+    6, 4, 3, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0,
 ];
 
 /// Wavemult window — Hanning window for HF peak synthesis.
 /// Preset for 22050 Hz sample rate; 128 entries (N_WAVEMULT=128).
 /// Mirrors `wavemult[N_WAVEMULT]` in wavegen.c.
 static WAVEMULT: [u8; 128] = [
-      0,   0,   0,   2,   3,   5,   8,  11,  14,  18,  22,  27,  32,  37,  43,  49,
-     55,  62,  69,  76,  83,  90,  98, 105, 113, 121, 128, 136, 144, 152, 159, 166,
-    174, 181, 188, 194, 201, 207, 213, 218, 224, 228, 233, 237, 240, 244, 246, 249,
-    251, 252, 253, 253, 253, 253, 252, 251, 249, 246, 244, 240, 237, 233, 228, 224,
-    218, 213, 207, 201, 194, 188, 181, 174, 166, 159, 152, 144, 136, 128, 121, 113,
-    105,  98,  90,  83,  76,  69,  62,  55,  49,  43,  37,  32,  27,  22,  18,  14,
-     11,   8,   5,   3,   2,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-      0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+    0, 0, 0, 2, 3, 5, 8, 11, 14, 18, 22, 27, 32, 37, 43, 49, 55, 62, 69, 76, 83, 90, 98, 105, 113,
+    121, 128, 136, 144, 152, 159, 166, 174, 181, 188, 194, 201, 207, 213, 218, 224, 228, 233, 237,
+    240, 244, 246, 249, 251, 252, 253, 253, 253, 253, 252, 251, 249, 246, 244, 240, 237, 233, 228,
+    224, 218, 213, 207, 201, 194, 188, 181, 174, 166, 159, 152, 144, 136, 128, 121, 113, 105, 98,
+    90, 83, 76, 69, 62, 55, 49, 43, 37, 32, 27, 22, 18, 14, 11, 8, 5, 3, 2, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 ];
 
 /// Compute wavemult_max for 22050 Hz rate.
@@ -132,10 +124,10 @@ const N_HARMONIC_PEAKS: usize = 5;
 
 #[derive(Debug, Clone, Copy, Default)]
 struct Peak {
-    freq:   i64,  // Hz << 16 (fixed point)
-    height: i64,  // amplitude (scaled)
-    left:   i64,  // left bandwidth
-    right:  i64,  // right bandwidth (= left for f3-f5)
+    freq: i64,   // Hz << 16 (fixed point)
+    height: i64, // amplitude (scaled)
+    left: i64,   // left bandwidth
+    right: i64,  // right bandwidth (= left for f3-f5)
 }
 
 /// Apply a `+variant`'s per-formant frequency/height/width scaling
@@ -148,8 +140,8 @@ fn scale_frame_formants(fr: &SpectFrame, voice: &VoiceParams) -> SpectFrame {
     let mut out = fr.clone();
     // Frequency (ffreq[0..7]).
     for i in 0..7 {
-        out.ffreq[i] = (fr.ffreq[i] as i32 * voice.formant_freq_pct[i] / 100)
-            .clamp(0, i16::MAX as i32) as i16;
+        out.ffreq[i] =
+            (fr.ffreq[i] as i32 * voice.formant_freq_pct[i] / 100).clamp(0, i16::MAX as i32) as i16;
     }
     // Height / amplitude (fheight[0..8]; F7 has no variant entry → unity).
     for i in 0..8 {
@@ -202,10 +194,10 @@ fn frame_to_peaks(fr: &SpectFrame) -> [Peak; 9] {
 fn interpolate_peaks(p1: &[Peak; 9], p2: &[Peak; 9], t: f64) -> [Peak; 9] {
     let mut out = [Peak::default(); 9];
     for i in 0..9 {
-        out[i].freq   = (p1[i].freq   as f64 + (p2[i].freq   - p1[i].freq)   as f64 * t) as i64;
+        out[i].freq = (p1[i].freq as f64 + (p2[i].freq - p1[i].freq) as f64 * t) as i64;
         out[i].height = (p1[i].height as f64 + (p2[i].height - p1[i].height) as f64 * t) as i64;
-        out[i].left   = (p1[i].left   as f64 + (p2[i].left   - p1[i].left)   as f64 * t) as i64;
-        out[i].right  = (p1[i].right  as f64 + (p2[i].right  - p1[i].right)  as f64 * t) as i64;
+        out[i].left = (p1[i].left as f64 + (p2[i].left - p1[i].left) as f64 * t) as i64;
+        out[i].right = (p1[i].right as f64 + (p2[i].right - p1[i].right) as f64 * t) as i64;
     }
     out
 }
@@ -240,7 +232,11 @@ fn peaks_to_harmspect(
         // From the highest peak frequency + its width (N_HARMONIC_PEAKS = wvoice->n_harmonic_peaks)
         let top_peak = &peaks[N_HARMONIC_PEAKS];
         let top_freq = top_peak.freq + top_peak.right;
-        let hmax_peak = if pitch_hz16 > 0 { (top_freq / pitch_hz16) as usize } else { 0 };
+        let hmax_peak = if pitch_hz16 > 0 {
+            (top_freq / pitch_hz16) as usize
+        } else {
+            0
+        };
         hmax_peak.min(hmax_samplerate).min(MAX_HARMONIC - 1)
     };
 
@@ -251,7 +247,7 @@ fn peaks_to_harmspect(
         if p.height == 0 || p.freq == 0 {
             continue;
         }
-        let fp = p.freq;     // centre freq in Hz<<16
+        let fp = p.freq; // centre freq in Hz<<16
         let fhi = fp + p.right;
 
         // Starting harmonic at the left edge of this peak.  C is
@@ -260,7 +256,11 @@ fn peaks_to_harmspect(
         let h_start = {
             let edge = if p.left > 0 { fp - p.left } else { fp };
             let h = edge / pitch_hz16 + 1;
-            if h <= 0 { 1usize } else { h as usize }
+            if h <= 0 {
+                1usize
+            } else {
+                h as usize
+            }
         };
 
         let mut h = h_start;
@@ -347,7 +347,9 @@ fn peaks_to_harmspect(
     // C: h1 = htab[1] * option_harmonic1; htab[1] = h1/8;
     if hmax >= 1 {
         htab[1] = htab[1] * 10 / 8;
-        if htab[1] > 0 { effective_hmax = effective_hmax.max(1); }
+        if htab[1] > 0 {
+            effective_hmax = effective_hmax.max(1);
+        }
     }
 
     effective_hmax.max(1)
@@ -371,8 +373,7 @@ pub const N_TONE_ADJUST: usize = 1000;
 /// `tone_points` — the default tone curve every voice starts from
 /// (`voices.c`): flat to 600 Hz, then falling.  `-1` ends the list and extends
 /// the last height to the top of the range.
-pub const DEFAULT_TONE_POINTS: [i32; 12] =
-    [600, 170, 1200, 135, 2000, 110, 3000, 110, -1, 0, 0, 0];
+pub const DEFAULT_TONE_POINTS: [i32; 12] = [600, 170, 1200, 135, 2000, 110, 3000, 110, -1, 0, 0, 0];
 
 /// The expanded default curve, used as the reference the applied curve is
 /// measured against (see `peaks_to_harmspect`).
@@ -399,8 +400,8 @@ pub fn set_tone_adjust(tone_pts: &[i32; 12]) -> [u8; N_TONE_ADJUST] {
         let height2 = pts[pt + 1];
         if freq2 > freq1 {
             for ix in freq1..freq2.min(N_TONE_ADJUST) {
-                let y = height1
-                    + ((ix - freq1) as i32 * (height2 - height1)) / (freq2 - freq1) as i32;
+                let y =
+                    height1 + ((ix - freq1) as i32 * (height2 - height1)) / (freq2 - freq1) as i32;
                 out[ix] = y.clamp(0, 255) as u8;
             }
         }
@@ -417,14 +418,20 @@ pub fn set_tone_adjust(tone_pts: &[i32; 12]) -> [u8; N_TONE_ADJUST] {
 
 struct Xorshift32(u32);
 impl Xorshift32 {
-    fn new() -> Self { Xorshift32(0xBAD_5EED) }
+    fn new() -> Self {
+        Xorshift32(0xBAD_5EED)
+    }
 
     /// Start from an explicit seed (`espeak_ng_SetRandSeed`, the CLI's `-D`).
     ///
     /// Seed 0 keeps the default state: it is the port's "unset" value, and zero
     /// is also absorbing for xorshift, which would produce silence.
     fn seeded(seed: u32) -> Self {
-        if seed == 0 { Self::new() } else { Xorshift32(seed) }
+        if seed == 0 {
+            Self::new()
+        } else {
+            Xorshift32(seed)
+        }
     }
     #[inline]
     fn next_i32(&mut self) -> i32 {
@@ -529,8 +536,8 @@ pub fn wavegen_segment(
     const SAMPLERATE: f64 = 22050.0;
     let cycle_samples = (SAMPLERATE / f0_hz) as i32;
     let hf_factor = ((f0_hz as i64 * 4096) >> 11).max(1); // = f0_hz * 2
-    // peak_harmonic[pk-6] = nearest harmonic to F(6+pk)
-    // peak_height[pk-6] = amplitude^2 for HF peak
+                                                          // peak_harmonic[pk-6] = nearest harmonic to F(6+pk)
+                                                          // peak_height[pk-6] = amplitude^2 for HF peak
     const N_HF: usize = 3; // peaks 6,7,8
     let mut peak_harmonic = [0u32; N_HF];
     let mut peak_height = [0i64; N_HF];
@@ -543,13 +550,21 @@ pub fn wavegen_segment(
         for (k, fk) in (N_HARMONIC_PEAKS + 1..9).enumerate() {
             let freq_hz16 = interp[fk].freq;
             let pitch = (f0_hz as i64) * 4096; // wdata.pitch = Hz<<12
-            // C: peak_harmonic = (peaks.freq / (pitch*8) + 1) / 2
-            // where peaks.freq is Hz<<16 and pitch is Hz<<12
-            let h = if pitch > 0 { ((freq_hz16 / (pitch * 8) + 1) / 2).max(0) as u32 } else { 0 };
+                                               // C: peak_harmonic = (peaks.freq / (pitch*8) + 1) / 2
+                                               // where peaks.freq is Hz<<16 and pitch is Hz<<12
+            let h = if pitch > 0 {
+                ((freq_hz16 / (pitch * 8) + 1) / 2).max(0) as u32
+            } else {
+                0
+            };
             peak_harmonic[k] = if h <= hmax_sr { h } else { 0 };
             // C: x = peaks.height >> 14; peak_height = (x*x*5)/2
             let x = (interp[fk].height >> 14) as i64;
-            peak_height[k] = if peak_harmonic[k] > 0 { (x * x * 5) / 2 } else { 0 };
+            peak_height[k] = if peak_harmonic[k] > 0 {
+                (x * x * 5) / 2
+            } else {
+                0
+            };
         }
     }
     let mut cbytes: i32 = WAVEMULT_OFFSET - cycle_samples / 2; // starts negative
@@ -569,7 +584,8 @@ pub fn wavegen_segment(
                 // adjust amplitude for pitch (fewer harmonics at high pitch)
                 amplitude2 = (amp_scale * ((pitch_i32 >> 8) as i64)) / (10000 * 8);
             } else {
-                maxh2 = peaks_to_harmspect(&interp_peaks, pitch_hz16, &mut htab[hswitch], &tone_adjust);
+                maxh2 =
+                    peaks_to_harmspect(&interp_peaks, pitch_hz16, &mut htab[hswitch], &tone_adjust);
 
                 // Compute interpolation increments for low harmonics
                 let other = hswitch ^ 1;
@@ -700,8 +716,8 @@ pub fn synthesize_frames(
 
         // Determine voiced/noise character from the frame
         let av = fr1.klattp[0]; // AV (voicing amplitude)
-        // `klattp2` continues `klattp` from index 5: Kopen, AVp, Fric, FricBP,
-        // Turb — so frication amplitude is index 2, not 1 (which is AVp).
+                                // `klattp2` continues `klattp` from index 5: Kopen, AVp, Fric, FricBP,
+                                // Turb — so frication amplitude is index 2, not 1 (which is AVp).
         let fric = if seq.is_klatt { fr1.klattp2[2] } else { 0 }; // Fric
 
         let (voiced, noise_frac) = if av > 0 && fr1.ffreq[1] > 0 {
@@ -713,8 +729,16 @@ pub fn synthesize_frames(
         };
 
         let seg = SynthSegment {
-            fr1: if fscale { scale_frame_formants(fr1, voice) } else { fr1.clone() },
-            fr2: if fscale { scale_frame_formants(fr2, voice) } else { fr2.clone() },
+            fr1: if fscale {
+                scale_frame_formants(fr1, voice)
+            } else {
+                fr1.clone()
+            },
+            fr2: if fscale {
+                scale_frame_formants(fr2, voice)
+            } else {
+                fr2.clone()
+            },
             n_samples,
             voiced,
             noise_frac,
@@ -763,8 +787,7 @@ pub fn synthesize_frames_seq(
     for i in 0..n {
         let fr1 = &frames[i];
         let fr2 = if i + 1 < n { &frames[i + 1] } else { fr1 };
-        let n_samples =
-            fr1.dur_samples(speed_factor * speeds.get(i).copied().unwrap_or(1.0));
+        let n_samples = fr1.dur_samples(speed_factor * speeds.get(i).copied().unwrap_or(1.0));
 
         // Voiced/noise character (en voices are non-Klatt, so Fric = 0).
         let av = fr1.klattp[0];
@@ -777,8 +800,16 @@ pub fn synthesize_frames_seq(
         };
 
         let seg = SynthSegment {
-            fr1: if fscale { scale_frame_formants(fr1, voice) } else { fr1.clone() },
-            fr2: if fscale { scale_frame_formants(fr2, voice) } else { fr2.clone() },
+            fr1: if fscale {
+                scale_frame_formants(fr1, voice)
+            } else {
+                fr1.clone()
+            },
+            fr2: if fscale {
+                scale_frame_formants(fr2, voice)
+            } else {
+                fr2.clone()
+            },
             n_samples,
             voiced,
             noise_frac,
@@ -805,9 +836,14 @@ pub fn i32_to_i16(samples: &[i32]) -> Vec<i16> {
     let peak = samples.iter().map(|&x| x.unsigned_abs()).max().unwrap_or(0);
     // Target: 90% of i16 full scale
     let target = (0.90 * 32767.0) as i64;
-    let scale: i64 = if peak > 0 { target * 4096 / peak as i64 } else { 0 };
+    let scale: i64 = if peak > 0 {
+        target * 4096 / peak as i64
+    } else {
+        0
+    };
 
-    samples.iter()
+    samples
+        .iter()
         .map(|&x| ((x as i64 * scale) >> 12).clamp(-32767, 32767) as i16)
         .collect()
 }
@@ -825,9 +861,9 @@ mod tests {
         f.ffreq[1] = f1;
         f.ffreq[2] = f2;
         f.ffreq[3] = f3;
-        f.fwidth[0] = 25;  // F0 width
-        f.fwidth[1] = 50;  // F1 width
-        f.fwidth[2] = 80;  // F2 width
+        f.fwidth[0] = 25; // F0 width
+        f.fwidth[1] = 50; // F1 width
+        f.fwidth[2] = 80; // F2 width
         f.fright[0] = 25;
         f.fright[1] = 50;
         f.fright[2] = 80;
@@ -838,7 +874,9 @@ mod tests {
         f
     }
 
-    fn default_voice() -> VoiceParams { VoiceParams::default() }
+    fn default_voice() -> VoiceParams {
+        VoiceParams::default()
+    }
 
     #[test]
     fn scale_frame_formants_scales_freqs() {
@@ -847,16 +885,16 @@ mod tests {
         fr.fwidth = [10, 20, 30, 40, 50, 60];
         // +50 % frequency, +50 % height, −50 % width — each scales exactly.
         let v = VoiceParams {
-            formant_freq_pct:   [150; 7],
+            formant_freq_pct: [150; 7],
             formant_height_pct: [150; 7],
-            formant_width_pct:  [50; 7],
+            formant_width_pct: [50; 7],
             ..VoiceParams::default()
         };
         let up = scale_frame_formants(&fr, &v);
         assert_eq!(up.ffreq[2], 2250);
         assert_eq!(up.fheight[2], 60); // 40 × 1.5
-        assert_eq!(up.fwidth[2], 15);  // 30 × 0.5
-        // All 100 % is exact identity.
+        assert_eq!(up.fwidth[2], 15); // 30 × 0.5
+                                      // All 100 % is exact identity.
         let same = scale_frame_formants(&fr, &VoiceParams::default());
         assert_eq!(same.ffreq, fr.ffreq);
         assert_eq!(same.fheight, fr.fheight);
@@ -902,7 +940,10 @@ mod tests {
         const SR: f64 = 22050.0;
 
         let probe_energy = |pct: [i32; 7], f_hz: f64| -> f64 {
-            let voice = VoiceParams { formant_freq_pct: pct, ..VoiceParams::default() };
+            let voice = VoiceParams {
+                formant_freq_pct: pct,
+                ..VoiceParams::default()
+            };
             let mut phase = i32::MAX;
             let s = synthesize_frames_seq(&frames, &amps, &pitch, &[], &voice, &mut phase);
             let total: f64 = s.iter().map(|&x| (x as f64).powi(2)).sum::<f64>().max(1.0);
@@ -928,7 +969,10 @@ mod tests {
         const SR: f64 = 22050.0;
 
         let power = |height: [i32; 7]| -> f64 {
-            let voice = VoiceParams { formant_height_pct: height, ..VoiceParams::default() };
+            let voice = VoiceParams {
+                formant_height_pct: height,
+                ..VoiceParams::default()
+            };
             let mut phase = i32::MAX;
             let s = synthesize_frames_seq(&frames, &amps, &pitch, &[], &voice, &mut phase);
             goertzel_power(&s, 1400.0, SR)
@@ -945,12 +989,27 @@ mod tests {
     #[test]
     fn formant_scaling_active_flag() {
         assert!(!VoiceParams::default().formant_scaling_active());
-        let freq = VoiceParams { formant_freq_pct: [100, 100, 130, 100, 100, 100, 100], ..VoiceParams::default() };
+        let freq = VoiceParams {
+            formant_freq_pct: [100, 100, 130, 100, 100, 100, 100],
+            ..VoiceParams::default()
+        };
         assert!(freq.formant_scaling_active());
-        let height = VoiceParams { formant_height_pct: [80, 100, 100, 100, 100, 100, 100], ..VoiceParams::default() };
-        assert!(height.formant_scaling_active(), "height scale must count as active");
-        let width = VoiceParams { formant_width_pct: [100, 100, 100, 100, 100, 100, 150], ..VoiceParams::default() };
-        assert!(width.formant_scaling_active(), "width scale must count as active");
+        let height = VoiceParams {
+            formant_height_pct: [80, 100, 100, 100, 100, 100, 100],
+            ..VoiceParams::default()
+        };
+        assert!(
+            height.formant_scaling_active(),
+            "height scale must count as active"
+        );
+        let width = VoiceParams {
+            formant_width_pct: [100, 100, 100, 100, 100, 100, 150],
+            ..VoiceParams::default()
+        };
+        assert!(
+            width.formant_scaling_active(),
+            "width scale must count as active"
+        );
     }
 
     #[test]
@@ -958,7 +1017,12 @@ mod tests {
         let frame = voiced_frame(500, 1500, 2500, 4);
         let peaks = frame_to_peaks(&frame);
         let mut htab = [0i32; MAX_HARMONIC];
-        let hmax = peaks_to_harmspect(&peaks, 118_i64 << 16, &mut htab, &set_tone_adjust(&DEFAULT_TONE_POINTS));
+        let hmax = peaks_to_harmspect(
+            &peaks,
+            118_i64 << 16,
+            &mut htab,
+            &set_tone_adjust(&DEFAULT_TONE_POINTS),
+        );
         // Should produce non-zero harmonics
         assert!(hmax > 0);
         let total: i32 = htab[1..].iter().sum();
@@ -976,7 +1040,7 @@ mod tests {
             noise_frac: 0.0,
             amp_factor: 1.0,
             rand_seed: 0,
-            tone_adjust: set_tone_adjust(&DEFAULT_TONE_POINTS)
+            tone_adjust: set_tone_adjust(&DEFAULT_TONE_POINTS),
         };
         let mut phase = i32::MAX;
         let samples = wavegen_segment(&seg, 118.0, 0.8, &mut phase);
@@ -996,7 +1060,7 @@ mod tests {
             noise_frac: 0.0,
             amp_factor: 1.0,
             rand_seed: 0,
-            tone_adjust: set_tone_adjust(&DEFAULT_TONE_POINTS)
+            tone_adjust: set_tone_adjust(&DEFAULT_TONE_POINTS),
         };
         let mut phase = i32::MAX;
         let samples = wavegen_segment(&seg, 118.0, 0.8, &mut phase);
@@ -1020,8 +1084,12 @@ mod tests {
         let samples = synthesize_frames(&seq, &default_voice(), 1.0, &mut phase);
         // 3 frames × 2 steps × 64 = 384 samples
         let expected = 3 * 2 * 64;
-        assert_eq!(samples.len(), expected,
-            "expected {expected} samples, got {}", samples.len());
+        assert_eq!(
+            samples.len(),
+            expected,
+            "expected {expected} samples, got {}",
+            samples.len()
+        );
     }
 
     #[test]
@@ -1031,7 +1099,10 @@ mod tests {
         assert_eq!(out.len(), 3);
         // Peak should be close to 90% of 32767
         let peak = out.iter().map(|&x| x.unsigned_abs()).max().unwrap();
-        assert!(peak > 28000, "should normalise close to full scale: peak={peak}");
+        assert!(
+            peak > 28000,
+            "should normalise close to full scale: peak={peak}"
+        );
     }
 
     #[test]
@@ -1051,15 +1122,17 @@ mod tests {
             noise_frac: 0.0,
             amp_factor: 1.0,
             rand_seed: 0,
-            tone_adjust: set_tone_adjust(&DEFAULT_TONE_POINTS)
+            tone_adjust: set_tone_adjust(&DEFAULT_TONE_POINTS),
         };
         let mut phase = i32::MAX;
         let _ = wavegen_segment(&seg, 118.0, 0.8, &mut phase);
         let phase_after_first = phase;
         let _ = wavegen_segment(&seg, 118.0, 0.8, &mut phase);
         // Phase should have advanced (not reset)
-        assert_ne!(phase, phase_after_first,
-            "phase should evolve between calls");
+        assert_ne!(
+            phase, phase_after_first,
+            "phase should evolve between calls"
+        );
     }
 
     /// `SetToneAdjust` interpolates between the `tone` points and extends the
@@ -1093,15 +1166,25 @@ mod tests {
         let mut with_default = [0i32; MAX_HARMONIC];
         let mut without = [0i32; MAX_HARMONIC];
         let flat = [128u8; N_TONE_ADJUST];
-        peaks_to_harmspect(&peaks, 118_i64 << 16, &mut with_default,
-                           &set_tone_adjust(&DEFAULT_TONE_POINTS));
+        peaks_to_harmspect(
+            &peaks,
+            118_i64 << 16,
+            &mut with_default,
+            &set_tone_adjust(&DEFAULT_TONE_POINTS),
+        );
         peaks_to_harmspect(&peaks, 118_i64 << 16, &mut without, &DEFAULT_TONE_ADJUST);
-        assert_eq!(with_default, without, "the default curve must not change the spectrum");
+        assert_eq!(
+            with_default, without,
+            "the default curve must not change the spectrum"
+        );
 
         // A flat curve *does* change it: it undoes the default's tilt, so the
         // harmonics above 600 Hz gain relative to those below.
         let mut flattened = [0i32; MAX_HARMONIC];
         peaks_to_harmspect(&peaks, 118_i64 << 16, &mut flattened, &flat);
-        assert_ne!(flattened, with_default, "a different curve must reshape the spectrum");
+        assert_ne!(
+            flattened, with_default,
+            "a different curve must reshape the spectrum"
+        );
     }
 }

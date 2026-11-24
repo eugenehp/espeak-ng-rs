@@ -20,10 +20,20 @@ fn main() {
     let b = Pcm::read_wav(&args[2]).expect("read candidate");
 
     let sim = compare(&a, &b);
-    println!("reference : {:.3}s, {} Hz, rms {:.3}, mean F0 {:?}",
-        a.duration_secs(), a.sample_rate, a.rms(), sim.mean_pitch_a.map(|f| f.round()));
-    println!("candidate : {:.3}s, {} Hz, rms {:.3}, mean F0 {:?}",
-        b.duration_secs(), b.sample_rate, b.rms(), sim.mean_pitch_b.map(|f| f.round()));
+    println!(
+        "reference : {:.3}s, {} Hz, rms {:.3}, mean F0 {:?}",
+        a.duration_secs(),
+        a.sample_rate,
+        a.rms(),
+        sim.mean_pitch_a.map(|f| f.round())
+    );
+    println!(
+        "candidate : {:.3}s, {} Hz, rms {:.3}, mean F0 {:?}",
+        b.duration_secs(),
+        b.sample_rate,
+        b.rms(),
+        sim.mean_pitch_b.map(|f| f.round())
+    );
     println!("---");
     println!("duration ratio : {:.3}", sim.dur_ratio);
     println!("rms ratio      : {:.3}", sim.rms_ratio);

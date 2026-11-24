@@ -88,7 +88,10 @@ impl AsyncSynth {
         let worker_shared = Arc::clone(&shared);
         let mut callback = callback;
         let worker = thread::spawn(move || worker_loop(engine, worker_shared, &mut callback));
-        Ok(AsyncSynth { shared, worker: Some(worker) })
+        Ok(AsyncSynth {
+            shared,
+            worker: Some(worker),
+        })
     }
 
     fn enqueue(&self, cmd: Command) {
@@ -233,7 +236,13 @@ fn stream_chunk(
     // An empty final chunk still signals completion (and carries the events).
     if n == 0 {
         if last {
-            return callback(AsyncChunk { text, samples: &[], sample_rate, is_final: true, events });
+            return callback(AsyncChunk {
+                text,
+                samples: &[],
+                sample_rate,
+                is_final: true,
+                events,
+            });
         }
         return false;
     }
@@ -296,14 +305,21 @@ mod tests {
 
         // Two utterances → two "final" chunks; the long one spans several chunks.
         assert_eq!(finals.load(Ordering::SeqCst), 2, "expected 2 final chunks");
-        assert!(chunks.load(Ordering::SeqCst) > 2, "long utterance should stream >1 chunk");
+        assert!(
+            chunks.load(Ordering::SeqCst) > 2,
+            "long utterance should stream >1 chunk"
+        );
         // Concatenated chunks equal a direct synth of both.
         let direct: usize = {
             let e = EspeakNg::new("en").unwrap();
             e.synth("hello world how are you today").unwrap().0.len()
                 + e.synth("goodbye").unwrap().0.len()
         };
-        assert_eq!(total.load(Ordering::SeqCst), direct, "streamed samples must match direct synth");
+        assert_eq!(
+            total.load(Ordering::SeqCst),
+            direct,
+            "streamed samples must match direct synth"
+        );
     }
 
     #[test]
@@ -323,7 +339,10 @@ mod tests {
         }
         synth.synchronize();
         // Returning `true` on the first chunk drops the rest of the queue.
-        assert!(count.load(Ordering::SeqCst) < 10, "callback stop did not drop the queue");
+        assert!(
+            count.load(Ordering::SeqCst) < 10,
+            "callback stop did not drop the queue"
+        );
     }
 
     #[test]
@@ -351,6 +370,9 @@ mod tests {
 
         let utts = per_utt.lock().unwrap();
         assert_eq!(utts.len(), 2, "expected two utterances: {utts:?}");
-        assert!(utts[1] > utts[0], "queued SetParameter(slow) did not lengthen later utterance: {utts:?}");
+        assert!(
+            utts[1] > utts[0],
+            "queued SetParameter(slow) did not lengthen later utterance: {utts:?}"
+        );
     }
 }

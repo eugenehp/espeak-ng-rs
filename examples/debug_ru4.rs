@@ -1,4 +1,8 @@
-use espeak_ng::dictionary::{Dictionary, lookup::{lookup, LookupCtx, hash_word}, transpose::{transpose_alphabet, TransposeConfig}};
+use espeak_ng::dictionary::{
+    lookup::{hash_word, lookup, LookupCtx},
+    transpose::{transpose_alphabet, TransposeConfig},
+    Dictionary,
+};
 use std::path::PathBuf;
 
 fn main() {
@@ -10,8 +14,13 @@ fn main() {
     for word in &["привет", "да", "нет", "я", "я".repeat(1).as_str()] {
         let tr = transpose_alphabet(word, &TransposeConfig::CYRILLIC);
         let h = hash_word(&tr.bytes);
-        println!("word={:?}  transposed={:02x?}  compressed={}  hash={}", 
-            word, tr.bytes, tr.is_compressed(), h);
+        println!(
+            "word={:?}  transposed={:02x?}  compressed={}  hash={}",
+            word,
+            tr.bytes,
+            tr.is_compressed(),
+            h
+        );
         let result = lookup(&dict, word, &ctx);
         println!("  lookup = {:?}", result);
     }

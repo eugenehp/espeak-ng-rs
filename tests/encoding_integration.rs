@@ -6,8 +6,7 @@
 // implementation in isolation with known-good golden values.
 
 use espeak_ng::encoding::{
-    decode_to_string, decode_utf8_to_string, Encoding, TextDecoder, DecodeMode,
-    utf8_decode_one,
+    decode_to_string, decode_utf8_to_string, utf8_decode_one, DecodeMode, Encoding, TextDecoder,
 };
 
 // ---------------------------------------------------------------------------
@@ -99,11 +98,7 @@ fn iso8859_2_polish_characters() {
     //   ę = 0xEA → U+0119
     //   ó = 0xF3 → U+00F3
     //   ź = 0xBC → U+017A  (note: not ź – check the table!)
-    let tests = [
-        (0xB1u8, 'ą'),
-        (0xEAu8, 'ę'),
-        (0xF3u8, 'ó'),
-    ];
+    let tests = [(0xB1u8, 'ą'), (0xEAu8, 'ę'), (0xF3u8, 'ó')];
     for (byte, expected_char) in tests {
         let decoded = decode_to_string(&[byte], Encoding::Iso8859_2).unwrap();
         let chars: Vec<char> = decoded.chars().collect();
@@ -128,10 +123,14 @@ fn iso8859_15_euro_sign() {
     // In ISO-8859-15: byte 0xA4 → U+20AC EURO SIGN
     // (in ISO-8859-1 the same byte → U+00A4 CURRENCY SIGN)
     let decoded_15 = decode_to_string(&[0xA4u8], Encoding::Iso8859_15).unwrap();
-    let decoded_1  = decode_to_string(&[0xA4u8], Encoding::Iso8859_1).unwrap();
+    let decoded_1 = decode_to_string(&[0xA4u8], Encoding::Iso8859_1).unwrap();
 
-    assert_eq!(decoded_15.chars().next().unwrap(), '\u{20AC}', "ISO-8859-15");
-    assert_eq!(decoded_1.chars().next().unwrap(),  '\u{00A4}', "ISO-8859-1");
+    assert_eq!(
+        decoded_15.chars().next().unwrap(),
+        '\u{20AC}',
+        "ISO-8859-15"
+    );
+    assert_eq!(decoded_1.chars().next().unwrap(), '\u{00A4}', "ISO-8859-1");
     assert_ne!(decoded_15, decoded_1, "15 and 1 should differ at 0xA4");
 }
 
@@ -142,8 +141,11 @@ fn koi8r_cyrillic_a() {
     // NOT U+0410 (CYRILLIC CAPITAL LETTER A, А) as standard KOI8-R would.
     let decoded = decode_to_string(&[0xC1u8], Encoding::Koi8R).unwrap();
     let chars: Vec<char> = decoded.chars().collect();
-    assert_eq!(chars, vec!['\u{00C1}'],
-        "espeak-ng KOI8-R at 0xC1 should be U+00C1 (mirrors C source quirk)");
+    assert_eq!(
+        chars,
+        vec!['\u{00C1}'],
+        "espeak-ng KOI8-R at 0xC1 should be U+00C1 (mirrors C source quirk)"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -153,37 +155,33 @@ fn koi8r_cyrillic_a() {
 #[test]
 fn encoding_names_golden() {
     let cases = [
-        ("UTF-8",         Encoding::Utf8),
-        ("utf-8",         Encoding::Utf8),   // case-insensitive
-        ("US-ASCII",      Encoding::UsAscii),
-        ("ASCII",         Encoding::UsAscii),
-        ("ISO-8859-1",    Encoding::Iso8859_1),
-        ("LATIN1",        Encoding::Iso8859_1),
-        ("ISO-8859-2",    Encoding::Iso8859_2),
-        ("ISO-8859-3",    Encoding::Iso8859_3),
-        ("ISO-8859-4",    Encoding::Iso8859_4),
-        ("ISO-8859-5",    Encoding::Iso8859_5),
-        ("ISO-8859-6",    Encoding::Iso8859_6),
-        ("ISO-8859-7",    Encoding::Iso8859_7),
-        ("ISO-8859-8",    Encoding::Iso8859_8),
-        ("ISO-8859-9",    Encoding::Iso8859_9),
-        ("ISO-8859-10",   Encoding::Iso8859_10),
-        ("ISO-8859-11",   Encoding::Iso8859_11),
-        ("ISO-8859-13",   Encoding::Iso8859_13),
-        ("ISO-8859-14",   Encoding::Iso8859_14),
-        ("ISO-8859-15",   Encoding::Iso8859_15),
-        ("ISO-8859-16",   Encoding::Iso8859_16),
-        ("KOI8-R",        Encoding::Koi8R),
-        ("ISCII",         Encoding::Iscii),
+        ("UTF-8", Encoding::Utf8),
+        ("utf-8", Encoding::Utf8), // case-insensitive
+        ("US-ASCII", Encoding::UsAscii),
+        ("ASCII", Encoding::UsAscii),
+        ("ISO-8859-1", Encoding::Iso8859_1),
+        ("LATIN1", Encoding::Iso8859_1),
+        ("ISO-8859-2", Encoding::Iso8859_2),
+        ("ISO-8859-3", Encoding::Iso8859_3),
+        ("ISO-8859-4", Encoding::Iso8859_4),
+        ("ISO-8859-5", Encoding::Iso8859_5),
+        ("ISO-8859-6", Encoding::Iso8859_6),
+        ("ISO-8859-7", Encoding::Iso8859_7),
+        ("ISO-8859-8", Encoding::Iso8859_8),
+        ("ISO-8859-9", Encoding::Iso8859_9),
+        ("ISO-8859-10", Encoding::Iso8859_10),
+        ("ISO-8859-11", Encoding::Iso8859_11),
+        ("ISO-8859-13", Encoding::Iso8859_13),
+        ("ISO-8859-14", Encoding::Iso8859_14),
+        ("ISO-8859-15", Encoding::Iso8859_15),
+        ("ISO-8859-16", Encoding::Iso8859_16),
+        ("KOI8-R", Encoding::Koi8R),
+        ("ISCII", Encoding::Iscii),
         ("ISO-10646-UCS-2", Encoding::Ucs2),
     ];
 
     for (name, expected) in cases {
-        assert_eq!(
-            Encoding::from_name(name),
-            expected,
-            "from_name({name:?})"
-        );
+        assert_eq!(Encoding::from_name(name), expected, "from_name({name:?})");
     }
 }
 

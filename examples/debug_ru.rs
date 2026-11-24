@@ -8,7 +8,7 @@ fn main() {
     ];
     for (lang, word) in &cases {
         match espeak_ng::text_to_ipa(lang, word) {
-            Ok(s)  => println!("[{lang}] {word:20} → {:?}", s),
+            Ok(s) => println!("[{lang}] {word:20} → {:?}", s),
             Err(e) => println!("[{lang}] {word:20} → ERROR: {e}"),
         }
     }

@@ -106,7 +106,7 @@ espeak_ng::text_to_ipa("en", "42")?;          // "fˈɔːti tˈuː"
 espeak_ng::text_to_ipa("en", "walked")?;      // "wˈɔːkt"
 espeak_ng::text_to_ipa("en", "happily")?;     // "hˈapɪli"
 espeak_ng::text_to_ipa("de", "schön")?;       // "ʃˈøːn"
-espeak_ng::text_to_ipa("fr", "bonjour")?;     // "bɔ̃ʒˈuːɹ"
+espeak_ng::text_to_ipa("fr", "bonjour")?;     // "bɔ̃ʒˈuʁ"
 
 // Text → raw PCM (22 050 Hz, mono, 16-bit)
 let (samples, rate) = espeak_ng::text_to_pcm("en", "hello world")?;
@@ -194,7 +194,7 @@ assert_eq!(rate, 22050);
 | `de_ch_digraph`                  | "Bach", "ich"                | bˈax, ˈɪç                             |
 | `es_hola`                        | "hola"                       | ˈola                                  |
 | `es_ll_digraph`                  | "llamar"                     | ʎamˈaɾ                                |
-| `fr_bonjour`                     | "bonjour"                    | bɔ̃ʒˈuːɹ                              |
+| `fr_bonjour`                     | "bonjour"                    | bɔ̃ʒˈuʁ                               |
 | `fr_nasal_vowels`                | "bon"                        | bˈɔ̃                                   |
 | `fr_liaison`                     | "les amis"                   | le-z amˈi                             |
 

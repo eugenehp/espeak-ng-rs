@@ -10,9 +10,9 @@
 // They require access to the active phoneme table (PhonemeData) because
 // the encoding is language-specific.
 
-use crate::phoneme::PhonemeData;
-use crate::phoneme::{PH_STRESS, PH_INVALID};
 use super::N_WORD_PHONEMES;
+use crate::phoneme::PhonemeData;
+use crate::phoneme::{PH_INVALID, PH_STRESS};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Encode
@@ -25,10 +25,7 @@ use super::N_WORD_PHONEMES;
 ///
 /// Returns `(encoded_bytes, bad_phoneme)` where `bad_phoneme` is `Some(str)`
 /// if an unrecognised mnemonic was encountered.
-pub fn encode_phonemes(
-    input: &str,
-    phdata: &PhonemeData,
-) -> (Vec<u8>, Option<String>) {
+pub fn encode_phonemes(input: &str, phdata: &PhonemeData) -> (Vec<u8>, Option<String>) {
     // Build a fast lookup table: for each possible first byte, list of
     // (mnemonic_u32, code) pairs.
     let tab = build_phoneme_lookup(phdata);
@@ -45,7 +42,9 @@ pub fn encode_phonemes(
 
     while i < bytes.len() {
         let c = bytes[i];
-        if c == 0 || c.is_ascii_whitespace() { break; }
+        if c == 0 || c.is_ascii_whitespace() {
+            break;
+        }
 
         if c == b'|' {
             // Separator between mnemonics.  Double || = literal |.
@@ -108,8 +107,12 @@ pub fn decode_phonemes(encoded: &[u8], phdata: &PhonemeData) -> String {
     while i < encoded.len() {
         let phcode = encoded[i];
         i += 1;
-        if phcode == 0 { break; }
-        if phcode == 255 { continue; } // unrecognised marker
+        if phcode == 0 {
+            break;
+        }
+        if phcode == 255 {
+            continue;
+        } // unrecognised marker
 
         let tab = match phdata.get(phcode) {
             Some(t) => t,
@@ -120,13 +123,17 @@ pub fn decode_phonemes(encoded: &[u8], phdata: &PhonemeData) -> String {
             let sl = tab.std_length as usize;
             if sl > 1 && sl < STRESS_CHARS.len() {
                 let sc = STRESS_CHARS[sl] as char;
-                if sc != ' ' { out.push(sc); }
+                if sc != ' ' {
+                    out.push(sc);
+                }
             }
         } else {
             let mnem = tab.mnemonic;
             for shift in 0..4u32 {
                 let c = ((mnem >> (shift * 8)) & 0xff) as u8;
-                if c == 0 { break; }
+                if c == 0 {
+                    break;
+                }
                 out.push(c as char);
             }
 
@@ -168,11 +175,17 @@ fn best_match_from_table(tab: &[(u32, u8)], bytes: &[u8], start: usize) -> (u8, 
         let mut count = 0i32;
         loop {
             let bi = count as usize;
-            if bi >= 4 { break; }
+            if bi >= 4 {
+                break;
+            }
             let c = bytes.get(start + bi).copied().unwrap_or(0);
-            if c <= b' ' { break; }
+            if c <= b' ' {
+                break;
+            }
             let mnem_byte = ((mnem >> (bi * 8)) & 0xff) as u8;
-            if c != mnem_byte { break; }
+            if c != mnem_byte {
+                break;
+            }
             count += 1;
         }
         // Must be a full match: either we consumed 4 bytes, or the next
@@ -200,12 +213,19 @@ fn is_switch_phoneme_code(phdata: &PhonemeData, code: u8) -> bool {
 }
 
 fn next_char_boundary(bytes: &[u8], i: usize) -> usize {
-    if i >= bytes.len() { return i; }
+    if i >= bytes.len() {
+        return i;
+    }
     let c = bytes[i];
-    let seq_len = if c < 0x80 { 1 }
-                  else if c < 0xe0 { 2 }
-                  else if c < 0xf0 { 3 }
-                  else { 4 };
+    let seq_len = if c < 0x80 {
+        1
+    } else if c < 0xe0 {
+        2
+    } else if c < 0xf0 {
+        3
+    } else {
+        4
+    };
     (i + seq_len).min(bytes.len())
 }
 
@@ -216,7 +236,9 @@ mod tests {
 
     fn load_phdata() -> Option<PhonemeData> {
         let dir = PathBuf::from("/usr/share/espeak-ng-data");
-        if !dir.join("phontab").exists() { return None; }
+        if !dir.join("phontab").exists() {
+            return None;
+        }
         let mut ph = PhonemeData::load(&dir).ok()?;
         ph.select_table_by_name("en").ok()?;
         Some(ph)
@@ -224,14 +246,20 @@ mod tests {
 
     #[test]
     fn decode_empty_gives_star() {
-        let phdata = match load_phdata() { Some(p) => p, None => return };
+        let phdata = match load_phdata() {
+            Some(p) => p,
+            None => return,
+        };
         let s = decode_phonemes(&[], &phdata);
         assert_eq!(s, "* ");
     }
 
     #[test]
     fn encode_unknown_gives_zero_and_bad() {
-        let phdata = match load_phdata() { Some(p) => p, None => return };
+        let phdata = match load_phdata() {
+            Some(p) => p,
+            None => return,
+        };
         let (encoded, bad) = encode_phonemes("XYZZY_NOT_A_PHONEME", &phdata);
         assert!(bad.is_some(), "should report bad phoneme");
         assert_eq!(encoded.last(), Some(&0));
@@ -239,11 +267,17 @@ mod tests {
 
     #[test]
     fn encode_decode_roundtrip_pause() {
-        let phdata = match load_phdata() { Some(p) => p, None => return };
+        let phdata = match load_phdata() {
+            Some(p) => p,
+            None => return,
+        };
         // "_" is the short pause
         let (encoded, bad) = encode_phonemes("_", &phdata);
         assert!(bad.is_none(), "pause should encode cleanly");
         // Should have at least one non-zero byte
-        assert!(encoded.iter().any(|&b| b != 0), "should produce phoneme code for _");
+        assert!(
+            encoded.iter().any(|&b| b != 0),
+            "should produce phoneme code for _"
+        );
     }
 }

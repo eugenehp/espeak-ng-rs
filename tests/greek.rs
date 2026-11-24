@@ -13,24 +13,33 @@ fn el() -> Option<Translator> {
 
 #[test]
 fn greek_words_are_pronounced() {
-    let Some(t) = el() else { eprintln!("[SKIP] no el data"); return };
+    let Some(t) = el() else {
+        eprintln!("[SKIP] no el data");
+        return;
+    };
     // Common Greek words now read (previously all produced empty output).
     let cases: &[(&str, &str)] = &[
-        ("γεια", "jˈa"),        // "hi"
-        ("ναι", "nˈe"),         // "yes"
+        ("γεια", "jˈa"), // "hi"
+        ("ναι", "nˈe"),  // "yes"
         // /x/ palatalises to /ç/ before a front vowel, which is what the
         // `κ (Y` / `χ (Y` rules need `LETTERGP_Y` for.
-        ("όχι", "ˈoçi"),        // "no"
-        ("Αθήνα", "aθˈina"),    // "Athens"
-        ("Ελλάδα", "elˈaða"),   // "Greece"
+        ("όχι", "ˈoçi"),      // "no"
+        ("Αθήνα", "aθˈina"),  // "Athens"
+        ("Ελλάδα", "elˈaða"), // "Greece"
     ];
     for (word, want) in cases {
         let got = t.text_to_ipa(word).unwrap();
         assert!(!got.trim().is_empty(), "el {word:?} produced no phonemes");
-        assert!(got.contains(want), "el {word:?}: want {want:?}, got {got:?}");
+        assert!(
+            got.contains(want),
+            "el {word:?}: want {want:?}, got {got:?}"
+        );
     }
     // Numbers already worked and still do.
-    assert!(!t.text_to_ipa("123").unwrap().trim().is_empty(), "el numbers");
+    assert!(
+        !t.text_to_ipa("123").unwrap().trim().is_empty(),
+        "el numbers"
+    );
 }
 
 /// Greek palatalises /k/ and /x/ before a front vowel, which `el_rules` writes
@@ -38,7 +47,10 @@ fn greek_words_are_pronounced() {
 /// set only groups A, C and VOWEL2 for Greek, and the rules never fired.
 #[test]
 fn velars_palatalise_before_front_vowels() {
-    let Some(t) = el() else { eprintln!("[SKIP] no el data"); return };
+    let Some(t) = el() else {
+        eprintln!("[SKIP] no el data");
+        return;
+    };
     assert_eq!(t.text_to_ipa("κόκκινη").unwrap(), "kˈocinˌi");
     assert_eq!(t.text_to_ipa("κύριος").unwrap(), "cˈiriˌos");
     assert_eq!(t.text_to_ipa("όχι").unwrap(), "ˈoçi");
@@ -50,16 +62,27 @@ fn velars_palatalise_before_front_vowels() {
 fn cyrillic_languages_beyond_russian_read_words() {
     // The Cyrillic offset (0x420) was only set for ru/bg/uk/be/tt; the other
     // Cyrillic-primary voices (mk/kk/ky/ba…) produced empty output for words.
-    for (lang, word) in [("mk", "здраво"), ("kk", "сәлем"), ("ky", "салам"), ("ba", "һаумы")] {
+    for (lang, word) in [
+        ("mk", "здраво"),
+        ("kk", "сәлем"),
+        ("ky", "салам"),
+        ("ba", "һаумы"),
+    ] {
         let Some(t) = Translator::new(lang, None).ok() else {
             eprintln!("[SKIP] no {lang} data");
             continue;
         };
-        assert!(!t.text_to_ipa(word).unwrap().trim().is_empty(), "{lang} {word:?} should not be empty");
+        assert!(
+            !t.text_to_ipa(word).unwrap().trim().is_empty(),
+            "{lang} {word:?} should not be empty"
+        );
     }
     // Serbian is Latin-primary in espeak — its Latin reading must still work.
     if let Some(t) = Translator::new("sr", None).ok() {
-        assert!(t.text_to_ipa("zdravo").unwrap().contains("zdrˈavo"), "sr Latin still reads");
+        assert!(
+            t.text_to_ipa("zdravo").unwrap().contains("zdrˈavo"),
+            "sr Latin still reads"
+        );
     }
 }
 
@@ -79,6 +102,9 @@ fn armenian_and_georgian_read_words() {
             continue;
         };
         let got = t.text_to_ipa(word).unwrap();
-        assert!(got.contains(want), "{lang} {word:?}: want {want:?}, got {got:?}");
+        assert!(
+            got.contains(want),
+            "{lang} {word:?}: want {want:?}, got {got:?}"
+        );
     }
 }

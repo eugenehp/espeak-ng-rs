@@ -21,8 +21,16 @@ fn leading_minus_before_number_reads_minus() {
     assert_eq!(ipa("-5"), ipa("minus 5"));
     assert_eq!(ipa("-5"), "mˈaɪnəs fˈaɪv");
     // Works mid-clause (after a space) and after a clause boundary.
-    assert!(ipa("was -5 degrees").contains("mˈaɪnəs fˈaɪv"), "{}", ipa("was -5 degrees"));
-    assert!(ipa("temperature: -40").contains("mˈaɪnəs fˈɔːti"), "{}", ipa("temperature: -40"));
+    assert!(
+        ipa("was -5 degrees").contains("mˈaɪnəs fˈaɪv"),
+        "{}",
+        ipa("was -5 degrees")
+    );
+    assert!(
+        ipa("temperature: -40").contains("mˈaɪnəs fˈɔːti"),
+        "{}",
+        ipa("temperature: -40")
+    );
     // A decimal keeps the sign too.
     assert!(ipa("-5.5").starts_with("mˈaɪnəs"), "{}", ipa("-5.5"));
 }
@@ -40,13 +48,21 @@ fn leading_minus_before_currency_reads_minus() {
     assert_eq!(ipa("-$5"), "mˈaɪnəs fˈaɪv dˈɒləz");
     assert!(ipa("-€10").starts_with("mˈaɪnəs"), "{}", ipa("-€10"));
     assert!(ipa("-£5").starts_with("mˈaɪnəs"), "{}", ipa("-£5"));
-    assert!(ipa("was -$5").contains("mˈaɪnəs fˈaɪv dˈɒləz"), "{}", ipa("was -$5"));
+    assert!(
+        ipa("was -$5").contains("mˈaɪnəs fˈaɪv dˈɒləz"),
+        "{}",
+        ipa("was -$5")
+    );
     // The `+`/`$` positive form is unchanged.
     assert_eq!(ipa("+$5"), "plˈʌs fˈaɪv dˈɒləz");
     assert_eq!(ipa("$5"), "fˈaɪv dˈɒləz");
     // A hyphen after a word/number before a currency symbol is NOT a minus.
     for s in ["US-$5", "5-$3", "price-$5"] {
-        assert!(!ipa(s).contains("mˈaɪnəs"), "{s:?} should not read a minus: {}", ipa(s));
+        assert!(
+            !ipa(s).contains("mˈaɪnəs"),
+            "{s:?} should not read a minus: {}",
+            ipa(s)
+        );
     }
 }
 
@@ -59,8 +75,18 @@ fn hyphen_after_word_or_number_is_not_a_minus() {
     let ipa = |s: &str| t.text_to_ipa(s).unwrap();
 
     // A hyphen after a word/number is a separator/range, not a sign — no "minus".
-    for s in ["5-10", "pages 5-10", "COVID-19", "2024-01-15", "1-800-flowers"] {
-        assert!(!ipa(s).contains("mˈaɪnəs"), "{s:?} should not read a minus: {}", ipa(s));
+    for s in [
+        "5-10",
+        "pages 5-10",
+        "COVID-19",
+        "2024-01-15",
+        "1-800-flowers",
+    ] {
+        assert!(
+            !ipa(s).contains("mˈaɪnəs"),
+            "{s:?} should not read a minus: {}",
+            ipa(s)
+        );
     }
     // A spaced dash "3 - 5" (hyphen not immediately before the digit) is unaffected.
     assert!(!ipa("3 - 5").contains("mˈaɪnəs"), "{}", ipa("3 - 5"));
@@ -78,7 +104,11 @@ fn leading_minus_is_language_neutral() {
     };
     let ipa = |s: &str| t.text_to_ipa(s).unwrap();
     assert_eq!(ipa("-5"), ipa("minus 5"));
-    assert!(!ipa("5-10").contains("mˈiːnʊs"), "de 5-10 should not read a minus: {}", ipa("5-10"));
+    assert!(
+        !ipa("5-10").contains("mˈiːnʊs"),
+        "de 5-10 should not read a minus: {}",
+        ipa("5-10")
+    );
 }
 
 #[test]
@@ -94,7 +124,10 @@ fn leading_minus_reads_the_sign_across_languages() {
         };
         let ipa = |s: &str| t.text_to_ipa(s).unwrap();
         let (five, minus5) = (ipa("5"), ipa("-5"));
-        assert!(minus5 != five, "{lang} '-5' dropped the sign: {minus5:?} (5={five:?})");
+        assert!(
+            minus5 != five,
+            "{lang} '-5' dropped the sign: {minus5:?} (5={five:?})"
+        );
     }
     for lang in ["pl", "ru", "da", "tr", "bg"] {
         let Some(t) = Translator::new(lang, None).ok() else {
@@ -102,10 +135,16 @@ fn leading_minus_reads_the_sign_across_languages() {
             continue;
         };
         let ipa = |s: &str| t.text_to_ipa(s).unwrap();
-        assert_eq!(ipa("-5"), ipa("5"), "{lang} has no minus word; the sign is dropped");
+        assert_eq!(
+            ipa("-5"),
+            ipa("5"),
+            "{lang} has no minus word; the sign is dropped"
+        );
     }
     // `+` *is* in every one of these dictionaries.
-    for lang in ["pl", "pt", "ru", "uk", "bg", "cs", "ro", "sv", "da", "nb", "tr"] {
+    for lang in [
+        "pl", "pt", "ru", "uk", "bg", "cs", "ro", "sv", "da", "nb", "tr",
+    ] {
         let Some(t) = Translator::new(lang, None).ok() else {
             eprintln!("[SKIP] no {lang} data");
             continue;

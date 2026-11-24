@@ -49,7 +49,7 @@ pub fn parse_wav_sample(
 
     // Header
     let wav_length = (phondata[idx] as usize) | ((phondata[idx + 1] as usize) << 8);
-    let wav_scale  = phondata[idx + 2] as u16;
+    let wav_scale = phondata[idx + 2] as u16;
 
     if wav_length == 0 {
         return None;
@@ -171,10 +171,16 @@ mod tests {
 
         // Structural: header + raw i16 LE data (exact, independent of the
         // reader's amplitude scaling).
-        assert_eq!(u16::from_le_bytes([bytes[0], bytes[1]]) as usize, samples.len() * 2);
+        assert_eq!(
+            u16::from_le_bytes([bytes[0], bytes[1]]) as usize,
+            samples.len() * 2
+        );
         assert_eq!(bytes[2], 0, "16-bit → wav_scale 0");
         for (i, &s) in samples.iter().enumerate() {
-            assert_eq!(i16::from_le_bytes([bytes[4 + i * 2], bytes[4 + i * 2 + 1]]), s);
+            assert_eq!(
+                i16::from_le_bytes([bytes[4 + i * 2], bytes[4 + i * 2 + 1]]),
+                s
+            );
         }
 
         // The reader decodes the right number of samples from the compiled data.
@@ -203,7 +209,7 @@ mod tests {
     fn parse_16bit_sample() {
         // Header: length=4 (2 samples), scale=0 (16-bit), padding
         let mut data = vec![4u8, 0, 0, 0]; // length=4, scale=0 (16-bit)
-        // Two 16-bit samples: 1000 and -1000
+                                           // Two 16-bit samples: 1000 and -1000
         data.extend_from_slice(&(1000i16).to_le_bytes());
         data.extend_from_slice(&(-1000i16).to_le_bytes());
         let result = parse_wav_sample(0, &data, 1.0, 0);
@@ -226,7 +232,10 @@ mod tests {
         // Looping the steady-state middle resets the ramp repeatedly (a sawtooth);
         // a linear resample of a ramp would be (weakly) monotonic non-decreasing.
         let resets = out.windows(2).filter(|w| w[1] < w[0]).count();
-        assert!(resets >= 2, "middle must loop (sawtooth), not resample: resets={resets}");
+        assert!(
+            resets >= 2,
+            "middle must loop (sawtooth), not resample: resets={resets}"
+        );
     }
 
     #[test]
@@ -240,7 +249,10 @@ mod tests {
         let out = parse_wav_sample(0, &data, 0.5, 100).unwrap();
         assert_eq!(out.len(), n / 2, "0.5× → half length");
         // Truncation keeps the ramp monotonic (no loop reset).
-        assert!(out.windows(2).all(|w| w[1] >= w[0]), "truncated ramp stays monotonic: {out:?}");
+        assert!(
+            out.windows(2).all(|w| w[1] >= w[0]),
+            "truncated ramp stays monotonic: {out:?}"
+        );
     }
 
     #[test]

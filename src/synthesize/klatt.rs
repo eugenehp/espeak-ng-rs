@@ -349,7 +349,11 @@ pub fn synthesize(frame: &KlattFrame, n_samples: usize, sample_rate: u32) -> Vec
         let frics = frame.frication * noise;
 
         // Voicing waveform, tilted and with open-phase breathiness.
-        let mut voice = if frame.f0 > 0.0 { glottis.voice_sample() } else { 0.0 };
+        let mut voice = if frame.f0 > 0.0 {
+            glottis.voice_sample()
+        } else {
+            0.0
+        };
         voice = voice * onemd + vlast * decay;
         vlast = voice;
         if glottis.is_open() {
@@ -408,7 +412,9 @@ pub fn synthesize(frame: &KlattFrame, n_samples: usize, sample_rate: u32) -> Vec
     // and pitch-dependent, and spectral *shape* is what matters here.
     let peak = raw.iter().fold(0.0f64, |m, &v| m.max(v.abs())).max(1e-9);
     let scale = 0.6 * 32767.0 / peak;
-    raw.iter().map(|&v| (v * scale).clamp(-32767.0, 32767.0) as i16).collect()
+    raw.iter()
+        .map(|&v| (v * scale).clamp(-32767.0, 32767.0) as i16)
+        .collect()
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -448,15 +454,11 @@ const SCALE_WAV_TAB: [f64; 6] = [45.0, 38.0, 45.0, 45.0, 55.0, 45.0];
 /// `DBtoLIN` — a dB value in 0..=87 to a linear amplitude.
 fn db_to_lin(db: i32) -> f64 {
     const AMPTABLE: [i32; 88] = [
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 7,
-        8, 9, 10, 11, 13, 14, 16, 18, 20, 22, 25, 28, 32,
-        35, 40, 45, 51, 57, 64, 71, 80, 90, 101, 114, 128,
-        142, 159, 179, 202, 227, 256, 284, 318, 359, 405,
-        455, 512, 568, 638, 719, 881, 911, 1024, 1137, 1276,
-        1438, 1622, 1823, 2048, 2273, 2552, 2875, 3244, 3645,
-        4096, 4547, 5104, 5751, 6488, 7291, 8192, 9093, 10207,
-        11502, 12976, 14582, 16384, 18350, 20644, 23429,
-        26214, 29491, 32767,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 7, 8, 9, 10, 11, 13, 14, 16, 18, 20, 22, 25, 28,
+        32, 35, 40, 45, 51, 57, 64, 71, 80, 90, 101, 114, 128, 142, 159, 179, 202, 227, 256, 284,
+        318, 359, 405, 455, 512, 568, 638, 719, 881, 911, 1024, 1137, 1276, 1438, 1622, 1823, 2048,
+        2273, 2552, 2875, 3244, 3645, 4096, 4547, 5104, 5751, 6488, 7291, 8192, 9093, 10207, 11502,
+        12976, 14582, 16384, 18350, 20644, 23429, 26214, 29491, 32767,
     ];
     if !(0..88).contains(&db) {
         return 0.0;
@@ -712,20 +714,18 @@ impl Klatt {
     /// the start of every glottal period.
     fn pitch_synch_par_reset(&mut self, frame: &mut KtFrame) {
         const B0: [i32; 224] = [
-            1200, 1142, 1088, 1038, 991, 948, 907, 869, 833, 799, 768, 738, 710, 683, 658,
-            634, 612, 590, 570, 551, 533, 515, 499, 483, 468, 454, 440, 427, 415, 403,
-            391, 380, 370, 360, 350, 341, 332, 323, 315, 307, 300, 292, 285, 278, 272,
-            265, 259, 253, 247, 242, 237, 231, 226, 221, 217, 212, 208, 204, 199, 195,
-            192, 188, 184, 180, 177, 174, 170, 167, 164, 161, 158, 155, 153, 150, 147,
-            145, 142, 140, 137, 135, 133, 131, 128, 126, 124, 122, 120, 119, 117, 115,
-            113, 111, 110, 108, 106, 105, 103, 102, 100, 99, 97, 96, 95, 93, 92, 91, 90,
-            88, 87, 86, 85, 84, 83, 82, 80, 79, 78, 77, 76, 75, 75, 74, 73, 72, 71,
-            70, 69, 68, 68, 67, 66, 65, 64, 64, 63, 62, 61, 61, 60, 59, 59, 58, 57,
-            57, 56, 56, 55, 55, 54, 54, 53, 53, 52, 52, 51, 51, 50, 50, 49, 49, 48, 48,
-            47, 47, 46, 46, 45, 45, 44, 44, 43, 43, 42, 42, 41, 41, 41, 41, 40, 40,
-            39, 39, 38, 38, 38, 38, 37, 37, 36, 36, 36, 36, 35, 35, 35, 35, 34, 34, 33,
-            33, 33, 33, 32, 32, 32, 32, 31, 31, 31, 31, 30, 30, 30, 30, 29, 29, 29, 29,
-            28, 28, 28, 28, 27, 27,
+            1200, 1142, 1088, 1038, 991, 948, 907, 869, 833, 799, 768, 738, 710, 683, 658, 634,
+            612, 590, 570, 551, 533, 515, 499, 483, 468, 454, 440, 427, 415, 403, 391, 380, 370,
+            360, 350, 341, 332, 323, 315, 307, 300, 292, 285, 278, 272, 265, 259, 253, 247, 242,
+            237, 231, 226, 221, 217, 212, 208, 204, 199, 195, 192, 188, 184, 180, 177, 174, 170,
+            167, 164, 161, 158, 155, 153, 150, 147, 145, 142, 140, 137, 135, 133, 131, 128, 126,
+            124, 122, 120, 119, 117, 115, 113, 111, 110, 108, 106, 105, 103, 102, 100, 99, 97, 96,
+            95, 93, 92, 91, 90, 88, 87, 86, 85, 84, 83, 82, 80, 79, 78, 77, 76, 75, 75, 74, 73, 72,
+            71, 70, 69, 68, 68, 67, 66, 65, 64, 64, 63, 62, 61, 61, 60, 59, 59, 58, 57, 57, 56, 56,
+            55, 55, 54, 54, 53, 53, 52, 52, 51, 51, 50, 50, 49, 49, 48, 48, 47, 47, 46, 46, 45, 45,
+            44, 44, 43, 43, 42, 42, 41, 41, 41, 41, 40, 40, 39, 39, 38, 38, 38, 38, 37, 37, 36, 36,
+            36, 36, 35, 35, 35, 35, 34, 34, 33, 33, 33, 33, 32, 32, 32, 32, 31, 31, 31, 31, 30, 30,
+            30, 30, 29, 29, 29, 29, 28, 28, 28, 28, 27, 27,
         ];
 
         if frame.f0hz10 > 0 {
@@ -769,7 +769,11 @@ impl Klatt {
             if frame.kskew as i64 > closed {
                 frame.kskew = closed as i32;
             }
-            self.skew = if self.skew >= 0 { frame.kskew as i64 } else { -(frame.kskew as i64) };
+            self.skew = if self.skew >= 0 {
+                frame.kskew as i64
+            } else {
+                -(frame.kskew as i64)
+            };
             self.t0 += self.skew;
             self.skew = -self.skew;
         } else {
@@ -784,14 +788,22 @@ impl Klatt {
         // Reset pitch-synchronously, or at the update rate when f0 = 0.
         if self.t0 != 4 || self.ns == 0 {
             self.decay = 0.033 * frame.tltdb as f64;
-            self.onemd = if self.decay > 0.0 { 1.0 - self.decay } else { 1.0 };
+            self.onemd = if self.decay > 0.0 {
+                1.0 - self.decay
+            } else {
+                1.0
+            };
         }
     }
 
     /// `impulsive_source` — a doublet through the glottal resonator.
     fn impulsive_source(&mut self) -> f64 {
         const DOUBLET: [f64; 3] = [0.0, 13_000_000.0, -13_000_000.0];
-        self.imp_vwave = if self.nper < 3 { DOUBLET[self.nper as usize] } else { 0.0 };
+        self.imp_vwave = if self.nper < 3 {
+            DOUBLET[self.nper as usize]
+        } else {
+            0.0
+        };
         let v = self.imp_vwave;
         self.rsn[RGL].resonate(v)
     }
@@ -1028,8 +1040,7 @@ pub fn synthesize_frames_klatt(
             for ix in 1..7 {
                 peaks[ix].bp1 = fr.klatt_bp[ix] as f64 * 4.0;
                 peaks[ix].bp = peaks[ix].bp1 as i32;
-                peaks[ix].bp_inc =
-                    (next.klatt_bp[ix] as f64 * 4.0 - peaks[ix].bp1) * step_over_len;
+                peaks[ix].bp_inc = (next.klatt_bp[ix] as f64 * 4.0 - peaks[ix].bp1) * step_over_len;
 
                 peaks[ix].ap1 = fr.klatt_ap[ix] as f64;
                 peaks[ix].ap = peaks[ix].ap1 as i32;
@@ -1051,7 +1062,11 @@ pub fn synthesize_frames_klatt(
         let mut sample_count = 0usize;
         // The frame's own loudness: `rms` for the fallback path, where AV is a
         // constant; for a real Klatt frame AV already carries it.
-        let rms_scale = if klatt_flag { 1.0 } else { (fr.rms as f64 / 64.0).max(0.05) };
+        let rms_scale = if klatt_flag {
+            1.0
+        } else {
+            (fr.rms as f64 / 64.0).max(0.05)
+        };
         let amplitude = amps.get(fi).copied().unwrap_or(1.0) * rms_scale * 60.0;
         let f0_start = pitch.get(fi).copied().unwrap_or(120.0).max(50.0);
         let f0_end = pitch.get(fi + 1).copied().unwrap_or(f0_start).max(50.0);
@@ -1151,7 +1166,11 @@ mod tests {
         let mut kt = Klatt::new(22_050);
         kt.set_zero_abc(RNZ, 280, 89);
         let r = kt.rsn[RNZ];
-        assert!((r.a + r.b + r.c - 1.0).abs() < 1e-9, "DC gain {}", r.a + r.b + r.c);
+        assert!(
+            (r.a + r.b + r.c - 1.0).abs() < 1e-9,
+            "DC gain {}",
+            r.a + r.b + r.c
+        );
     }
 
     /// `setzeroabc` with f = 0, bw = 0 leaves `a == 0`; C guards the inversion
@@ -1170,7 +1189,11 @@ mod tests {
     #[test]
     fn period_and_open_phase_follow_f0() {
         let mut kt = Klatt::new(22_050);
-        let mut fr = KtFrame { f0hz10: 1000, kopen: 40, ..KtFrame::default() };
+        let mut fr = KtFrame {
+            f0hz10: 1000,
+            kopen: 40,
+            ..KtFrame::default()
+        };
         fr.avdb_tmp = fr.avdb - 7;
         kt.pitch_synch_par_reset(&mut fr);
         // 100 Hz at 22050 Hz → 4 × 220.5 samples per period.
@@ -1179,7 +1202,10 @@ mod tests {
         assert!((kt.amp_voice - db_to_lin(52)).abs() < 1e-12);
 
         // F0 = 0 means "unvoiced": no period, no voicing amplitude.
-        let mut fr = KtFrame { f0hz10: 0, ..KtFrame::default() };
+        let mut fr = KtFrame {
+            f0hz10: 0,
+            ..KtFrame::default()
+        };
         kt.pitch_synch_par_reset(&mut fr);
         assert_eq!(kt.t0, 4);
         assert_eq!(kt.amp_voice, 0.0);
@@ -1203,12 +1229,18 @@ mod tests {
         let frames = vec![fr.clone(), fr];
         let pcm = klatt_frames_pcm(&frames);
         assert!(pcm.iter().any(|&s| s != 0), "engine produced silence");
-        assert!(pcm.iter().all(|&s| s.abs() <= 32767), "output left i16 range");
+        assert!(
+            pcm.iter().all(|&s| s.abs() <= 32767),
+            "output left i16 range"
+        );
 
         // Energy around F1 (700 Hz) must exceed the null between F2 and F3.
         let f1 = band_energy(&pcm, 600.0, 800.0, 22_050.0);
         let null = band_energy(&pcm, 1700.0, 1900.0, 22_050.0);
-        assert!(f1 > null * 2.0, "F1 {f1:.1} not above the inter-formant null {null:.1}");
+        assert!(
+            f1 > null * 2.0,
+            "F1 {f1:.1} not above the inter-formant null {null:.1}"
+        );
     }
 
     /// Render helper: run the frame engine at unit amplitude and 120 Hz.

@@ -22,14 +22,23 @@ fn french_clitics_have_no_trailing_dash() {
     // Every one of these clitics ends in a *reducible* vowel, whose mnemonic
     // carries a trailing `-`; `WritePhMnemonic` maps the mnemonic character by
     // character, so upstream prints the `-` too (`lˈə-`, `dˈy-`).
-    for w in ["le", "la", "les", "du", "je", "de", "ne", "ce", "me", "te", "se"] {
+    for w in [
+        "le", "la", "les", "du", "je", "de", "ne", "ce", "me", "te", "se",
+    ] {
         let got = ipa(w);
-        assert!(got.ends_with('-'), "fr {w:?} should keep the reducible mark: {got:?}");
+        assert!(
+            got.ends_with('-'),
+            "fr {w:?} should keep the reducible mark: {got:?}"
+        );
         assert_eq!(got.matches('-').count(), 1, "fr {w:?}: {got:?}");
     }
     // In a phrase the clitics are clean too.
     assert_eq!(ipa("je le vois"), "ʒə- lə- vwˈa");
-    assert!(ipa("le petit chat").starts_with("lə-"), "{}", ipa("le petit chat"));
+    assert!(
+        ipa("le petit chat").starts_with("lə-"),
+        "{}",
+        ipa("le petit chat")
+    );
 }
 
 #[test]

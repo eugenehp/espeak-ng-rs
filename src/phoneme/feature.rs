@@ -11,16 +11,14 @@
 // so missing_docs is suppressed for the impl block.
 #![allow(missing_docs)]
 
-use crate::error::{Error, Result};
 use super::table::PhonemeTab;
 use super::{
-    PH_NASAL, PH_STOP, PH_FRICATIVE, PH_VSTOP, PH_VOWEL,
-    PH_TRILL, PH_SIBILANT, PH_VOICED, PH_VOICELESS, PH_PALATAL, PH_NONSYLLABIC, PH_LONG,
-    PHFLAG_ARTICULATION,
-    PLACE_BILABIAL, PLACE_LABIODENTAL, PLACE_DENTAL, PLACE_ALVEOLAR,
-    PLACE_RETROFLEX, PLACE_PALATO_ALVEOLAR, PLACE_PALATAL, PLACE_VELAR,
-    PLACE_LABIO_VELAR, PLACE_UVULAR, PLACE_PHARYNGEAL, PLACE_GLOTTAL,
+    PHFLAG_ARTICULATION, PH_FRICATIVE, PH_LONG, PH_NASAL, PH_NONSYLLABIC, PH_PALATAL, PH_SIBILANT,
+    PH_STOP, PH_TRILL, PH_VOICED, PH_VOICELESS, PH_VOWEL, PH_VSTOP, PLACE_ALVEOLAR, PLACE_BILABIAL,
+    PLACE_DENTAL, PLACE_GLOTTAL, PLACE_LABIODENTAL, PLACE_LABIO_VELAR, PLACE_PALATAL,
+    PLACE_PALATO_ALVEOLAR, PLACE_PHARYNGEAL, PLACE_RETROFLEX, PLACE_UVULAR, PLACE_VELAR,
 };
+use crate::error::{Error, Result};
 
 /// A phoneme feature tag — a 3-letter ASCII label packed into a `u32`.
 ///
@@ -183,8 +181,8 @@ impl PhonemeFeature {
 impl std::fmt::Display for PhonemeFeature {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let a = ((self.0 >> 16) & 0xff) as u8 as char;
-        let b = ((self.0 >>  8) & 0xff) as u8 as char;
-        let c = ( self.0        & 0xff) as u8 as char;
+        let b = ((self.0 >> 8) & 0xff) as u8 as char;
+        let c = (self.0 & 0xff) as u8 as char;
         write!(f, "{a}{b}{c}")
     }
 }
@@ -204,22 +202,19 @@ impl PhonemeTab {
         match feat {
             // --- manner of articulation ---
             PhonemeFeature::NAS => self.typ = PH_NASAL,
-            PhonemeFeature::STP |
-            PhonemeFeature::AFR => self.typ = PH_STOP,      // FIXME: afr treated as stp
-            PhonemeFeature::FRC |
-            PhonemeFeature::APR => self.typ = PH_FRICATIVE,  // FIXME: apr used for [h]
-            PhonemeFeature::FLP => self.typ = PH_VSTOP,      // FIXME: C uses vstop for flp
+            PhonemeFeature::STP | PhonemeFeature::AFR => self.typ = PH_STOP, // FIXME: afr treated as stp
+            PhonemeFeature::FRC | PhonemeFeature::APR => self.typ = PH_FRICATIVE, // FIXME: apr used for [h]
+            PhonemeFeature::FLP => self.typ = PH_VSTOP, // FIXME: C uses vstop for flp
             PhonemeFeature::TRL => self.phflags |= PH_TRILL,
-            PhonemeFeature::CLK |
-            PhonemeFeature::EJC |
-            PhonemeFeature::IMP |
-            PhonemeFeature::LAT => { /* not supported */ }
+            PhonemeFeature::CLK
+            | PhonemeFeature::EJC
+            | PhonemeFeature::IMP
+            | PhonemeFeature::LAT => { /* not supported */ }
             PhonemeFeature::VWL => self.typ = PH_VOWEL,
             PhonemeFeature::SIB => self.phflags |= PH_SIBILANT,
 
             // --- place of articulation ---
-            PhonemeFeature::BLB |
-            PhonemeFeature::BLD => self.set_place(PLACE_BILABIAL),
+            PhonemeFeature::BLB | PhonemeFeature::BLD => self.set_place(PLACE_BILABIAL),
             PhonemeFeature::LBD => self.set_place(PLACE_LABIODENTAL),
             PhonemeFeature::DNT => self.set_place(PLACE_DENTAL),
             PhonemeFeature::ALV => self.set_place(PLACE_ALVEOLAR),
@@ -248,33 +243,54 @@ impl PhonemeTab {
             PhonemeFeature::NSY => self.phflags |= PH_NONSYLLABIC,
 
             // --- not supported by eSpeak (silent accept) ---
-            PhonemeFeature::HGH | PhonemeFeature::SMH | PhonemeFeature::UMD |
-            PhonemeFeature::MID | PhonemeFeature::LMD | PhonemeFeature::SML |
-            PhonemeFeature::LOW |
-            PhonemeFeature::FNT | PhonemeFeature::CNT | PhonemeFeature::BCK |
-            PhonemeFeature::UNR | PhonemeFeature::RND |
-            PhonemeFeature::LGL | PhonemeFeature::IDT |
-            PhonemeFeature::APC | PhonemeFeature::LMN |
-            PhonemeFeature::EGS | PhonemeFeature::IGS |
-            PhonemeFeature::BRV | PhonemeFeature::SLV | PhonemeFeature::STV |
-            PhonemeFeature::CRV | PhonemeFeature::GLC |
-            PhonemeFeature::PTR | PhonemeFeature::CMP |
-            PhonemeFeature::MRD | PhonemeFeature::LRD |
-            PhonemeFeature::SYL |
-            PhonemeFeature::ASP | PhonemeFeature::NRS |
-            PhonemeFeature::LRS | PhonemeFeature::UNX |
-            PhonemeFeature::VZD | PhonemeFeature::FZD |
-            PhonemeFeature::NZD | PhonemeFeature::RZD |
-            PhonemeFeature::ATR | PhonemeFeature::RTR |
-            PhonemeFeature::FTS | PhonemeFeature::LNS |
-            PhonemeFeature::EST | PhonemeFeature::HLG => { /* not supported */ }
+            PhonemeFeature::HGH
+            | PhonemeFeature::SMH
+            | PhonemeFeature::UMD
+            | PhonemeFeature::MID
+            | PhonemeFeature::LMD
+            | PhonemeFeature::SML
+            | PhonemeFeature::LOW
+            | PhonemeFeature::FNT
+            | PhonemeFeature::CNT
+            | PhonemeFeature::BCK
+            | PhonemeFeature::UNR
+            | PhonemeFeature::RND
+            | PhonemeFeature::LGL
+            | PhonemeFeature::IDT
+            | PhonemeFeature::APC
+            | PhonemeFeature::LMN
+            | PhonemeFeature::EGS
+            | PhonemeFeature::IGS
+            | PhonemeFeature::BRV
+            | PhonemeFeature::SLV
+            | PhonemeFeature::STV
+            | PhonemeFeature::CRV
+            | PhonemeFeature::GLC
+            | PhonemeFeature::PTR
+            | PhonemeFeature::CMP
+            | PhonemeFeature::MRD
+            | PhonemeFeature::LRD
+            | PhonemeFeature::SYL
+            | PhonemeFeature::ASP
+            | PhonemeFeature::NRS
+            | PhonemeFeature::LRS
+            | PhonemeFeature::UNX
+            | PhonemeFeature::VZD
+            | PhonemeFeature::FZD
+            | PhonemeFeature::NZD
+            | PhonemeFeature::RZD
+            | PhonemeFeature::ATR
+            | PhonemeFeature::RTR
+            | PhonemeFeature::FTS
+            | PhonemeFeature::LNS
+            | PhonemeFeature::EST
+            | PhonemeFeature::HLG => { /* not supported */ }
 
             // --- coarticulation: pzd sets palatal flag ---
             PhonemeFeature::PZD => self.phflags |= PH_PALATAL,
 
             // --- length ---
-            PhonemeFeature::LNG |
-            PhonemeFeature::ELG => self.phflags |= PH_LONG, // FIXME: elg should be longer
+            PhonemeFeature::LNG | PhonemeFeature::ELG => self.phflags |= PH_LONG, // FIXME: elg should be longer
 
             // --- unknown ---
             _ => return Err(Error::UnknownPhonemeFeature(feat)),
@@ -315,8 +331,8 @@ mod tests {
 
     #[test]
     fn from_str_wrong_length() {
-        assert_eq!(PhonemeFeature::from_str(""),     None);
-        assert_eq!(PhonemeFeature::from_str("na"),   None);
+        assert_eq!(PhonemeFeature::from_str(""), None);
+        assert_eq!(PhonemeFeature::from_str("na"), None);
         assert_eq!(PhonemeFeature::from_str("nasal"), None);
     }
 
@@ -481,9 +497,14 @@ mod tests {
     fn unsupported_features_ok() {
         let mut ph = blank();
         for feat in &[
-            PhonemeFeature::HGH, PhonemeFeature::VWL, PhonemeFeature::LOW,
-            PhonemeFeature::FNT, PhonemeFeature::RND, PhonemeFeature::ASP,
-            PhonemeFeature::ATR, PhonemeFeature::EST,
+            PhonemeFeature::HGH,
+            PhonemeFeature::VWL,
+            PhonemeFeature::LOW,
+            PhonemeFeature::FNT,
+            PhonemeFeature::RND,
+            PhonemeFeature::ASP,
+            PhonemeFeature::ATR,
+            PhonemeFeature::EST,
         ] {
             // should not error
             ph.apply_feature(*feat).ok();

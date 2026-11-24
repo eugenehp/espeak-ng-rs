@@ -57,10 +57,7 @@ impl Drop for TempDataGuard {
 }
 
 /// US table + UK RP table (closest to “GB” in this port’s phoneme data).
-const RUST_VOICES: &[(&str, &str)] = &[
-    ("en-us", "US (en-us)"),
-    ("en-rp", "UK (en-rp, RP)"),
-];
+const RUST_VOICES: &[(&str, &str)] = &[("en-us", "US (en-us)"), ("en-rp", "UK (en-rp, RP)")];
 
 /// Voices to try with the **espeak-ng** CLI for a GB vs US sanity check.
 const CLI_VOICES: &[(&str, &str)] = &[
@@ -80,11 +77,7 @@ fn main() -> std::io::Result<()> {
     println!("Using data dir: {}", data_dir.display());
     let _ = try_set_espeak_data_path_for_cli(data_dir);
 
-    let samples = [
-        "When choices cease",
-        "unseen",
-        "seen or unseen,",
-    ];
+    let samples = ["When choices cease", "unseen", "seen or unseen,"];
 
     println!("\n--- Rust Translator (shared data dir) ---\n");
     let mut rust_rows: Vec<Vec<String>> = Vec::new();
@@ -97,7 +90,10 @@ fn main() -> std::io::Result<()> {
             eprintln!("failed to create translator for {voice}: {e}");
             std::process::exit(1);
         });
-        println!("Voice {voice} — {label} (normalised tag: {})", t.options.lang);
+        println!(
+            "Voice {voice} — {label} (normalised tag: {})",
+            t.options.lang
+        );
         for (i, text) in samples.iter().enumerate() {
             match t.text_to_ipa(text) {
                 Ok(ipa) => {

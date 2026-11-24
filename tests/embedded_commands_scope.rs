@@ -14,7 +14,11 @@ fn samples(markup: &[&str]) -> usize {
         .args(markup)
         .output()
         .expect("run cli");
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     out.stdout.len().saturating_sub(44) / 2
 }
 
@@ -34,7 +38,10 @@ fn embedded_rate_applies_from_its_position() {
     let midway = samples(&["--stdout", "one two \u{1}20S three four"]);
 
     assert!(normal > 0, "no audio");
-    assert!(from_start > normal, "a slow rate should lengthen: {from_start} vs {normal}");
+    assert!(
+        from_start > normal,
+        "a slow rate should lengthen: {from_start} vs {normal}"
+    );
     // The words before the command keep the normal rate, so slowing from the
     // middle lengthens *less* than slowing from the start.
     assert!(
@@ -44,7 +51,10 @@ fn embedded_rate_applies_from_its_position() {
 
     // A fast rate shortens.
     let fast = samples(&["--stdout", &format!("\u{1}400S {TEXT}")]);
-    assert!(fast < normal, "a fast rate should shorten: {fast} vs {normal}");
+    assert!(
+        fast < normal,
+        "a fast rate should shorten: {fast} vs {normal}"
+    );
 }
 
 /// The rate value is clamped to the `-s` range, so an extreme command can't
@@ -91,10 +101,21 @@ fn pitch_and_amplitude_commands_apply() {
     let quiet = run("one \u{1}20A two three");
 
     let close = |a: usize, b: usize| (a as f64 - b as f64).abs() / (a as f64) < 0.02;
-    assert!(close(normal.len(), high.len()),
-            "pitch should barely change the duration: {} vs {}", normal.len(), high.len());
+    assert!(
+        close(normal.len(), high.len()),
+        "pitch should barely change the duration: {} vs {}",
+        normal.len(),
+        high.len()
+    );
     assert_ne!(normal, high, "a pitch command should change the audio");
-    assert!(close(normal.len(), quiet.len()),
-            "amplitude should not change the duration: {} vs {}", normal.len(), quiet.len());
-    assert_ne!(normal, quiet, "an amplitude command should change the audio");
+    assert!(
+        close(normal.len(), quiet.len()),
+        "amplitude should not change the duration: {} vs {}",
+        normal.len(),
+        quiet.len()
+    );
+    assert_ne!(
+        normal, quiet,
+        "an amplitude command should change the audio"
+    );
 }

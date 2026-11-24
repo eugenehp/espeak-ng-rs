@@ -18,14 +18,23 @@ fn danish_is_units_first() {
     // Guard: it must NOT start with the tens word "tyve" (the old wrong order).
     let twenty = ipa("20");
     let twentyone = ipa("21");
-    assert!(!twentyone.starts_with(&twenty), "da 21 should be units-first, got {twentyone:?} (20={twenty:?})");
+    assert!(
+        !twentyone.starts_with(&twenty),
+        "da 21 should be units-first, got {twentyone:?} (20={twenty:?})"
+    );
     // 21 begins with the units cardinal "en".
-    assert!(twentyone.starts_with(&ipa("1")[..2]) || twentyone.starts_with('ˈ'),
-        "da 21 should begin with 'en': {twentyone:?}");
+    assert!(
+        twentyone.starts_with(&ipa("1")[..2]) || twentyone.starts_with('ˈ'),
+        "da 21 should begin with 'en': {twentyone:?}"
+    );
     // A compound ordinal suffixes the whole cardinal ("enogtyvende"), so 21.
     // extends 21 rather than reading a separate ordinal word.
-    assert!(ipa("21.").starts_with(&twentyone[..twentyone.len().min(6)]),
-        "da 21. should build on the 21 cardinal: {} vs {}", ipa("21."), twentyone);
+    assert!(
+        ipa("21.").starts_with(&twentyone[..twentyone.len().min(6)]),
+        "da 21. should build on the 21 cardinal: {} vs {}",
+        ipa("21."),
+        twentyone
+    );
 }
 
 #[test]
@@ -37,7 +46,11 @@ fn slovenian_is_units_first() {
     let ipa = |s: &str| t.text_to_ipa(s).unwrap();
     // 21 = "ena" + "in" + "dvajset" — must not start with the tens "dvajset".
     let twenty = ipa("20");
-    assert!(!ipa("21").starts_with(&twenty), "sl 21 should be units-first: {}", ipa("21"));
+    assert!(
+        !ipa("21").starts_with(&twenty),
+        "sl 21 should be units-first: {}",
+        ipa("21")
+    );
 }
 
 #[test]
@@ -48,7 +61,10 @@ fn tens_first_languages_unchanged() {
             eprintln!("[SKIP] no {lang} data");
             continue;
         };
-        assert!(t.text_to_ipa("21").unwrap().starts_with(sub),
-            "{lang} 21 should stay tens-first: {}", t.text_to_ipa("21").unwrap());
+        assert!(
+            t.text_to_ipa("21").unwrap().starts_with(sub),
+            "{lang} 21 should stay tens-first: {}",
+            t.text_to_ipa("21").unwrap()
+        );
     }
 }

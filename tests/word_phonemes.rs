@@ -27,7 +27,7 @@ fn words_reproduce_the_flat_rendering() {
         ("en-us", "a ( b ) c"),
         ("en", "[[h@l'oU]] world"),
         ("en", "~ ~ ~ ~"),
-        ("en", "његов hello"),   // a word this language's rules can't read
+        ("en", "његов hello"), // a word this language's rules can't read
         ("de", "3,14 und 1.000 Euro"),
         ("fr", "Les droits de l'homme, 1 234 567."),
         ("ru", "Все люди рождаются свободными 0,25"),
@@ -61,8 +61,15 @@ fn words_reproduce_the_flat_rendering() {
             .collect();
         assert_eq!(joined, flat, "{lang}: {text}");
         for w in &words {
-            assert!(!w.phonemes.is_empty(), "{lang}: empty pair for {:?}", w.word);
-            assert!(w.offset + w.length <= text.len(), "{lang}: span past the end");
+            assert!(
+                !w.phonemes.is_empty(),
+                "{lang}: empty pair for {:?}",
+                w.word
+            );
+            assert!(
+                w.offset + w.length <= text.len(),
+                "{lang}: span past the end"
+            );
             if w.length > 0 {
                 assert_eq!(
                     text[w.offset..w.offset + w.length].to_lowercase(),
@@ -85,8 +92,10 @@ fn one_token_can_map_to_several_spoken_words() {
     };
     let text = "Version 2.5 uses .NET.";
     let words = t.text_to_ipa_words(text).unwrap();
-    let pairs: Vec<(&str, &str)> =
-        words.iter().map(|w| (w.word.as_str(), w.phonemes.as_str())).collect();
+    let pairs: Vec<(&str, &str)> = words
+        .iter()
+        .map(|w| (w.word.as_str(), w.phonemes.as_str()))
+        .collect();
     assert_eq!(
         pairs,
         vec![

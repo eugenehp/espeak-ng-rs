@@ -11,7 +11,10 @@ use espeak_ng::Translator;
 fn en() -> Option<Translator> {
     match Translator::new_default("en") {
         Ok(t) => Some(t),
-        Err(_) => { eprintln!("[SKIP] no en dict"); None }
+        Err(_) => {
+            eprintln!("[SKIP] no en dict");
+            None
+        }
     }
 }
 
@@ -20,7 +23,10 @@ fn single_letter_acronyms_do_not_break_the_clause() {
     let Some(t) = en() else { return };
     for acronym in ["U.S.A.", "e.g.", "i.e.", "a.b", "a.m.", "p.m.", "I.B.M."] {
         let ipa = t.text_to_ipa(acronym).unwrap();
-        assert!(!ipa.contains('\n'), "{acronym:?} broke into clauses: {ipa:?}");
+        assert!(
+            !ipa.contains('\n'),
+            "{acronym:?} broke into clauses: {ipa:?}"
+        );
     }
 }
 
@@ -28,16 +34,25 @@ fn single_letter_acronyms_do_not_break_the_clause() {
 fn real_sentence_periods_still_break() {
     let Some(t) = en() else { return };
     // A period followed by whitespace is a real sentence end.
-    assert!(t.text_to_ipa("cat. Dog").unwrap().contains('\n'), "cat. Dog must break");
+    assert!(
+        t.text_to_ipa("cat. Dog").unwrap().contains('\n'),
+        "cat. Dog must break"
+    );
     // A single letter followed by ". " is a list marker / sentence — it breaks.
-    assert!(t.text_to_ipa("A. First").unwrap().contains('\n'), "A. First must break");
+    assert!(
+        t.text_to_ipa("A. First").unwrap().contains('\n'),
+        "A. First must break"
+    );
 }
 
 #[test]
 fn trailing_and_decimal_periods_unchanged() {
     let Some(t) = en() else { return };
     // Trailing period after a real word: one clause, no dangling break mid-text.
-    assert!(!t.text_to_ipa("end.").unwrap().contains('\n'), "end. is one clause");
+    assert!(
+        !t.text_to_ipa("end.").unwrap().contains('\n'),
+        "end. is one clause"
+    );
     // "3.14" stays a decimal ("three point one four"), not a broken pair.
     let dec = t.text_to_ipa("3.14").unwrap();
     assert!(!dec.contains('\n'), "3.14 must not break: {dec:?}");
@@ -62,9 +77,18 @@ fn period_between_digits_in_comma_decimal_locale() {
     // German writes decimals with a comma, so a period between digits is not a
     // decimal separator — espeak reads it as the "." symbol ("punkt"): "3.14" →
     // "drei punkt vierzehn" (14 as a whole number, not digit-by-digit).
-    let Ok(t) = Translator::new_default("de") else { eprintln!("[SKIP] no de dict"); return };
+    let Ok(t) = Translator::new_default("de") else {
+        eprintln!("[SKIP] no de dict");
+        return;
+    };
     let ipa = t.text_to_ipa("3.14").unwrap();
     assert!(!ipa.contains('\n'), "de 3.14 must not break: {ipa:?}");
-    assert!(ipa.contains("pˈʊŋkt"), "de 3.14 reads '.' as punkt: {ipa:?}");
-    assert!(ipa.contains("fˈɪɾtseːn"), "de 3.14 reads 14 as vierzehn: {ipa:?}");
+    assert!(
+        ipa.contains("pˈʊŋkt"),
+        "de 3.14 reads '.' as punkt: {ipa:?}"
+    );
+    assert!(
+        ipa.contains("fˈɪɾtseːn"),
+        "de 3.14 reads 14 as vierzehn: {ipa:?}"
+    );
 }

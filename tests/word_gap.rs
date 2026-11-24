@@ -10,7 +10,10 @@ use espeak_ng::Translator;
 fn word_gap_adds_one_pause_per_word() {
     let mut t = match Translator::new("en", None) {
         Ok(t) if t.translate_to_codes("two words").is_ok() => t,
-        _ => { eprintln!("[SKIP] no en data"); return }
+        _ => {
+            eprintln!("[SKIP] no en data");
+            return;
+        }
     };
     let base = t.translate_to_codes("two words").unwrap().len();
 
@@ -25,7 +28,10 @@ fn word_gap_adds_one_pause_per_word() {
 fn no_word_gap_by_default() {
     let t = match Translator::new("en", None) {
         Ok(t) if t.translate_to_codes("hello").is_ok() => t,
-        _ => { eprintln!("[SKIP] no en data"); return }
+        _ => {
+            eprintln!("[SKIP] no en data");
+            return;
+        }
     };
     // Default word_gap is 0, so codes are unchanged from a fresh translator.
     assert_eq!(t.options.word_gap, 0);

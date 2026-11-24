@@ -6,7 +6,7 @@
 // files (phondata, phonindex, phontab, *_dict).  They gracefully skip if
 // the data files are not present at the default path.
 
-use espeak_ng::{text_to_pcm, text_to_ipa, Synthesizer, VoiceParams};
+use espeak_ng::{text_to_ipa, text_to_pcm, Synthesizer, VoiceParams};
 
 mod common;
 use common::{data_available, ESPEAK_DATA_DIR};
@@ -18,8 +18,6 @@ use common::{data_available, ESPEAK_DATA_DIR};
 fn has_audio(pcm: &[i16], min_peak: i16) -> bool {
     pcm.iter().any(|&s| s.unsigned_abs() > min_peak as u16)
 }
-
-
 
 // ---------------------------------------------------------------------------
 // text_to_pcm — basic smoke tests
@@ -36,8 +34,11 @@ fn text_to_pcm_en_hello() {
     assert!(!pcm.is_empty(), "PCM buffer should be non-empty");
     assert!(has_audio(&pcm, 100), "Expected audible audio for 'hello'");
     // At least 100ms of audio (2205 samples)
-    assert!(pcm.len() > 2200,
-        "Expected at least 100ms of audio, got {} samples", pcm.len());
+    assert!(
+        pcm.len() > 2200,
+        "Expected at least 100ms of audio, got {} samples",
+        pcm.len()
+    );
 }
 
 #[test]
@@ -71,9 +72,12 @@ fn text_to_pcm_longer_phrase_is_longer() {
     }
     let (short_pcm, _) = text_to_pcm("en", "hi").expect("short ok");
     let (long_pcm, _) = text_to_pcm("en", "hello beautiful world").expect("long ok");
-    assert!(long_pcm.len() > short_pcm.len(),
+    assert!(
+        long_pcm.len() > short_pcm.len(),
         "Longer text should produce more samples: short={}, long={}",
-        short_pcm.len(), long_pcm.len());
+        short_pcm.len(),
+        long_pcm.len()
+    );
 }
 
 #[test]
@@ -84,7 +88,10 @@ fn text_to_pcm_de_guten_tag() {
     }
     let (pcm, _) = text_to_pcm("de", "guten Tag").expect("German ok");
     assert!(!pcm.is_empty());
-    assert!(has_audio(&pcm, 100), "German synthesis should produce audio");
+    assert!(
+        has_audio(&pcm, 100),
+        "German synthesis should produce audio"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -97,9 +104,9 @@ fn klatt_path_renders_and_differs_from_harmonic() {
         println!("[SKIP] no data");
         return;
     }
-    use std::path::Path;
     use espeak_ng::phoneme::PhonemeData;
     use espeak_ng::translate::Translator;
+    use std::path::Path;
 
     let mut phdata = PhonemeData::load(Path::new(ESPEAK_DATA_DIR)).expect("phdata");
     phdata.select_table_by_name("en").expect("en table");
@@ -113,7 +120,9 @@ fn klatt_path_renders_and_differs_from_harmonic() {
     // Opt-in Klatt path.
     let mut vp = VoiceParams::default();
     vp.klatt = true;
-    let klatt = Synthesizer::new(vp).synthesize_codes(&codes, &phdata).expect("klatt");
+    let klatt = Synthesizer::new(vp)
+        .synthesize_codes(&codes, &phdata)
+        .expect("klatt");
 
     assert!(!klatt.is_empty(), "Klatt produced no audio");
     assert!(has_audio(&klatt, 100), "Klatt output should be audible");
@@ -129,9 +138,9 @@ fn synthesize_codes_via_translate_to_codes() {
         println!("[SKIP] espeak-ng data not found at {ESPEAK_DATA_DIR}");
         return;
     }
-    use std::path::Path;
     use espeak_ng::phoneme::PhonemeData;
     use espeak_ng::translate::Translator;
+    use std::path::Path;
 
     let data_path = Path::new(ESPEAK_DATA_DIR);
     let mut phdata = PhonemeData::load(data_path).expect("load phoneme data");
@@ -142,8 +151,15 @@ fn synthesize_codes_via_translate_to_codes() {
     assert!(!codes.is_empty(), "Should produce phoneme codes");
 
     // All real phoneme codes should be > 7 (not just stress markers)
-    let real_phonemes: Vec<_> = codes.iter().filter(|c| c.code > 7 && !c.is_boundary).collect();
-    assert!(!real_phonemes.is_empty(), "Should have real phonemes: {:?}", codes);
+    let real_phonemes: Vec<_> = codes
+        .iter()
+        .filter(|c| c.code > 7 && !c.is_boundary)
+        .collect();
+    assert!(
+        !real_phonemes.is_empty(),
+        "Should have real phonemes: {:?}",
+        codes
+    );
 
     let synth = Synthesizer::new(VoiceParams::default());
     let pcm = synth.synthesize_codes(&codes, &phdata).expect("synthesize");
@@ -191,9 +207,9 @@ fn spoken_duration_scales_with_speed() {
         println!("[SKIP] espeak-ng data not found at {ESPEAK_DATA_DIR}");
         return;
     }
-    use std::path::Path;
     use espeak_ng::phoneme::PhonemeData;
     use espeak_ng::translate::Translator;
+    use std::path::Path;
 
     let data_path = Path::new(ESPEAK_DATA_DIR);
     let mut phdata = PhonemeData::load(data_path).expect("load");
@@ -208,11 +224,19 @@ fn spoken_duration_scales_with_speed() {
     let mut fast_voice = VoiceParams::default();
     fast_voice.speed_percent = 200; // double speed
 
-    let normal = Synthesizer::new(normal_voice).synthesize_codes(&codes, &phdata).unwrap();
-    let fast   = Synthesizer::new(fast_voice).synthesize_codes(&codes, &phdata).unwrap();
+    let normal = Synthesizer::new(normal_voice)
+        .synthesize_codes(&codes, &phdata)
+        .unwrap();
+    let fast = Synthesizer::new(fast_voice)
+        .synthesize_codes(&codes, &phdata)
+        .unwrap();
 
-    assert!(fast.len() < normal.len(),
-        "Double speed should halve duration: normal={}, fast={}", normal.len(), fast.len());
+    assert!(
+        fast.len() < normal.len(),
+        "Double speed should halve duration: normal={}, fast={}",
+        normal.len(),
+        fast.len()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -225,9 +249,9 @@ fn vowel_has_higher_rms_than_silence() {
         println!("[SKIP]");
         return;
     }
-    use std::path::Path;
     use espeak_ng::phoneme::PhonemeData;
     use espeak_ng::translate::Translator;
+    use std::path::Path;
 
     let data_path = Path::new(ESPEAK_DATA_DIR);
     let mut phdata = PhonemeData::load(data_path).expect("load");

@@ -22,8 +22,14 @@ fn cyrillic_word_is_spelled_not_switched() {
         return;
     };
     let out = en.text_to_ipa("hello мир").unwrap();
-    assert_eq!(out, "həlˈəʊ ˈɛm ˈɪː ˈɛr", "Cyrillic should be spelled: {out}");
-    assert!(!out.contains("(ru)"), "no voice switch for a spelled script: {out}");
+    assert_eq!(
+        out, "həlˈəʊ ˈɛm ˈɪː ˈɛr",
+        "Cyrillic should be spelled: {out}"
+    );
+    assert!(
+        !out.contains("(ru)"),
+        "no voice switch for a spelled script: {out}"
+    );
 
     // A leading Cyrillic word spells too, and the Latin word still reads.
     let out = en.text_to_ipa("Привет world").unwrap();
@@ -38,12 +44,16 @@ fn al_words_scripts_switch_translator() {
         eprintln!("[SKIP] no en data");
         return;
     };
-    for (text, target) in [("مرحبا", "(ar)"), ("नमस्ते", "(hi)"), ("안녕하세요", "(ko)")] {
+    for (text, target) in [("مرحبا", "(ar)"), ("नमस्ते", "(hi)"), ("안녕하세요", "(ko)")]
+    {
         if tr(target.trim_matches(|c| c == '(' || c == ')')).is_none() {
             continue;
         }
         let out = en.text_to_ipa(text).unwrap();
-        assert!(out.contains(target), "{text} should switch to {target}: {out}");
+        assert!(
+            out.contains(target),
+            "{text} should switch to {target}: {out}"
+        );
     }
 }
 
@@ -55,11 +65,17 @@ fn unspellable_scripts_fall_back_to_a_voice() {
     let Some(en) = tr("en") else { return };
     if tr("cmn").is_some() {
         let out = en.text_to_ipa("你好").unwrap();
-        assert!(out.contains("(cmn)"), "Han should fall back to a voice: {out}");
+        assert!(
+            out.contains("(cmn)"),
+            "Han should fall back to a voice: {out}"
+        );
     }
     if tr("he").is_some() {
         let out = en.text_to_ipa("שלום").unwrap();
-        assert!(out.contains("(he)"), "Hebrew should fall back to a voice: {out}");
+        assert!(
+            out.contains("(he)"),
+            "Hebrew should fall back to a voice: {out}"
+        );
     }
 }
 
@@ -67,10 +83,16 @@ fn unspellable_scripts_fall_back_to_a_voice() {
 fn native_and_latin_scripts_do_not_switch() {
     // A Cyrillic voice reads Cyrillic itself — no switch marker.
     if let Some(ru) = tr("ru") {
-        assert!(!ru.text_to_ipa("мир").unwrap().contains("(ru)"), "ru reads Cyrillic natively");
+        assert!(
+            !ru.text_to_ipa("мир").unwrap().contains("(ru)"),
+            "ru reads Cyrillic natively"
+        );
     }
     // Latin text in a Latin voice is untouched (no switch).
     if let Some(en) = tr("en") {
-        assert!(!en.text_to_ipa("café").unwrap().contains("(ru)"), "Latin word not switched");
+        assert!(
+            !en.text_to_ipa("café").unwrap().contains("(ru)"),
+            "Latin word not switched"
+        );
     }
 }

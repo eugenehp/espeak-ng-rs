@@ -18,7 +18,10 @@ fn main() -> std::io::Result<()> {
     std::fs::create_dir_all(&data_dir)?;
 
     println!("Selected bundled languages: {:?}", selected);
-    println!("Installing selective bundled data -> {}", data_dir.display());
+    println!(
+        "Installing selective bundled data -> {}",
+        data_dir.display()
+    );
     espeak_ng::install_bundled_languages(&data_dir, selected)?;
 
     let samples = [

@@ -29,5 +29,9 @@ fn leading_zero_numbers_spell_the_zeros() {
     assert_eq!(ipa("0"), zero);
     assert_eq!(ipa("7"), seven);
     assert_eq!(ipa("42"), "fˈɔːti tˈuː");
-    assert!(ipa("0.5").starts_with(&zero), "0.5 keeps 'zero point five': {}", ipa("0.5"));
+    assert!(
+        ipa("0.5").starts_with(&zero),
+        "0.5 keeps 'zero point five': {}",
+        ipa("0.5")
+    );
 }

@@ -124,12 +124,18 @@ mod tests {
             eprintln!("[SKIP] no en data");
             return;
         }
-        let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
         rt.block_on(async {
             let e = engine();
             let (pcm, rate) = synth(Arc::clone(&e), "hello world").await.unwrap();
             assert_eq!(rate, e.sample_rate());
-            assert_eq!(pcm, e.synth("hello world").unwrap().0, "async result must match sync");
+            assert_eq!(
+                pcm,
+                e.synth("hello world").unwrap().0,
+                "async result must match sync"
+            );
         });
     }
 
@@ -162,7 +168,11 @@ mod tests {
             assert!(chunks > 1, "a four-clause utterance should stream >1 chunk");
             assert_eq!(finals, 1, "exactly one final chunk");
             assert!(final_events > 0, "events are delivered on the final chunk");
-            assert_eq!(all, e.synth(TEXT).unwrap().0, "streamed audio must match sync");
+            assert_eq!(
+                all,
+                e.synth(TEXT).unwrap().0,
+                "streamed audio must match sync"
+            );
         });
     }
 

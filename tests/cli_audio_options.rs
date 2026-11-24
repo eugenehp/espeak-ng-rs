@@ -76,7 +76,10 @@ fn break_lengths_follow_the_tag() {
     let strong = delta(r#"one<break strength="x-strong"/>two"#);
     assert!(weak > 50 && weak < 200, "weak = {weak}");
     assert!(medium > weak, "medium {medium} <= weak {weak}");
-    assert!(strong > medium + 300, "x-strong {strong} vs medium {medium}");
+    assert!(
+        strong > medium + 300,
+        "x-strong {strong} vs medium {medium}"
+    );
     // `none` adds nothing — but still keeps the two words apart.
     assert_eq!(delta(r#"one<break strength="none"/>two"#), 0);
 }
@@ -110,10 +113,12 @@ fn split_writes_numbered_parts() {
         .collect::<Vec<_>>()
         .join(" ");
     let base = tmp("split.wav");
-    let part = |n: u32| base.with_file_name(format!(
-        "{}_{n:02}.wav",
-        base.file_stem().unwrap().to_string_lossy()
-    ));
+    let part = |n: u32| {
+        base.with_file_name(format!(
+            "{}_{n:02}.wav",
+            base.file_stem().unwrap().to_string_lossy()
+        ))
+    };
     for n in 1..=3 {
         let _ = std::fs::remove_file(part(n));
     }
@@ -134,7 +139,10 @@ fn split_writes_numbered_parts() {
     assert!(first > 60_000, "first part is only {first} ms");
     let total: u64 = (1..=2).map(|n| wav_ms(&part(n))).sum();
     let whole = speak_ms(&[&text]);
-    assert!(total.abs_diff(whole) < 500, "split {total} ms vs whole {whole} ms");
+    assert!(
+        total.abs_diff(whole) < 500,
+        "split {total} ms vs whole {whole} ms"
+    );
     for n in 1..=2 {
         let _ = std::fs::remove_file(part(n));
     }
@@ -156,7 +164,14 @@ fn load_reads_a_voice_definition_from_a_file() {
         let out = Command::new(bin()).args(args).output().expect("run");
         String::from_utf8_lossy(&out.stdout).trim().to_string()
     };
-    let loaded = x(&["-q", "-x", "--load", "-v", file.to_str().unwrap(), "hallo welt"]);
+    let loaded = x(&[
+        "-q",
+        "-x",
+        "--load",
+        "-v",
+        file.to_str().unwrap(),
+        "hallo welt",
+    ]);
     assert_eq!(loaded, x(&["-q", "-x", "-v", "de", "hallo welt"]));
 
     // The file's `pitch` is applied, so the audio is not the stock voice's.

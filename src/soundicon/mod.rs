@@ -49,7 +49,10 @@ impl SoundIconTable {
     /// Create an empty table targeting `sample_rate` Hz (icons are resampled to
     /// this rate on load).
     pub fn new(sample_rate: u32) -> Self {
-        SoundIconTable { icons: Vec::new(), sample_rate: sample_rate.max(1) }
+        SoundIconTable {
+            icons: Vec::new(),
+            sample_rate: sample_rate.max(1),
+        }
     }
 
     /// Number of registered icons.
@@ -69,14 +72,22 @@ impl SoundIconTable {
 
     /// The decoded PCM of icon `idx` (empty slice if out of range / unloaded).
     pub fn samples(&self, idx: usize) -> &[i16] {
-        self.icons.get(idx).map(|i| i.samples.as_slice()).unwrap_or(&[])
+        self.icons
+            .get(idx)
+            .map(|i| i.samples.as_slice())
+            .unwrap_or(&[])
     }
 
     /// Register (and eagerly load) a punctuation → file mapping.  Mirrors the
     /// `soundicon <char> <file>` voice directive; returns the icon index.
     ///
     /// `base_dir` resolves relative paths (typically `<data>/soundicons`).
-    pub fn register_punct(&mut self, ch: char, path: impl Into<PathBuf>, base_dir: &Path) -> Result<usize> {
+    pub fn register_punct(
+        &mut self,
+        ch: char,
+        path: impl Into<PathBuf>,
+        base_dir: &Path,
+    ) -> Result<usize> {
         // If this character is already registered, reload it in place.
         if let Some(idx) = self.icons.iter().position(|i| i.name == Some(ch)) {
             self.icons[idx].filename = Some(path.into());
@@ -87,7 +98,11 @@ impl SoundIconTable {
         if self.icons.len() >= N_SOUNDICON_TAB {
             return Err(Error::InvalidData("soundicon table full".into()));
         }
-        self.icons.push(SoundIcon { name: Some(ch), samples: Vec::new(), filename: Some(path.into()) });
+        self.icons.push(SoundIcon {
+            name: Some(ch),
+            samples: Vec::new(),
+            filename: Some(path.into()),
+        });
         let idx = self.icons.len() - 1;
         self.load(idx, base_dir)?;
         Ok(idx)
@@ -108,7 +123,11 @@ impl SoundIconTable {
     /// Mirrors `LoadSoundFile2`; returns the icon index.
     pub fn load_file(&mut self, path: impl Into<PathBuf>, base_dir: &Path) -> Result<usize> {
         let path = path.into();
-        if let Some(idx) = self.icons.iter().position(|i| i.filename.as_deref() == Some(path.as_path())) {
+        if let Some(idx) = self
+            .icons
+            .iter()
+            .position(|i| i.filename.as_deref() == Some(path.as_path()))
+        {
             if self.icons[idx].samples.is_empty() {
                 self.load(idx, base_dir)?;
             }
@@ -117,7 +136,11 @@ impl SoundIconTable {
         if self.icons.len() >= N_SOUNDICON_TAB {
             return Err(Error::InvalidData("soundicon table full".into()));
         }
-        self.icons.push(SoundIcon { name: None, samples: Vec::new(), filename: Some(path) });
+        self.icons.push(SoundIcon {
+            name: None,
+            samples: Vec::new(),
+            filename: Some(path),
+        });
         let idx = self.icons.len() - 1;
         self.load(idx, base_dir)?;
         Ok(idx)
@@ -311,9 +334,7 @@ fn get_attr(inner: &str, key: &str) -> Option<String> {
     let mut i = 0;
     while i + key_l.len() < bytes.len() {
         // Match `key` as a whole word followed by optional space then `=`.
-        if starts_with_ci(&bytes, i, &key_l)
-            && (i == 0 || bytes[i - 1].is_whitespace())
-        {
+        if starts_with_ci(&bytes, i, &key_l) && (i == 0 || bytes[i - 1].is_whitespace()) {
             let mut j = i + key_l.len();
             while j < bytes.len() && bytes[j].is_whitespace() {
                 j += 1;
@@ -538,7 +559,11 @@ mod tests {
         let pieces = split_pieces("a#b", &mut table, &dir, false);
         assert_eq!(
             pieces,
-            vec![Piece::Text("a".into()), Piece::Icon(idx), Piece::Text("b".into())]
+            vec![
+                Piece::Text("a".into()),
+                Piece::Icon(idx),
+                Piece::Text("b".into())
+            ]
         );
         let _ = std::fs::remove_file(&path);
     }
@@ -583,8 +608,14 @@ mod tests {
     #[test]
     fn get_attr_variants() {
         assert_eq!(get_attr("audio src=\"a.wav\"", "src"), Some("a.wav".into()));
-        assert_eq!(get_attr("audio src='b.wav' foo='1'", "src"), Some("b.wav".into()));
-        assert_eq!(get_attr("audio  src = \"c.wav\"", "src"), Some("c.wav".into()));
+        assert_eq!(
+            get_attr("audio src='b.wav' foo='1'", "src"),
+            Some("b.wav".into())
+        );
+        assert_eq!(
+            get_attr("audio  src = \"c.wav\"", "src"),
+            Some("c.wav".into())
+        );
         assert_eq!(get_attr("audio data-src='x'", "src"), None);
     }
 
@@ -593,6 +624,11 @@ mod tests {
         let out = scale_icon_samples(&[10000, -10000]);
         // ≈ 0.916× (arithmetic shift floors negatives, so ±1 asymmetry is OK).
         assert!((out[0] - 9160).abs() < 200, "scaled {}", out[0]);
-        assert!((out[1] + out[0]).abs() <= 1, "asymmetric: {} vs {}", out[0], out[1]);
+        assert!(
+            (out[1] + out[0]).abs() <= 1,
+            "asymmetric: {} vs {}",
+            out[0],
+            out[1]
+        );
     }
 }

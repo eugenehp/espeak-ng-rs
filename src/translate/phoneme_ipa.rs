@@ -41,7 +41,9 @@ pub fn write_ph_mnemonic_ipa(phdata: &PhonemeData, code: u8, nb: &Neighbours) ->
     };
 
     if ph.program != 0 {
-        let fx = interpret_phoneme(ph.program, &phdata.phonindex, nb, |c| phdata.get(c).cloned());
+        let fx = interpret_phoneme(ph.program, &phdata.phonindex, nb, |c| {
+            phdata.get(c).cloned()
+        });
         if let Some(s) = fx.ipa_string.as_deref() {
             let b = s.as_bytes();
             // A leading space is C's "this phoneme has no IPA name" marker.
@@ -123,7 +125,15 @@ pub fn codes_to_ipa_tied(
     preserve_punctuation: bool,
     tie: Option<char>,
 ) -> String {
-    codes_to_ipa_opts(codes, phdata, data_dir, lang, preserve_punctuation, tie, None)
+    codes_to_ipa_opts(
+        codes,
+        phdata,
+        data_dir,
+        lang,
+        preserve_punctuation,
+        tie,
+        None,
+    )
 }
 
 /// [`codes_to_ipa`] with both of upstream's phoneme-name options: `tie` goes
@@ -146,8 +156,7 @@ pub fn codes_to_ipa_opts(
     sep: Option<char>,
 ) -> String {
     // Indices of the codes that are actual sounds, for neighbour lookups.
-    let is_sound =
-        |c: &PhonemeCode| !c.is_boundary && c.code > 8 && c.code != PHON_END_WORD;
+    let is_sound = |c: &PhonemeCode| !c.is_boundary && c.code > 8 && c.code != PHON_END_WORD;
     let real: Vec<usize> = codes
         .iter()
         .enumerate()
@@ -235,7 +244,9 @@ pub fn codes_to_ipa_opts(
                 None
             } else {
                 PhonemeData::load(data_dir).ok().and_then(|mut d| {
-                    super::select_phoneme_table(&mut d, data_dir, target).ok().map(|_| d)
+                    super::select_phoneme_table(&mut d, data_dir, target)
+                        .ok()
+                        .map(|_| d)
                 })
             };
             continue;
@@ -323,7 +334,12 @@ pub fn codes_to_ipa_opts(
         }
     }
     let _ = straight_quote_open;
-    out.split('\n').map(str::trim).collect::<Vec<_>>().join("\n").trim_end().to_string()
+    out.split('\n')
+        .map(str::trim)
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim_end()
+        .to_string()
 }
 
 /// The neighbour context for the phoneme that is `real[n]`, built the same way
@@ -392,16 +408,17 @@ mod tests {
 
     fn data() -> Option<PhonemeData> {
         let dir = std::path::Path::new("espeak-ng-data");
-        dir.join("phontab").exists().then(|| PhonemeData::load(dir).ok())?
+        dir.join("phontab")
+            .exists()
+            .then(|| PhonemeData::load(dir).ok())?
     }
 
     /// The mnemonic fallback keeps a vowel's `-` (French `@-` → `ə-`) and drops
     /// a `/` variant, a leading `_`, a consonant-only `#`, and later digits.
     #[test]
     fn mnemonic_fallback_matches_c() {
-        let p = |s: &str, v: bool| {
-            mnemonic_to_ipa_c(crate::phoneme::PhonemeTab::pack_mnemonic(s), v)
-        };
+        let p =
+            |s: &str, v: bool| mnemonic_to_ipa_c(crate::phoneme::PhonemeTab::pack_mnemonic(s), v);
         assert_eq!(p("@-", true), "ə-");
         assert_eq!(p("a/2", true), "a");
         assert_eq!(p("_:", false), "");
@@ -419,8 +436,7 @@ mod tests {
         if phdata.select_table_by_name("es").is_err() {
             return;
         }
-        let code = (0..255u8)
-            .find(|&c| phdata.get(c).is_some_and(|p| p.mnemonic_str() == "i;"));
+        let code = (0..255u8).find(|&c| phdata.get(c).is_some_and(|p| p.mnemonic_str() == "i;"));
         let Some(code) = code else { return };
         assert_eq!(
             write_ph_mnemonic_ipa(&phdata, code, &Neighbours::default()),

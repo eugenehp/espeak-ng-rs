@@ -51,7 +51,10 @@ fn replacement_text_is_translated_by_the_rules() {
         assert_eq!(t.text_to_ipa("™").unwrap(), "tidʒaɾˈɪ markˈa iʃaɾetˈɪ");
     }
     if let Some(t) = tr("pt") {
-        assert_eq!(t.text_to_ipa("™").unwrap(), "sˈi\u{303}mbulʊ dɨ mˈaɾkɐ ʁˌeʒiʃtɾˈadɐ");
+        assert_eq!(
+            t.text_to_ipa("™").unwrap(),
+            "sˈi\u{303}mbulʊ dɨ mˈaɾkɐ ʁˌeʒiʃtɾˈadɐ"
+        );
         assert_eq!(t.text_to_ipa("©").unwrap(), "sˈi\u{303}mbulʊ dɨ kˌɔpiɹˈaɪt");
     }
 }

@@ -27,9 +27,15 @@ fn katakana_reads_identically_to_hiragana() {
     }
     // The prolonged-sound mark ー lengthens the preceding vowel (ハート → haːto).
     let haato = ipa("ハート");
-    assert!(haato.contains('ː'), "ハート should carry a long vowel: {haato}");
+    assert!(
+        haato.contains('ː'),
+        "ハート should carry a long vowel: {haato}"
+    );
     // A longer loanword with several ー marks still reads.
-    assert!(!ipa("コンピューター").trim().is_empty(), "コンピューター should read");
+    assert!(
+        !ipa("コンピューター").trim().is_empty(),
+        "コンピューター should read"
+    );
 }
 
 #[test]
@@ -44,17 +50,30 @@ fn voiced_and_semivoiced_kana_are_pronounced() {
     };
     let ipa = |s: &str| t.text_to_ipa(s).unwrap();
     // (voiced kana, an IPA fragment its sound must contain)
-    for (kana, frag) in [("が", "ɡ"), ("ざ", "z"), ("だ", "d"), ("ば", "b"),
-                         ("ぱ", "p"), ("ご", "ɡ"), ("ぷ", "p")] {
+    for (kana, frag) in [
+        ("が", "ɡ"),
+        ("ざ", "z"),
+        ("だ", "d"),
+        ("ば", "b"),
+        ("ぱ", "p"),
+        ("ご", "ɡ"),
+        ("ぷ", "p"),
+    ] {
         let got = ipa(kana);
         assert!(!got.trim().is_empty(), "{kana} produced nothing");
-        assert!(got.contains(frag), "{kana} should voice to contain {frag:?}: {got}");
+        assert!(
+            got.contains(frag),
+            "{kana} should voice to contain {frag:?}: {got}"
+        );
     }
     // 'da' must differ from unvoiced 'ta'.
     assert_ne!(ipa("だ"), ipa("た"), "だ (da) must differ from た (ta)");
     // A real voiced word reads in full (だいがく = daigaku, university).
     let daigaku = ipa("だいがく");
-    assert!(daigaku.starts_with('d') && daigaku.contains('ɡ'), "だいがく: {daigaku}");
+    assert!(
+        daigaku.starts_with('d') && daigaku.contains('ɡ'),
+        "だいがく: {daigaku}"
+    );
     // Voiced katakana too (ダ = だ).
     assert_eq!(ipa("ダ"), ipa("だ"), "voiced katakana ダ should equal だ");
 }
@@ -69,7 +88,10 @@ fn katakana_emoji_descriptions_are_spoken() {
     let ipa = |s: &str| t.text_to_ipa(s).unwrap();
     // ⭐ "スター", 👍 "サムズアップ" — katakana descriptions now produce phonemes.
     for emo in ["⭐", "👍"] {
-        assert!(!ipa(emo).trim().is_empty(), "ja {emo} should be spoken, not silent");
+        assert!(
+            !ipa(emo).trim().is_empty(),
+            "ja {emo} should be spoken, not silent"
+        );
     }
     // A hiragana description (😀 → にっこり…) was and still is spoken.
     assert!(!ipa("😀").trim().is_empty(), "ja 😀 should be spoken");

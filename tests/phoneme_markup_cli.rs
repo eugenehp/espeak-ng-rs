@@ -31,7 +31,10 @@ fn x_markup_mode_processes_ssml() {
     // The entity decodes to the *symbol*, which the dictionary reads as "and"
     // preceded by a short pause (`en_list`: `& _and $u+`), so compare against
     // the literal `&` rather than the bare word.
-    assert_eq!(run(&["-x", "-m", "Tom &amp; Jerry"]), run(&["-x", "Tom & Jerry"]));
+    assert_eq!(
+        run(&["-x", "-m", "Tom &amp; Jerry"]),
+        run(&["-x", "Tom & Jerry"])
+    );
 
     // Without -m, angle-bracket text is literal (unchanged behaviour).
     assert_ne!(run(&["-x", "<emphasis>hi</emphasis>"]), run(&["-x", "hi"]));

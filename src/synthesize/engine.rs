@@ -23,8 +23,8 @@
 
 use std::f64::consts::PI;
 
-use super::targets::{FormantTarget, SILENCE, match_ipa};
-use super::{Resonator, VoiceParams, PcmBuffer};
+use super::targets::{match_ipa, FormantTarget, SILENCE};
+use super::{PcmBuffer, Resonator, VoiceParams};
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -51,7 +51,7 @@ const STEPSIZE: usize = 64;
 #[inline]
 fn resonator_coeffs(f: f64, bw: f64, fs: f64) -> (f64, f64, f64) {
     // Clamp to safe range: keep f well below Nyquist and bw positive.
-    let f  = f.clamp(50.0, fs * 0.49);
+    let f = f.clamp(50.0, fs * 0.49);
     let bw = bw.clamp(10.0, fs * 0.25);
 
     let r = (-PI * bw / fs).exp();
@@ -65,7 +65,9 @@ fn resonator_coeffs(f: f64, bw: f64, fs: f64) -> (f64, f64, f64) {
 #[inline]
 fn set_resonator(r: &mut Resonator, f: f64, bw: f64, fs: f64) {
     let (a, b, c) = resonator_coeffs(f, bw, fs);
-    r.a = a; r.b = b; r.c = c;
+    r.a = a;
+    r.b = b;
+    r.c = c;
 }
 
 // ---------------------------------------------------------------------------
@@ -106,18 +108,21 @@ pub fn parse_ipa(ipa: &str, voice: &VoiceParams) -> Vec<Segment> {
 
     while !s.is_empty() {
         // ── Stress marks ────────────────────────────────────────────────────
-        if let Some(rest) = s.strip_prefix('ˈ') {   // primary stress U+02C8
+        if let Some(rest) = s.strip_prefix('ˈ') {
+            // primary stress U+02C8
             pending_amp = 1.3;
             s = rest;
             continue;
         }
-        if let Some(rest) = s.strip_prefix('ˌ') {   // secondary stress U+02CC
+        if let Some(rest) = s.strip_prefix('ˌ') {
+            // secondary stress U+02CC
             pending_amp = 1.1;
             s = rest;
             continue;
         }
         // ── Stray length mark (shouldn't appear outside a long-vowel digraph)
-        if let Some(rest) = s.strip_prefix('ː') {   // U+02D0
+        if let Some(rest) = s.strip_prefix('ː') {
+            // U+02D0
             s = rest;
             continue;
         }
@@ -166,7 +171,9 @@ fn ms_to_samples(ms: f64) -> usize {
 struct Xorshift32(u32);
 
 impl Xorshift32 {
-    fn new() -> Self { Xorshift32(0xBAD_5EED) }
+    fn new() -> Self {
+        Xorshift32(0xBAD_5EED)
+    }
 
     /// Next sample in −1.0 … +1.0.
     #[inline]
@@ -197,11 +204,11 @@ fn glottal_sample(phase: f64) -> f64 {
     if p < 0.65 {
         // Smooth opening: half of a cosine (−1 → +1 over 0.65 periods)
         let t = p / 0.65;
-        (PI * t - PI * 0.5).sin()           // = −cos(π·t), range −1..+1
+        (PI * t - PI * 0.5).sin() // = −cos(π·t), range −1..+1
     } else {
         // Sharp glottal closure: linear fall
         let t = (p - 0.65) / 0.35;
-        1.0 - 2.0 * t                        // +1 → −1
+        1.0 - 2.0 * t // +1 → −1
     }
 }
 
@@ -251,18 +258,24 @@ pub fn synthesize_segments(segments: &[Segment], voice: &VoiceParams) -> PcmBuff
 
     for seg in segments {
         let n = seg.dur_samples;
-        if n == 0 { continue; }
+        if n == 0 {
+            continue;
+        }
 
         let tgt = &seg.target;
         // Effective per-phoneme amplitude.
         let seg_amp = tgt.amp * seg.amp_factor * global_amp;
 
         let voiced = tgt.voiced_frac;
-        let noise  = tgt.noise_frac;
+        let noise = tgt.noise_frac;
 
         // Formant endpoints for this segment.
-        let to_f1  = tgt.f1;  let to_f2  = tgt.f2;  let to_f3  = tgt.f3;
-        let to_bw1 = tgt.bw1; let to_bw2 = tgt.bw2; let to_bw3 = tgt.bw3;
+        let to_f1 = tgt.f1;
+        let to_f2 = tgt.f2;
+        let to_f3 = tgt.f3;
+        let to_bw1 = tgt.bw1;
+        let to_bw2 = tgt.bw2;
+        let to_bw3 = tgt.bw3;
 
         let mut step_start = 0usize;
 
@@ -274,9 +287,9 @@ pub fn synthesize_segments(segments: &[Segment], voice: &VoiceParams) -> PcmBuff
             let t_mid = (step_start as f64 + step_len as f64 * 0.5) / n as f64;
 
             // Interpolate formant parameters and update resonator coefficients.
-            let f1  = prev_f1  + (to_f1  - prev_f1)  * t_mid;
-            let f2  = prev_f2  + (to_f2  - prev_f2)  * t_mid;
-            let f3  = prev_f3  + (to_f3  - prev_f3)  * t_mid;
+            let f1 = prev_f1 + (to_f1 - prev_f1) * t_mid;
+            let f2 = prev_f2 + (to_f2 - prev_f2) * t_mid;
+            let f3 = prev_f3 + (to_f3 - prev_f3) * t_mid;
             let bw1 = prev_bw1 + (to_bw1 - prev_bw1) * t_mid;
             let bw2 = prev_bw2 + (to_bw2 - prev_bw2) * t_mid;
             let bw3 = prev_bw3 + (to_bw3 - prev_bw3) * t_mid;
@@ -329,8 +342,12 @@ pub fn synthesize_segments(segments: &[Segment], voice: &VoiceParams) -> PcmBuff
         }
 
         // Update previous targets for the next segment.
-        prev_f1 = to_f1; prev_f2 = to_f2; prev_f3 = to_f3;
-        prev_bw1 = to_bw1; prev_bw2 = to_bw2; prev_bw3 = to_bw3;
+        prev_f1 = to_f1;
+        prev_f2 = to_f2;
+        prev_f3 = to_f3;
+        prev_bw1 = to_bw1;
+        prev_bw2 = to_bw2;
+        prev_bw3 = to_bw3;
     }
 
     // ── Normalise & convert to i16 ───────────────────────────────────────────
@@ -353,7 +370,8 @@ fn f64_to_i16(samples: &[f64]) -> PcmBuffer {
     let target_peak = 0.90 * 32_767.0;
     let scale = if peak > 1e-6 { target_peak / peak } else { 0.0 };
 
-    samples.iter()
+    samples
+        .iter()
         .map(|&x| (x * scale).clamp(-32_767.0, 32_767.0) as i16)
         .collect()
 }
@@ -367,7 +385,9 @@ mod tests {
     use super::*;
     use crate::synthesize::VoiceParams;
 
-    fn default_voice() -> VoiceParams { VoiceParams::default() }
+    fn default_voice() -> VoiceParams {
+        VoiceParams::default()
+    }
 
     // ── parse_ipa ────────────────────────────────────────────────────────────
 
@@ -383,13 +403,15 @@ mod tests {
         // "iː" should match as a single long-vowel segment.
         let segs = parse_ipa("iː", &default_voice());
         assert_eq!(segs.len(), 1, "long vowel = one segment");
-        assert!(segs[0].dur_samples > ms_to_samples(100.0),
-            "long vowel must be longer than 100 ms");
+        assert!(
+            segs[0].dur_samples > ms_to_samples(100.0),
+            "long vowel must be longer than 100 ms"
+        );
     }
 
     #[test]
     fn parse_stress_increases_amp() {
-        let segs_plain    = parse_ipa("ə",  &default_voice());
+        let segs_plain = parse_ipa("ə", &default_voice());
         let segs_stressed = parse_ipa("ˈə", &default_voice());
         assert!(segs_stressed[0].amp_factor > segs_plain[0].amp_factor);
     }
@@ -399,8 +421,10 @@ mod tests {
         // "biː hiː" → b, iː, [space], h, iː
         let segs = parse_ipa("biː hiː", &default_voice());
         // At least one segment should be silent (space).
-        assert!(segs.iter().any(|s| s.target.amp == 0.0),
-            "inter-word space must produce a silent segment");
+        assert!(
+            segs.iter().any(|s| s.target.amp == 0.0),
+            "inter-word space must produce a silent segment"
+        );
     }
 
     #[test]
@@ -454,7 +478,10 @@ mod tests {
         let segs = parse_ipa("iː", &default_voice());
         let out = synthesize_segments(&segs, &default_voice());
         let max = out.iter().map(|&s| s.unsigned_abs()).max().unwrap_or(0);
-        assert!(max > 1000, "voiced vowel must produce non-trivial audio, got peak {max}");
+        assert!(
+            max > 1000,
+            "voiced vowel must produce non-trivial audio, got peak {max}"
+        );
     }
 
     #[test]
@@ -466,7 +493,10 @@ mod tests {
             amp_factor: 1.0,
         }];
         let out = synthesize_segments(&segs, &default_voice());
-        assert!(out.iter().all(|&s| s == 0), "silence segment must output zeros");
+        assert!(
+            out.iter().all(|&s| s == 0),
+            "silence segment must output zeros"
+        );
     }
 
     #[test]
@@ -474,8 +504,10 @@ mod tests {
         let segs = parse_ipa("ˈhɛloʊ", &default_voice());
         let out = synthesize_segments(&segs, &default_voice());
         // The synthesizer clamps to ±32767; no sample should be i16::MIN.
-        assert!(out.iter().all(|&s| s >= i16::MIN + 1),
-            "unexpected i16::MIN in output");
+        assert!(
+            out.iter().all(|&s| s >= i16::MIN + 1),
+            "unexpected i16::MIN in output"
+        );
     }
 
     // ── glottal_sample ───────────────────────────────────────────────────────
@@ -491,7 +523,10 @@ mod tests {
             let cur = glottal_sample(phase);
             let delta = (cur - prev).abs();
             // Large threshold here because the glottal closure can be steep.
-            assert!(delta < 0.5, "discontinuity at phase {phase:.4}: Δ = {delta:.4}");
+            assert!(
+                delta < 0.5,
+                "discontinuity at phase {phase:.4}: Δ = {delta:.4}"
+            );
             prev = cur;
         }
     }

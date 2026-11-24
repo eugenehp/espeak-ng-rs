@@ -51,10 +51,17 @@ fn compile_dict_then_lookup() {
         .arg(&dir)
         .output()
         .expect("run --compile");
-    assert!(out.status.success(), "compile failed: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "compile failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let dict = dir.join("en_dict");
     assert!(dict.exists(), "en_dict was not written");
-    assert!(std::fs::metadata(&dict).unwrap().len() > 8, "en_dict is empty/header-only");
+    assert!(
+        std::fs::metadata(&dict).unwrap().len() > 8,
+        "en_dict is empty/header-only"
+    );
 
     // The compiled dict must actually resolve the words we put in it.
     let ipa = |word: &str| -> String {
@@ -66,14 +73,23 @@ fn compile_dict_then_lookup() {
             .expect("run -x");
         String::from_utf8_lossy(&out.stdout).trim().to_string()
     };
-    assert_eq!(ipa("hello"), "h@l'oU", "compiled dict did not drive 'hello' lookup");
+    assert_eq!(
+        ipa("hello"),
+        "h@l'oU",
+        "compiled dict did not drive 'hello' lookup"
+    );
     // 'world' gains a stress mark from stress placement (w'3:ld); assert the stem.
-    assert!(ipa("world").contains("3:ld"), "compiled dict did not drive 'world' lookup");
+    assert!(
+        ipa("world").contains("3:ld"),
+        "compiled dict did not drive 'world' lookup"
+    );
 }
 
 #[test]
 fn compile_missing_source_errors_cleanly() {
-    let Some(data) = data_root() else { return; };
+    let Some(data) = data_root() else {
+        return;
+    };
     let dir = scratch("compile_dict_cli_missing");
     for f in ["phontab", "phonindex", "intonations"] {
         std::fs::copy(data.join(f), dir.join(f)).unwrap();
@@ -88,6 +104,12 @@ fn compile_missing_source_errors_cleanly() {
     // A missing dictsource is a clean failure (non-zero exit, message), not a panic.
     assert!(!out.status.success(), "expected failure for missing source");
     let err = String::from_utf8_lossy(&out.stderr);
-    assert!(err.contains("zz"), "error should mention the language: {err}");
-    assert!(!dir.join("zz_dict").exists(), "no dict should be written on failure");
+    assert!(
+        err.contains("zz"),
+        "error should mention the language: {err}"
+    );
+    assert!(
+        !dir.join("zz_dict").exists(),
+        "no dict should be written on failure"
+    );
 }

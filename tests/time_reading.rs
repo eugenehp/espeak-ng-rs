@@ -12,7 +12,10 @@ use espeak_ng::Translator;
 fn tr(lang: &str) -> Option<Translator> {
     match Translator::new_default(lang) {
         Ok(t) => Some(t),
-        Err(_) => { eprintln!("[SKIP] no {lang} dict"); None }
+        Err(_) => {
+            eprintln!("[SKIP] no {lang} dict");
+            None
+        }
     }
 }
 
@@ -20,11 +23,11 @@ fn tr(lang: &str) -> Option<Translator> {
 fn english_times_read_as_hour_minute_no_break() {
     let Some(t) = tr("en") else { return };
     let ipa = |s: &str| t.text_to_ipa(s).unwrap();
-    assert_eq!(ipa("10:30"), "tˈɛn θˈɜːti");          // ten thirty, one clause
+    assert_eq!(ipa("10:30"), "tˈɛn θˈɜːti"); // ten thirty, one clause
     assert!(!ipa("10:30").contains('\n'), "10:30 must not break");
-    assert_eq!(ipa("10:05"), "tˈɛn zˈiəɹəʊ fˈaɪv");   // minute keeps its leading zero
-    assert_eq!(ipa("02:30"), "tˈuː θˈɜːti");          // hour drops its leading zero
-    assert_eq!(ipa("00:30"), "zˈiəɹəʊ θˈɜːti");       // hour "00" → "zero"
+    assert_eq!(ipa("10:05"), "tˈɛn zˈiəɹəʊ fˈaɪv"); // minute keeps its leading zero
+    assert_eq!(ipa("02:30"), "tˈuː θˈɜːti"); // hour drops its leading zero
+    assert_eq!(ipa("00:30"), "zˈiəɹəʊ θˈɜːti"); // hour "00" → "zero"
     assert_eq!(ipa("10:30:45"), "tˈɛn θˈɜːti fˈɔːti fˈaɪv"); // H:MM:SS
     assert_eq!(ipa("100:30"), "wˈɒnhˈʌndɹɪd θˈɜːti"); // any hour, colon still silent
 }
@@ -34,12 +37,28 @@ fn german_time_inserts_uhr_for_valid_hours_only() {
     let Some(t) = tr("de") else { return };
     let ipa = |s: &str| t.text_to_ipa(s).unwrap();
     // "uhr" connector present for a valid hour (0–23) …
-    assert!(ipa("10:30").contains("uːɾ"), "de 10:30 → 'uhr': {}", ipa("10:30"));
-    assert!(ipa("23:30").contains("uːɾ"), "de 23:30 → 'uhr': {}", ipa("23:30"));
+    assert!(
+        ipa("10:30").contains("uːɾ"),
+        "de 10:30 → 'uhr': {}",
+        ipa("10:30")
+    );
+    assert!(
+        ipa("23:30").contains("uːɾ"),
+        "de 23:30 → 'uhr': {}",
+        ipa("23:30")
+    );
     assert!(!ipa("10:30").contains('\n'), "de 10:30 must not break");
     // … absent for an out-of-range hour.
-    assert!(!ipa("24:30").contains("uːɾ"), "de 24:30 → no 'uhr': {}", ipa("24:30"));
-    assert!(!ipa("100:30").contains("uːɾ"), "de 100:30 → no 'uhr': {}", ipa("100:30"));
+    assert!(
+        !ipa("24:30").contains("uːɾ"),
+        "de 24:30 → no 'uhr': {}",
+        ipa("24:30")
+    );
+    assert!(
+        !ipa("100:30").contains("uːɾ"),
+        "de 100:30 → no 'uhr': {}",
+        ipa("100:30")
+    );
 }
 
 #[test]
@@ -52,7 +71,10 @@ fn french_and_italian_connectors() {
     }
     if let Some(t) = tr("it") {
         let ipa = t.text_to_ipa("10:30").unwrap();
-        assert!(ipa.contains(" ˈeː ") || ipa.contains(" e "), "it 10:30 connector 'e': {ipa}");
+        assert!(
+            ipa.contains(" ˈeː ") || ipa.contains(" e "),
+            "it 10:30 connector 'e': {ipa}"
+        );
         assert!(!ipa.contains('\n'), "it 10:30 must not break: {ipa}");
     }
 }
@@ -79,6 +101,9 @@ fn non_time_colon_other_languages_drop_it() {
         let ipa = t.text_to_ipa("3:2").unwrap();
         assert!(!ipa.contains('\n'), "{lang} 3:2 must not break: {ipa:?}");
         // no "colon" word for these languages
-        assert!(!ipa.contains("kˈəʊlən"), "{lang} 3:2 drops the colon: {ipa:?}");
+        assert!(
+            !ipa.contains("kˈəʊlən"),
+            "{lang} 3:2 drops the colon: {ipa:?}"
+        );
     }
 }

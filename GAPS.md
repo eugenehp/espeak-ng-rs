@@ -656,7 +656,7 @@ is the right answer for an unmerged PR.
 
 | # | Ref | Area |
 |---|---|---|
-| 20 | #2280 | French: dedicated `ɥ` semivowel phoneme (currently mis-uses `y`). |
+| 20 | #2280 | French: dedicated `ɥ` semivowel phoneme (currently mis-uses `y`). 🟡 **Opt-in IPA refinement (2026-11-11):** `french_semivowels` (`src/translate/semivowels.rs`) writes [y] before a vowel as [ɥ] — before [i] always, before other vowels unless an obstruent + liquid precedes (*cruel*), stress moved before the glide (`nyˈi` → `nˈɥi`). Default output unchanged (oracle-identical; the PR is unmerged), sound unchanged as in the PR. 3 unit + 3 integration tests (`tests/french_semivowels.rs`, 18 words). The PR's data route (new phoneme + `fr_rules`/`fr_list`) stays open. |
 | 21 | #2268 | Japanese number pronunciation fixes. |
 | 22 | #2269 | Bosnian "milijon" → "milion". |
 | 23 | #2304 | Sindarin medial preconsonantal F. |

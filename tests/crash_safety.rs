@@ -17,8 +17,16 @@ fn works(lang: &str) -> Option<Translator> {
 fn greek_replace_group_chars_do_not_panic() {
     // Upstream espeak-ng #2467: certain Greek letters (ϖ = U+03D6) inside a
     // `.replace` group segfault the C engine.  The Rust port must not panic.
-    let Some(t) = works("el") else { eprintln!("[SKIP] no el data"); return };
-    for input in ["\u{03D6}", "\u{03D6}\u{03D6}\u{03D6}", "\u{03D6} τεστ", "αϖβ"] {
+    let Some(t) = works("el") else {
+        eprintln!("[SKIP] no el data");
+        return;
+    };
+    for input in [
+        "\u{03D6}",
+        "\u{03D6}\u{03D6}\u{03D6}",
+        "\u{03D6} τεστ",
+        "αϖβ",
+    ] {
         // The result content is irrelevant; it must simply not panic.
         let _ = t.text_to_ipa(input);
     }
@@ -28,10 +36,16 @@ fn greek_replace_group_chars_do_not_panic() {
 fn unknown_and_empty_voice_error_cleanly() {
     // Upstream #2469 segfaults on an empty/unknown phoneme table.  Here it must
     // surface as a typed error, never a panic.
-    let Some(_) = works("en") else { eprintln!("[SKIP] no en data"); return };
+    let Some(_) = works("en") else {
+        eprintln!("[SKIP] no en data");
+        return;
+    };
 
     let t = Translator::new("definitely-not-a-language", None).expect("builds lazily");
-    assert!(t.text_to_ipa("hello").is_err(), "unknown language must error");
+    assert!(
+        t.text_to_ipa("hello").is_err(),
+        "unknown language must error"
+    );
 
     let t = Translator::new("", None).expect("builds lazily");
     assert!(t.text_to_ipa("hello").is_err(), "empty language must error");
@@ -45,10 +59,10 @@ fn adversarial_inputs_do_not_panic() {
         "",
         "   ",
         "\u{0000}\u{FFFD}",
-        "((([[[",         // unterminated brackets
-        "[[",             // unterminated inline-phoneme open
-        "a\u{200B}b",     // zero-width space
-        "😀🇬🇧",           // emoji + flag sequence
+        "((([[[",     // unterminated brackets
+        "[[",         // unterminated inline-phoneme open
+        "a\u{200B}b", // zero-width space
+        "😀🇬🇧",       // emoji + flag sequence
         "\t\n\r",
         &"a,".repeat(200), // many clause boundaries
     ] {

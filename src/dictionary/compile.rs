@@ -143,13 +143,22 @@ pub fn parse_list_dsl_mode(
             }
         } else {
             let has_letter = word.chars().any(char::is_alphabetic);
-            if has_letter && word.chars().filter(|c| c.is_alphabetic()).all(char::is_uppercase) {
+            if has_letter
+                && word
+                    .chars()
+                    .filter(|c| c.is_alphabetic())
+                    .all(char::is_uppercase)
+            {
                 const BITNUM_FLAG_ALLCAPS: u8 = 0x2a;
                 flags.push(BITNUM_FLAG_ALLCAPS);
             }
             word.to_lowercase()
         };
-        out.push(ListEntry { word, phonemes: codes, flags });
+        out.push(ListEntry {
+            word,
+            phonemes: codes,
+            flags,
+        });
     }
     out
 }
@@ -164,23 +173,61 @@ pub fn parse_list_dsl_mode(
 pub fn dollar_flag_byte(tok: &str) -> Option<u8> {
     Some(match tok {
         // Stress placement — these set bits 0-3 of flags1.
-        "$1" => 0x41, "$2" => 0x42, "$3" => 0x43, "$4" => 0x44,
-        "$5" => 0x45, "$6" => 0x46, "$7" => 0x47,
-        "$u" => 0x48, "$u1" => 0x49, "$u2" => 0x4a, "$u3" => 0x4b,
-        "$u+" => 0x4c, "$u1+" => 0x4d, "$u2+" => 0x4e, "$u3+" => 0x4f,
+        "$1" => 0x41,
+        "$2" => 0x42,
+        "$3" => 0x43,
+        "$4" => 0x44,
+        "$5" => 0x45,
+        "$6" => 0x46,
+        "$7" => 0x47,
+        "$u" => 0x48,
+        "$u1" => 0x49,
+        "$u2" => 0x4a,
+        "$u3" => 0x4b,
+        "$u+" => 0x4c,
+        "$u1+" => 0x4d,
+        "$u2+" => 0x4e,
+        "$u3+" => 0x4f,
         // Numbered bits in dictionary word 1.
-        "$pause" => 8, "$strend" => 9, "$strend2" => 10, "$unstressend" => 11,
-        "$accent_before" => 12, "$abbrev" => 13, "$double" => 14,
-        "$alt" | "$alt1" => 15, "$alt2" => 16, "$alt3" => 17, "$alt4" => 18,
-        "$alt5" => 19, "$alt6" => 20, "$alt7" => 21,
-        "$combine" => 23, "$dot" => 24, "$hasdot" => 25,
-        "$max3" => 27, "$brk" => 28, "$text" => 29,
+        "$pause" => 8,
+        "$strend" => 9,
+        "$strend2" => 10,
+        "$unstressend" => 11,
+        "$accent_before" => 12,
+        "$abbrev" => 13,
+        "$double" => 14,
+        "$alt" | "$alt1" => 15,
+        "$alt2" => 16,
+        "$alt3" => 17,
+        "$alt4" => 18,
+        "$alt5" => 19,
+        "$alt6" => 20,
+        "$alt7" => 21,
+        "$combine" => 23,
+        "$dot" => 24,
+        "$hasdot" => 25,
+        "$max3" => 27,
+        "$brk" => 28,
+        "$text" => 29,
         // Dictionary word 2.
-        "$verbf" => 0x20, "$verbsf" => 0x21, "$nounf" => 0x22, "$pastf" => 0x23,
-        "$verb" => 0x24, "$noun" => 0x25, "$past" => 0x26, "$verbextend" => 0x28,
-        "$capital" => 0x29, "$allcaps" => 0x2a, "$accent" => 0x2b,
-        "$sentence" => 0x2d, "$only" => 0x2e, "$onlys" => 0x2f, "$stem" => 0x30,
-        "$atend" => 0x31, "$atstart" => 0x32, "$native" => 0x33,
+        "$verbf" => 0x20,
+        "$verbsf" => 0x21,
+        "$nounf" => 0x22,
+        "$pastf" => 0x23,
+        "$verb" => 0x24,
+        "$noun" => 0x25,
+        "$past" => 0x26,
+        "$verbextend" => 0x28,
+        "$capital" => 0x29,
+        "$allcaps" => 0x2a,
+        "$accent" => 0x2b,
+        "$sentence" => 0x2d,
+        "$only" => 0x2e,
+        "$onlys" => 0x2f,
+        "$stem" => 0x30,
+        "$atend" => 0x31,
+        "$atstart" => 0x32,
+        "$native" => 0x33,
         // `$textmode` / `$phonememode` are compiler directives, not entry flags.
         _ => return None,
     })
@@ -222,7 +269,11 @@ pub struct Rule {
 impl Rule {
     /// A no-context rule.
     pub fn new(match_letters: &str, phonemes: &[u8]) -> Self {
-        Rule { match_letters: match_letters.to_string(), phonemes: phonemes.to_vec(), ..Default::default() }
+        Rule {
+            match_letters: match_letters.to_string(),
+            phonemes: phonemes.to_vec(),
+            ..Default::default()
+        }
     }
 }
 
@@ -356,7 +407,10 @@ pub fn parse_rules_dsl_offset(
                 _ => 0,
             };
             // `.group 0xNNNN` names the group by character code.
-            let name = match name.strip_prefix("0x").and_then(|h| u32::from_str_radix(h, 16).ok()) {
+            let name = match name
+                .strip_prefix("0x")
+                .and_then(|h| u32::from_str_radix(h, 16).ok())
+            {
                 Some(code) if code > 0x100 => {
                     String::from_utf8_lossy(&[(code >> 8) as u8, code as u8]).into_owned()
                 }
@@ -417,7 +471,9 @@ pub fn parse_rules_dsl_offset(
         if line.starts_with('.') {
             continue;
         }
-        let Some(group) = groups.last_mut() else { continue };
+        let Some(group) = groups.last_mut() else {
+            continue;
+        };
         // A rule line is whitespace-separated columns: `[pre)] match [(post]
         // <phonemes>`.  espeak lays the context and match parts out in separate
         // columns for readability, so the **last** token is the phoneme string
@@ -466,10 +522,15 @@ pub fn parse_rules_dsl_offset(
         let mnemonics: String = parts[split..].concat();
         let mnemonics = mnemonics.as_str();
         // `[pre)] match [(post]` — `)` ends the pre-context, `(` starts the post.
-        let (pre, rest) = letter_spec.split_once(')').unwrap_or(("", letter_spec.as_str()));
+        let (pre, rest) = letter_spec
+            .split_once(')')
+            .unwrap_or(("", letter_spec.as_str()));
         let (matched, post) = rest.split_once('(').unwrap_or((rest, ""));
         // The group letter is pre-consumed; the stored match is what follows it.
-        let match_letters = matched.strip_prefix(group.name.as_str()).unwrap_or(matched).to_string();
+        let match_letters = matched
+            .strip_prefix(group.name.as_str())
+            .unwrap_or(matched)
+            .to_string();
         let phonemes = crate::translate::parse_inline_phonemes(mnemonics, phdata);
         group.rules.push(Rule {
             match_letters,
@@ -523,7 +584,11 @@ fn encode_context(s: &str, reverse: bool) -> Vec<u8> {
     let mut tokens: Vec<Vec<u8>> = Vec::with_capacity(bytes.len());
     // A two-byte command: operand first in a pre-context, command first after.
     let pair = |cmd: u8, operand: u8| -> Vec<u8> {
-        if reverse { vec![operand, cmd] } else { vec![cmd, operand] }
+        if reverse {
+            vec![operand, cmd]
+        } else {
+            vec![cmd, operand]
+        }
     };
     let mut i = 0;
     while i < bytes.len() {
@@ -565,12 +630,22 @@ fn encode_context(s: &str, reverse: bool) -> Vec<u8> {
                 // `$unpr`, `$noprefix`, `$list`, `$w_altN`, `$p_altN`.  Longer
                 // names first, as C's table is ordered.
                 const NAMES: &[(&str, u8)] = &[
-                    ("unpr", 0x01), ("noprefix", 0x02), ("list", 0x03),
-                    ("w_alt1", 0x11), ("w_alt2", 0x12), ("w_alt3", 0x13),
-                    ("w_alt4", 0x14), ("w_alt5", 0x15), ("w_alt6", 0x16),
+                    ("unpr", 0x01),
+                    ("noprefix", 0x02),
+                    ("list", 0x03),
+                    ("w_alt1", 0x11),
+                    ("w_alt2", 0x12),
+                    ("w_alt3", 0x13),
+                    ("w_alt4", 0x14),
+                    ("w_alt5", 0x15),
+                    ("w_alt6", 0x16),
                     ("w_alt", 0x11),
-                    ("p_alt1", 0x21), ("p_alt2", 0x22), ("p_alt3", 0x23),
-                    ("p_alt4", 0x24), ("p_alt5", 0x25), ("p_alt6", 0x26),
+                    ("p_alt1", 0x21),
+                    ("p_alt2", 0x22),
+                    ("p_alt3", 0x23),
+                    ("p_alt4", 0x24),
+                    ("p_alt5", 0x25),
+                    ("p_alt6", 0x26),
                     ("p_alt", 0x21),
                 ];
                 let rest = &s[i..];
@@ -647,7 +722,9 @@ pub fn compile_rules(groups: &[RuleGroup]) -> Vec<u8> {
     // Letter-group definitions come first, so a rule referring to one is
     // resolvable when the reader walks the section.
     for g in groups {
-        let Some((num, items)) = &g.letter_group else { continue };
+        let Some((num, items)) = &g.letter_group else {
+            continue;
+        };
         out.push(RULE_GROUP_START);
         out.push(super::RULE_LETTERGP2);
         out.push(b'A' + num);
@@ -767,7 +844,11 @@ pub struct ListEntry {
 impl ListEntry {
     /// A plain word → phonemes entry (no flags).
     pub fn new(word: &str, phonemes: &[u8]) -> Self {
-        ListEntry { word: word.to_string(), phonemes: phonemes.to_vec(), flags: Vec::new() }
+        ListEntry {
+            word: word.to_string(),
+            phonemes: phonemes.to_vec(),
+            flags: Vec::new(),
+        }
     }
 }
 
@@ -911,7 +992,10 @@ mod tests {
         let bytes = compile_dict(&entries, &TransposeConfig::LATIN).expect("compile");
         let dict = Dictionary::from_bytes("en", bytes).expect("valid dict");
 
-        let ctx = LookupCtx { lookup_symbol: true, ..Default::default() };
+        let ctx = LookupCtx {
+            lookup_symbol: true,
+            ..Default::default()
+        };
         for e in &entries {
             let r = lookup(&dict, &e.word, &ctx)
                 .unwrap_or_else(|| panic!("compiled entry {:?} not found", e.word));
@@ -941,7 +1025,10 @@ world   w'3:ld
         let entries = parse_list_dsl(source, &phdata);
         assert_eq!(entries.len(), 2, "comment + 2 words");
         assert_eq!(entries[0].word, "hello");
-        assert!(!entries[0].phonemes.is_empty(), "mnemonics resolved to codes");
+        assert!(
+            !entries[0].phonemes.is_empty(),
+            "mnemonics resolved to codes"
+        );
 
         // End-to-end: DSL source → entries → compile → read back → lookup.
         let bytes = compile_dict(&entries, &TransposeConfig::LATIN).expect("compile");
@@ -975,14 +1062,23 @@ world   w'3:ld
         // The group letter is stripped from the match.
         assert_eq!(groups[0].rules[0].match_letters, ""); // "a" − group "a"
         assert_eq!(groups[0].rules[1].match_letters, "t"); // "at" − group "a"
-        assert!(!groups[0].rules[0].phonemes.is_empty(), "mnemonics resolved");
+        assert!(
+            !groups[0].rules[0].phonemes.is_empty(),
+            "mnemonics resolved"
+        );
 
         // Compile → the reader registers both groups.
         let rules = compile_rules(&groups);
         let bytes = compile_dict_with_rules(&[], &TransposeConfig::LATIN, &rules).expect("compile");
         let dict = Dictionary::from_bytes("en", bytes).expect("valid dict");
-        assert!(dict.groups.groups1[b'a' as usize].is_some(), "group 'a' registered");
-        assert!(dict.groups.groups1[b'b' as usize].is_some(), "group 'b' registered");
+        assert!(
+            dict.groups.groups1[b'a' as usize].is_some(),
+            "group 'a' registered"
+        );
+        assert!(
+            dict.groups.groups1[b'b' as usize].is_some(),
+            "group 'b' registered"
+        );
     }
 
     #[test]
@@ -1001,14 +1097,18 @@ world   w'3:ld
         std::fs::write(src.join("tx_list"), "hello\th@l'oU\nworld\tw'3:ld\n").unwrap();
         std::fs::write(src.join("tx_rules"), ".group a\n\ta\t@\n").unwrap();
 
-        let bytes = compile_dictionary(&src, "tx", &phdata, &TransposeConfig::LATIN).expect("compile");
+        let bytes =
+            compile_dictionary(&src, "tx", &phdata, &TransposeConfig::LATIN).expect("compile");
         let dict = Dictionary::from_bytes("en", bytes).expect("valid dict");
 
         // The list entry compiled and is looked up.
         let r = lookup(&dict, "hello", &LookupCtx::default()).expect("'hello' found");
         assert!(!r.phonemes.is_empty(), "list phonemes empty");
         // The rules group compiled and is registered.
-        assert!(dict.groups.groups1[b'a' as usize].is_some(), "rule group 'a' registered");
+        assert!(
+            dict.groups.groups1[b'a' as usize].is_some(),
+            "rule group 'a' registered"
+        );
 
         let _ = std::fs::remove_dir_all(&src);
     }
@@ -1097,7 +1197,11 @@ world   w'3:ld
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].rules[0].pre_context, "_");
         assert_eq!(groups[0].rules[0].post_context, "_");
-        assert_eq!(groups[0].rules[0].phonemes, vec![s_code], "phonemes from last column");
+        assert_eq!(
+            groups[0].rules[0].phonemes,
+            vec![s_code],
+            "phonemes from last column"
+        );
         assert_eq!(groups[0].rules[2].phonemes, vec![b_code]);
 
         // End-to-end: compile + read.  "a" alone hits the whole-word rule → /s/;
@@ -1108,7 +1212,11 @@ world   w'3:ld
         let stress = StressOpts::for_lang("en");
         let opts = LangOptions::for_lang("en");
         let hit = word_to_phonemes("a", &dict, &phdata, &stress, &opts);
-        assert!(hit.phonemes.contains(&s_code), "whole-word 'a' → /s/: {:?}", hit.phonemes);
+        assert!(
+            hit.phonemes.contains(&s_code),
+            "whole-word 'a' → /s/: {:?}",
+            hit.phonemes
+        );
     }
 
     #[test]
@@ -1123,10 +1231,16 @@ world   w'3:ld
         // through to the rules (previously "$u+" was mis-parsed as the vowel "u").
         let flags_only = parse_list_dsl("gxis\t$u+ $pause\n", &phdata);
         assert_eq!(flags_only.len(), 1);
-        assert!(flags_only[0].phonemes.is_empty(), "flags-only entry must have no phonemes");
+        assert!(
+            flags_only[0].phonemes.is_empty(),
+            "flags-only entry must have no phonemes"
+        );
         // A real phoneme column is still parsed even with a trailing flag.
         let with_ph = parse_list_dsl("cat\tk'at\t$verbf\n", &phdata);
-        assert!(!with_ph[0].phonemes.is_empty(), "phonemes parsed when present");
+        assert!(
+            !with_ph[0].phonemes.is_empty(),
+            "phonemes parsed when present"
+        );
     }
 
     #[test]
@@ -1150,10 +1264,19 @@ world   w'3:ld
         let bytes = compile_dict(&entries, &TransposeConfig::LATIN).expect("compile");
         let dict = Dictionary::from_bytes("en", bytes).expect("valid dict");
         // Without condition 4 active, the entry is skipped.
-        assert!(lookup(&dict, "gramx", &LookupCtx::default()).is_none(), "gated off by default");
+        assert!(
+            lookup(&dict, "gramx", &LookupCtx::default()).is_none(),
+            "gated off by default"
+        );
         // With condition 4 active, it matches.
-        let ctx = LookupCtx { dict_condition: 1 << 4, ..Default::default() };
-        assert!(lookup(&dict, "gramx", &ctx).is_some(), "matches when condition 4 set");
+        let ctx = LookupCtx {
+            dict_condition: 1 << 4,
+            ..Default::default()
+        };
+        assert!(
+            lookup(&dict, "gramx", &ctx).is_some(),
+            "matches when condition 4 set"
+        );
     }
 
     #[test]
@@ -1175,7 +1298,8 @@ world   w'3:ld
         assert_eq!(replace, vec![("z".to_string(), "q".to_string())]);
         let groups = parse_rules_dsl(src, &phdata);
         let rules = compile_rules(&groups);
-        let bytes = compile_dict_full(&[], &TransposeConfig::LATIN, &rules, &replace).expect("compile");
+        let bytes =
+            compile_dict_full(&[], &TransposeConfig::LATIN, &rules, &replace).expect("compile");
         let dict = Dictionary::from_bytes("en", bytes).expect("valid dict");
         // The table decodes back to the one pair.
         assert_eq!(dict.replace_pairs.len(), 1);
@@ -1183,7 +1307,11 @@ world   w'3:ld
         let opts = LangOptions::for_lang("en");
         let stress = StressOpts::for_lang("en");
         let out = word_to_phonemes("z", &dict, &phdata, &stress, &opts);
-        assert!(out.phonemes.contains(&s_code), "z→q→/s/ via .replace: {:?}", out.phonemes);
+        assert!(
+            out.phonemes.contains(&s_code),
+            "z→q→/s/ via .replace: {:?}",
+            out.phonemes
+        );
     }
 
     #[test]
@@ -1206,7 +1334,12 @@ world   w'3:ld
             phonemes: vec![s_code],
             ..Default::default()
         };
-        let groups = vec![RuleGroup { name: "a".into(), rules: vec![rule] , letter_group: None, group3_ix: 0 }];
+        let groups = vec![RuleGroup {
+            name: "a".into(),
+            rules: vec![rule],
+            letter_group: None,
+            group3_ix: 0,
+        }];
         let rules = compile_rules(&groups);
         let bytes = compile_dict_with_rules(&[], &TransposeConfig::LATIN, &rules).expect("compile");
         let dict = Dictionary::from_bytes("en", bytes).expect("valid dict");
@@ -1215,10 +1348,18 @@ world   w'3:ld
         let opts = LangOptions::for_lang("en");
         // Post-context present → the rule fires.
         let hit = word_to_phonemes("ab", &dict, &phdata, &stress, &opts);
-        assert!(hit.phonemes.contains(&s_code), "post-context rule should fire on 'ab': {:?}", hit.phonemes);
+        assert!(
+            hit.phonemes.contains(&s_code),
+            "post-context rule should fire on 'ab': {:?}",
+            hit.phonemes
+        );
         // Post-context absent → the rule must NOT fire.
         let miss = word_to_phonemes("ax", &dict, &phdata, &stress, &opts);
-        assert!(!miss.phonemes.contains(&s_code), "post-context rule wrongly fired on 'ax': {:?}", miss.phonemes);
+        assert!(
+            !miss.phonemes.contains(&s_code),
+            "post-context rule wrongly fired on 'ax': {:?}",
+            miss.phonemes
+        );
     }
 
     #[test]
@@ -1241,12 +1382,26 @@ world   w'3:ld
         let groups = vec![
             RuleGroup {
                 name: "a".into(),
-                rules: vec![Rule { pre_context: "k".into(), phonemes: vec![s_code], ..Default::default() }],
+                rules: vec![Rule {
+                    pre_context: "k".into(),
+                    phonemes: vec![s_code],
+                    ..Default::default()
+                }],
                 letter_group: None,
                 group3_ix: 0,
             },
-            RuleGroup { name: "k".into(), rules: vec![Rule::new("", &[k_code])], letter_group: None, group3_ix: 0 },
-            RuleGroup { name: "b".into(), rules: vec![Rule::new("", &[b_code])], letter_group: None, group3_ix: 0 },
+            RuleGroup {
+                name: "k".into(),
+                rules: vec![Rule::new("", &[k_code])],
+                letter_group: None,
+                group3_ix: 0,
+            },
+            RuleGroup {
+                name: "b".into(),
+                rules: vec![Rule::new("", &[b_code])],
+                letter_group: None,
+                group3_ix: 0,
+            },
         ];
         let rules = compile_rules(&groups);
         let bytes = compile_dict_with_rules(&[], &TransposeConfig::LATIN, &rules).expect("compile");
@@ -1255,9 +1410,17 @@ world   w'3:ld
         let stress = StressOpts::for_lang("en");
         let opts = LangOptions::for_lang("en");
         let hit = word_to_phonemes("ka", &dict, &phdata, &stress, &opts);
-        assert!(hit.phonemes.contains(&s_code), "pre-context rule should fire on 'ka': {:?}", hit.phonemes);
+        assert!(
+            hit.phonemes.contains(&s_code),
+            "pre-context rule should fire on 'ka': {:?}",
+            hit.phonemes
+        );
         let miss = word_to_phonemes("ba", &dict, &phdata, &stress, &opts);
-        assert!(!miss.phonemes.contains(&s_code), "pre-context rule wrongly fired on 'ba': {:?}", miss.phonemes);
+        assert!(
+            !miss.phonemes.contains(&s_code),
+            "pre-context rule wrongly fired on 'ba': {:?}",
+            miss.phonemes
+        );
     }
 
     #[test]
@@ -1279,8 +1442,20 @@ world   w'3:ld
         let groups = vec![
             RuleGroup {
                 name: "a".into(),
-                rules: vec![Rule { pre_context: "_".into(), phonemes: vec![s_code], ..Default::default() }], letter_group: None, group3_ix: 0 },
-            RuleGroup { name: "b".into(), rules: vec![Rule::new("", &[b_code])], letter_group: None, group3_ix: 0 },
+                rules: vec![Rule {
+                    pre_context: "_".into(),
+                    phonemes: vec![s_code],
+                    ..Default::default()
+                }],
+                letter_group: None,
+                group3_ix: 0,
+            },
+            RuleGroup {
+                name: "b".into(),
+                rules: vec![Rule::new("", &[b_code])],
+                letter_group: None,
+                group3_ix: 0,
+            },
         ];
         let rules = compile_rules(&groups);
         let bytes = compile_dict_with_rules(&[], &TransposeConfig::LATIN, &rules).expect("compile");
@@ -1290,10 +1465,18 @@ world   w'3:ld
         let opts = LangOptions::for_lang("en");
         // 'a' at word start → boundary precedes it → fires.
         let hit = word_to_phonemes("a", &dict, &phdata, &stress, &opts);
-        assert!(hit.phonemes.contains(&s_code), "word-start rule should fire on 'a': {:?}", hit.phonemes);
+        assert!(
+            hit.phonemes.contains(&s_code),
+            "word-start rule should fire on 'a': {:?}",
+            hit.phonemes
+        );
         // 'a' after 'b' → no boundary → must NOT fire.
         let miss = word_to_phonemes("ba", &dict, &phdata, &stress, &opts);
-        assert!(!miss.phonemes.contains(&s_code), "word-start rule wrongly fired on 'ba': {:?}", miss.phonemes);
+        assert!(
+            !miss.phonemes.contains(&s_code),
+            "word-start rule wrongly fired on 'ba': {:?}",
+            miss.phonemes
+        );
     }
 
     #[test]
@@ -1316,9 +1499,26 @@ world   w'3:ld
         let groups = vec![
             RuleGroup {
                 name: "b".into(),
-                rules: vec![Rule { pre_context: "A".into(), phonemes: vec![s_code], ..Default::default() }], letter_group: None, group3_ix: 0 },
-            RuleGroup { name: "a".into(), rules: vec![Rule::new("", &[a_code])], letter_group: None, group3_ix: 0 },
-            RuleGroup { name: "k".into(), rules: vec![Rule::new("", &[k_code])], letter_group: None, group3_ix: 0 },
+                rules: vec![Rule {
+                    pre_context: "A".into(),
+                    phonemes: vec![s_code],
+                    ..Default::default()
+                }],
+                letter_group: None,
+                group3_ix: 0,
+            },
+            RuleGroup {
+                name: "a".into(),
+                rules: vec![Rule::new("", &[a_code])],
+                letter_group: None,
+                group3_ix: 0,
+            },
+            RuleGroup {
+                name: "k".into(),
+                rules: vec![Rule::new("", &[k_code])],
+                letter_group: None,
+                group3_ix: 0,
+            },
         ];
         let rules = compile_rules(&groups);
         let bytes = compile_dict_with_rules(&[], &TransposeConfig::LATIN, &rules).expect("compile");
@@ -1328,10 +1528,18 @@ world   w'3:ld
         let opts = LangOptions::for_lang("en");
         // 'b' after the vowel 'a' → group matches → fires.
         let hit = word_to_phonemes("ab", &dict, &phdata, &stress, &opts);
-        assert!(hit.phonemes.contains(&s_code), "vowel-group rule should fire on 'ab': {:?}", hit.phonemes);
+        assert!(
+            hit.phonemes.contains(&s_code),
+            "vowel-group rule should fire on 'ab': {:?}",
+            hit.phonemes
+        );
         // 'b' after the consonant 'k' → not a vowel → must NOT fire.
         let miss = word_to_phonemes("kb", &dict, &phdata, &stress, &opts);
-        assert!(!miss.phonemes.contains(&s_code), "vowel-group rule wrongly fired on 'kb': {:?}", miss.phonemes);
+        assert!(
+            !miss.phonemes.contains(&s_code),
+            "vowel-group rule wrongly fired on 'kb': {:?}",
+            miss.phonemes
+        );
     }
 
     #[test]
@@ -1341,23 +1549,38 @@ world   w'3:ld
         let phonemes = vec![100u8, 101, 102];
         let groups = vec![RuleGroup {
             name: "a".into(),
-            rules: vec![Rule::new("", &phonemes)], letter_group: None, group3_ix: 0 }];
+            rules: vec![Rule::new("", &phonemes)],
+            letter_group: None,
+            group3_ix: 0,
+        }];
         let rules = compile_rules(&groups);
-        let dict_bytes = compile_dict_with_rules(&[], &TransposeConfig::LATIN, &rules).expect("compile");
+        let dict_bytes =
+            compile_dict_with_rules(&[], &TransposeConfig::LATIN, &rules).expect("compile");
         let dict = Dictionary::from_bytes("en", dict_bytes).expect("valid dict");
 
         // The reader's `build_groups` registered group 'a' (groups1['a']).
         let off = dict.groups.groups1[b'a' as usize].expect("group 'a' not registered");
         // The rule bytes at that offset: RULE_PHONEMES, phonemes…, 0.
         assert_eq!(dict.data[off], RULE_PHONEMES);
-        assert_eq!(&dict.data[off + 1..off + 1 + phonemes.len()], phonemes.as_slice());
-        assert_eq!(dict.data[off + 1 + phonemes.len()], 0, "rule not null-terminated");
+        assert_eq!(
+            &dict.data[off + 1..off + 1 + phonemes.len()],
+            phonemes.as_slice()
+        );
+        assert_eq!(
+            dict.data[off + 1 + phonemes.len()],
+            0,
+            "rule not null-terminated"
+        );
     }
 
     #[test]
     fn flags_only_entry_round_trips() {
         // A flags-only entry (no phonemes) with one flags2 bit set.
-        let entry = ListEntry { word: "the".into(), phonemes: vec![], flags: vec![32 + 3] };
+        let entry = ListEntry {
+            word: "the".into(),
+            phonemes: vec![],
+            flags: vec![32 + 3],
+        };
         let bytes = compile_dict(&[entry], &TransposeConfig::LATIN).expect("compile");
         let dict = Dictionary::from_bytes("en", bytes).expect("valid dict");
         let r = lookup(&dict, "the", &LookupCtx::default()).expect("found");
@@ -1382,7 +1605,10 @@ world   w'3:ld
         assert_eq!(entries[0].flags, vec![0x31]);
         // `$u` is a stress directive (0x48); `$allcaps` is word 2 bit 0x0a.
         assert_eq!(entries[1].flags, vec![0x48, 0x2a]);
-        assert!(!entries[0].phonemes.is_empty(), "the phoneme column still parses");
+        assert!(
+            !entries[0].phonemes.is_empty(),
+            "the phoneme column still parses"
+        );
     }
 
     /// Unknown or directive-only `$` tokens are ignored rather than becoming
@@ -1403,13 +1629,19 @@ world   w'3:ld
         let entries = parse_list_dsl("x\ta\t$textmode $nosuchflag\n", &phdata);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].flags, vec![29]);
-        assert_eq!(entries[0].phonemes, b"a", "the column is text, not phonemes");
+        assert_eq!(
+            entries[0].phonemes, b"a",
+            "the column is text, not phonemes"
+        );
 
         // `$phonememode` switches back, and a plain unknown flag is still
         // ignored.
         let entries = parse_list_dsl("x\ta\t$nosuchflag\n", &phdata);
         assert_eq!(entries.len(), 1);
-        assert!(entries[0].flags.is_empty(), "no flag bytes for an unknown name");
+        assert!(
+            entries[0].flags.is_empty(),
+            "no flag bytes for an unknown name"
+        );
         assert!(!entries[0].phonemes.is_empty());
 
         // A line that is *only* `$textmode` defines no entry.
@@ -1433,7 +1665,10 @@ world   w'3:ld
         let groups = parse_rules_dsl(".group c\n        c          k\n        c (q\n", &phdata);
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].rules.len(), 2);
-        assert!(!groups[0].rules[0].phonemes.is_empty(), "`c  k` has phonemes");
+        assert!(
+            !groups[0].rules[0].phonemes.is_empty(),
+            "`c  k` has phonemes"
+        );
         assert_eq!(groups[0].rules[1].post_context, "q");
         assert!(groups[0].rules[1].phonemes.is_empty(), "`c (q` is silent");
     }
@@ -1456,8 +1691,14 @@ world   w'3:ld
         );
         // Two definitions and one letter group.
         assert_eq!(groups.len(), 3);
-        assert_eq!(groups[0].letter_group, Some((1, vec!["l".into(), "r".into()])));
-        assert_eq!(groups[1].letter_group, Some((2, vec!["i".into(), "y".into()])));
+        assert_eq!(
+            groups[0].letter_group,
+            Some((1, vec!["l".into(), "r".into()]))
+        );
+        assert_eq!(
+            groups[1].letter_group,
+            Some((2, vec!["i".into(), "y".into()]))
+        );
         assert_eq!(groups[2].name, "c");
 
         let rules = compile_rules(&groups);
@@ -1470,7 +1711,10 @@ world   w'3:ld
             .windows(2)
             .filter(|w| w[0] == super::super::RULE_LETTERGP2 && w[1] == b'A' + 1)
             .count();
-        assert!(refs >= 2, "the definition and the reference both encode group 1");
+        assert!(
+            refs >= 2,
+            "the definition and the reference both encode group 1"
+        );
     }
 
     /// A `.Lnn` line with a malformed number is ignored rather than producing a

@@ -61,7 +61,10 @@ impl Default for PitchOptions {
 impl Pcm {
     /// Wrap raw mono samples.
     pub fn from_samples(samples: Vec<i16>, sample_rate: u32) -> Self {
-        Pcm { samples, sample_rate }
+        Pcm {
+            samples,
+            sample_rate,
+        }
     }
 
     /// Read a 16-bit PCM WAV file (mono, or the mean of all channels).
@@ -89,9 +92,15 @@ impl Pcm {
             let body_end = (body_start + size).min(bytes.len());
             match id {
                 b"fmt " if size >= 16 => {
-                    channels = u16::from_le_bytes(bytes[body_start + 2..body_start + 4].try_into().unwrap());
-                    sample_rate = u32::from_le_bytes(bytes[body_start + 4..body_start + 8].try_into().unwrap());
-                    bits = u16::from_le_bytes(bytes[body_start + 14..body_start + 16].try_into().unwrap());
+                    channels = u16::from_le_bytes(
+                        bytes[body_start + 2..body_start + 4].try_into().unwrap(),
+                    );
+                    sample_rate = u32::from_le_bytes(
+                        bytes[body_start + 4..body_start + 8].try_into().unwrap(),
+                    );
+                    bits = u16::from_le_bytes(
+                        bytes[body_start + 14..body_start + 16].try_into().unwrap(),
+                    );
                 }
                 b"data" => data = Some(&bytes[body_start..body_end]),
                 _ => {}
@@ -116,7 +125,10 @@ impl Pcm {
             }
             samples.push((acc / ch as i32) as i16);
         }
-        Ok(Pcm { samples, sample_rate })
+        Ok(Pcm {
+            samples,
+            sample_rate,
+        })
     }
 
     /// Serialize as a 16-bit mono PCM WAV.
@@ -156,10 +168,14 @@ impl Pcm {
         if self.samples.is_empty() {
             return 0.0;
         }
-        let sum: f64 = self.samples.iter().map(|&s| {
-            let v = s as f64 / i16::MAX as f64;
-            v * v
-        }).sum();
+        let sum: f64 = self
+            .samples
+            .iter()
+            .map(|&s| {
+                let v = s as f64 / i16::MAX as f64;
+                v * v
+            })
+            .sum();
         (sum / self.samples.len() as f64).sqrt() as f32
     }
 
@@ -172,10 +188,13 @@ impl Pcm {
         while start < self.samples.len() {
             let end = (start + frame).min(self.samples.len());
             let win = &self.samples[start..end];
-            let sum: f64 = win.iter().map(|&s| {
-                let v = s as f64 / i16::MAX as f64;
-                v * v
-            }).sum();
+            let sum: f64 = win
+                .iter()
+                .map(|&s| {
+                    let v = s as f64 / i16::MAX as f64;
+                    v * v
+                })
+                .sum();
             out.push((sum / win.len().max(1) as f64).sqrt() as f32);
             start += hop;
         }
@@ -197,7 +216,13 @@ impl Pcm {
                 .iter()
                 .map(|&s| s as f64)
                 .collect();
-            out.push(estimate_f0(&win, sr, min_lag, max_lag, opts.voicing_threshold));
+            out.push(estimate_f0(
+                &win,
+                sr,
+                min_lag,
+                max_lag,
+                opts.voicing_threshold,
+            ));
             start += opts.hop;
         }
         out
@@ -205,7 +230,11 @@ impl Pcm {
 
     /// Mean F0 over voiced frames, or `None` if the signal is entirely unvoiced.
     pub fn mean_pitch(&self, opts: PitchOptions) -> Option<f32> {
-        let voiced: Vec<f32> = self.pitch_track(opts).into_iter().filter(|&f| f > 0.0).collect();
+        let voiced: Vec<f32> = self
+            .pitch_track(opts)
+            .into_iter()
+            .filter(|&f| f > 0.0)
+            .collect();
         if voiced.is_empty() {
             None
         } else {
@@ -275,14 +304,22 @@ impl Pcm {
             num += (k as f32 * bin_hz) as f64 * m as f64;
             den += m as f64;
         }
-        if den > 0.0 { (num / den) as f32 } else { 0.0 }
+        if den > 0.0 {
+            (num / den) as f32
+        } else {
+            0.0
+        }
     }
 
     /// Spectral flatness (0..1): geometric mean ÷ arithmetic mean of the power
     /// spectrum.  Near 1 ⇒ noise-like (fricatives/stops); near 0 ⇒ tonal (vowels).
     pub fn spectral_flatness(&self, fft_size: usize, hop: usize) -> f32 {
         let spec = self.avg_spectrum(fft_size, hop);
-        let bins = if spec.len() > 1 { &spec[1..] } else { &spec[..] }; // skip DC
+        let bins = if spec.len() > 1 {
+            &spec[1..]
+        } else {
+            &spec[..]
+        }; // skip DC
         if bins.is_empty() {
             return 0.0;
         }
@@ -295,7 +332,11 @@ impl Pcm {
         let count = bins.len() as f64;
         let gmean = (log_sum / count).exp();
         let amean = sum / count;
-        if amean > 0.0 { (gmean / amean) as f32 } else { 0.0 }
+        if amean > 0.0 {
+            (gmean / amean) as f32
+        } else {
+            0.0
+        }
     }
 
     /// Spectral roll-off (Hz): frequency below which `pct` (0..1) of the total
@@ -331,7 +372,11 @@ impl Pcm {
                 band += p;
             }
         }
-        if total > 0.0 { (band / total) as f32 } else { 0.0 }
+        if total > 0.0 {
+            (band / total) as f32
+        } else {
+            0.0
+        }
     }
 }
 
@@ -384,7 +429,11 @@ pub fn compare(a: &Pcm, b: &Pcm) -> Similarity {
             vb.push(rpb[i]);
         }
     }
-    let pitch_corr = if va.len() >= 3 { pearson(&va, &vb) } else { f32::NAN };
+    let pitch_corr = if va.len() >= 3 {
+        pearson(&va, &vb)
+    } else {
+        f32::NAN
+    };
 
     Similarity {
         dur_ratio: if da > 0.0 { db / da } else { 0.0 },
@@ -507,7 +556,11 @@ fn estimate_f0(win: &[f64], sr: f32, min_lag: usize, max_lag: usize, thresh: f32
     let mut running = 0.0;
     for tau in 1..=max_lag {
         running += d[tau];
-        cmnd[tau] = if running > 0.0 { d[tau] * tau as f64 / running } else { 1.0 };
+        cmnd[tau] = if running > 0.0 {
+            d[tau] * tau as f64 / running
+        } else {
+            1.0
+        };
     }
 
     // Absolute threshold: first local minimum below `thresh`.
@@ -543,12 +596,20 @@ fn estimate_f0(win: &[f64], sr: f32, min_lag: usize, max_lag: usize, thresh: f32
     let lag = if best_tau > min_lag && best_tau < max_lag {
         let (a, b, c) = (d[best_tau - 1], d[best_tau], d[best_tau + 1]);
         let denom = a - 2.0 * b + c;
-        let delta = if denom.abs() > 1e-9 { 0.5 * (a - c) / denom } else { 0.0 };
+        let delta = if denom.abs() > 1e-9 {
+            0.5 * (a - c) / denom
+        } else {
+            0.0
+        };
         best_tau as f64 + delta.clamp(-1.0, 1.0)
     } else {
         best_tau as f64
     };
-    if lag > 0.0 { (sr as f64 / lag) as f32 } else { 0.0 }
+    if lag > 0.0 {
+        (sr as f64 / lag) as f32
+    } else {
+        0.0
+    }
 }
 
 /// Pearson correlation of two equal-length slices (`NaN` if undefined).
@@ -575,7 +636,11 @@ fn pearson(a: &[f32], b: &[f32]) -> f32 {
 }
 
 fn mean(v: &[f32]) -> f32 {
-    if v.is_empty() { 0.0 } else { v.iter().sum::<f32>() / v.len() as f32 }
+    if v.is_empty() {
+        0.0
+    } else {
+        v.iter().sum::<f32>() / v.len() as f32
+    }
 }
 
 /// Linear-interpolation resample of `v` to exactly `n` points.
@@ -664,7 +729,11 @@ mod tests {
         let a = sine(180.0, 0.5, 22_050, 0.6);
         let b = sine(180.0, 0.5, 22_050, 0.3); // half amplitude
         let sim = compare(&a, &b);
-        assert!((sim.rms_ratio - 0.5).abs() < 0.03, "rms_ratio={}", sim.rms_ratio);
+        assert!(
+            (sim.rms_ratio - 0.5).abs() < 0.03,
+            "rms_ratio={}",
+            sim.rms_ratio
+        );
         // Same pitch → mean pitches match closely.
         let (pa, pb) = (sim.mean_pitch_a.unwrap(), sim.mean_pitch_b.unwrap());
         assert!((pa - pb).abs() < 3.0);

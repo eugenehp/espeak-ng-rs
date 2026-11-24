@@ -17,19 +17,28 @@ fn en_caps() -> Option<Translator> {
 
 #[test]
 fn announces_capital_before_capitalised_words() {
-    let Some(t) = en_caps() else { eprintln!("[SKIP] no en data"); return };
+    let Some(t) = en_caps() else {
+        eprintln!("[SKIP] no en data");
+        return;
+    };
     assert_eq!(t.text_to_ipa("Apple").unwrap(), "kˌapətəl ˈapəl");
     assert_eq!(
         t.text_to_ipa("Hello World").unwrap(),
         "kˌapətəl həlˈəʊ kˌapətəl wˈɜːld"
     );
     // Only the capital-initial word is announced.
-    assert_eq!(t.text_to_ipa("the Big dog").unwrap(), "ðə kˌapətəl bˈɪɡ dˈɒɡ");
+    assert_eq!(
+        t.text_to_ipa("the Big dog").unwrap(),
+        "ðə kˌapətəl bˈɪɡ dˈɒɡ"
+    );
 }
 
 #[test]
 fn lowercase_text_is_unaffected() {
-    let Some(t) = en_caps() else { eprintln!("[SKIP] no en data"); return };
+    let Some(t) = en_caps() else {
+        eprintln!("[SKIP] no en data");
+        return;
+    };
     assert_eq!(t.text_to_ipa("hello world").unwrap(), "həlˈəʊ wˈɜːld");
 }
 
@@ -37,7 +46,10 @@ fn lowercase_text_is_unaffected() {
 fn disabled_by_default() {
     let t = match Translator::new("en", None) {
         Ok(t) if t.text_to_ipa("hallo").is_ok() => t,
-        _ => { eprintln!("[SKIP] no en data"); return }
+        _ => {
+            eprintln!("[SKIP] no en data");
+            return;
+        }
     };
     // Without capitals set, no announcement.
     assert_eq!(t.text_to_ipa("Apple").unwrap(), "ˈapəl");
@@ -53,14 +65,25 @@ fn k1_inserts_the_capital_sound_not_the_word() {
         return;
     };
     // Ensure data present.
-    if t.text_to_ipa("hi").is_err() { eprintln!("[SKIP]"); return; }
+    if t.text_to_ipa("hi").is_err() {
+        eprintln!("[SKIP]");
+        return;
+    }
     t.options.capitals = 1;
     let cap_sounds = |s: &str| {
-        t.translate_to_codes(s).unwrap().iter().filter(|c| c.code == 18).count()
+        t.translate_to_codes(s)
+            .unwrap()
+            .iter()
+            .filter(|c| c.code == 18)
+            .count()
     };
     assert_eq!(cap_sounds("Hello world"), 1, "one capital-initial word");
     assert_eq!(cap_sounds("hello world"), 0, "no capitals");
-    assert_eq!(cap_sounds("NASA rocket"), 2, "all-caps word doubles the sound");
+    assert_eq!(
+        cap_sounds("NASA rocket"),
+        2,
+        "all-caps word doubles the sound"
+    );
     // And it must NOT insert the spoken word "capital" (which -k 2 does).
     let ipa_k1 = {
         // codes → the capital sound is a phoneme, not the "_cap" word phonemes.
@@ -93,7 +116,9 @@ fn k1_sound_is_part_of_the_word() {
 /// trailing `_` on exactly the capitalised words.
 #[test]
 fn k3_and_above_raise_the_pitch_for_the_word() {
-    let Some(mut t) = Translator::new("en", None).ok() else { return };
+    let Some(mut t) = Translator::new("en", None).ok() else {
+        return;
+    };
     if t.text_to_ipa("hi").is_err() {
         eprintln!("[SKIP] no en data");
         return;

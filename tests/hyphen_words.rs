@@ -22,7 +22,11 @@ fn hyphen_between_letters_splits_words() {
     assert_eq!(ipa("X-ray"), joined("X ray"));
     assert_eq!(ipa("mother-in-law"), joined("mother in law"));
     assert_eq!(ipa("well-known"), "wˈɛlnˈəʊn");
-    assert!(!ipa("state-of-the-art").contains(' '), "one word: {}", ipa("state-of-the-art"));
+    assert!(
+        !ipa("state-of-the-art").contains(' '),
+        "one word: {}",
+        ipa("state-of-the-art")
+    );
     // …and each part still carries its own stress mark.
     assert_eq!(ipa("state-of-the-art").matches('ˈ').count(), 2);
 }

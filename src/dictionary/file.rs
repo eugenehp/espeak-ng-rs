@@ -12,12 +12,12 @@
 
 use std::path::Path;
 
-use crate::Error;
-use super::{
-    N_HASH_DICT, N_LETTER_GROUPS, N_RULE_GROUP2,
-    RULE_GROUP_START, RULE_GROUP_END, RULE_REPLACEMENTS, RULE_LETTERGP2,
-};
 use super::transpose::TransposeConfig;
+use super::{
+    N_HASH_DICT, N_LETTER_GROUPS, N_RULE_GROUP2, RULE_GROUP_END, RULE_GROUP_START, RULE_LETTERGP2,
+    RULE_REPLACEMENTS,
+};
+use crate::Error;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Rule-group indexing
@@ -150,42 +150,42 @@ pub struct Dictionary {
 /// key their rules on the letters themselves.
 pub fn letter_bits_offset_for(lang: &str) -> u32 {
     match lang {
-            // Cyrillic-script: OFFSET_CYRILLIC
-            "ru" | "bg" | "tt" | "uk" | "be" | "mk" | "mn" | "kk" | "ky"
-            | "ba" | "cv" | "tg" | "os" | "cu" => 0x420u32,
-            // Greek: OFFSET_GREEK
-            "el" | "grc" => 0x380u32,
-            // Armenian: OFFSET_ARMENIAN
-            "hy" | "hyw" => 0x530u32,
-            // Georgian: OFFSET_GEORGIAN
-            "ka" => 0x10A0u32,
-            // Indic scripts (block start = offset).  They share the ISCII-derived
-            // relative layout, so one letter-group classification serves all.
-            "hi" | "mr" | "ne" | "sa" | "kok" => 0x900u32, // Devanagari
-            "bn" | "as" | "bpy" => 0x980u32,               // Bengali/Assamese/Bishnupriya
-            "pa" => 0xA00u32,                              // Gurmukhi
-            "gu" => 0xA80u32,                              // Gujarati
-            "or" => 0xB00u32,                              // Oriya
-            "ta" => 0xB80u32,                              // Tamil
-            "te" => 0xC00u32,                              // Telugu
-            "kn" => 0xC80u32,                              // Kannada
-            "ml" => 0xD00u32,                              // Malayalam
-            // Sinhala — its own (non-ISCII) block; the si_rules carry the
-            // abugida handling via rule-file letter groups (.L01…) and virama
-            // (U+0DCA) context, so only the groups3 offset is needed here.
-            "si" => 0xD80u32,                              // Sinhala
-            // Arabic script: Arabic, Farsi/Persian, Urdu, Sindhi — key their
-            // rules on the U+0600 block, so index groups3 from there.  (Uyghur
-            // `ug` also uses Arabic script but resolves via groups2 and works
-            // without the offset, so it's intentionally left off.)
-            "ar" | "fa" | "ur" | "sd" => 0x600u32,
-            // Korean: the Hangul-syllable input is decomposed to conjoining jamo
-            // (U+1100 leading, U+1161 vowel, U+11A7 trailing) before lookup, and
-            // ko_rules keys its groups on those jamo — so index groups3 from the
-            // jamo block start.
-            "ko" => 0x1100u32,
-            // All other languages: no offset
-            _ => 0u32,
+        // Cyrillic-script: OFFSET_CYRILLIC
+        "ru" | "bg" | "tt" | "uk" | "be" | "mk" | "mn" | "kk" | "ky" | "ba" | "cv" | "tg"
+        | "os" | "cu" => 0x420u32,
+        // Greek: OFFSET_GREEK
+        "el" | "grc" => 0x380u32,
+        // Armenian: OFFSET_ARMENIAN
+        "hy" | "hyw" => 0x530u32,
+        // Georgian: OFFSET_GEORGIAN
+        "ka" => 0x10A0u32,
+        // Indic scripts (block start = offset).  They share the ISCII-derived
+        // relative layout, so one letter-group classification serves all.
+        "hi" | "mr" | "ne" | "sa" | "kok" => 0x900u32, // Devanagari
+        "bn" | "as" | "bpy" => 0x980u32,               // Bengali/Assamese/Bishnupriya
+        "pa" => 0xA00u32,                              // Gurmukhi
+        "gu" => 0xA80u32,                              // Gujarati
+        "or" => 0xB00u32,                              // Oriya
+        "ta" => 0xB80u32,                              // Tamil
+        "te" => 0xC00u32,                              // Telugu
+        "kn" => 0xC80u32,                              // Kannada
+        "ml" => 0xD00u32,                              // Malayalam
+        // Sinhala — its own (non-ISCII) block; the si_rules carry the
+        // abugida handling via rule-file letter groups (.L01…) and virama
+        // (U+0DCA) context, so only the groups3 offset is needed here.
+        "si" => 0xD80u32, // Sinhala
+        // Arabic script: Arabic, Farsi/Persian, Urdu, Sindhi — key their
+        // rules on the U+0600 block, so index groups3 from there.  (Uyghur
+        // `ug` also uses Arabic script but resolves via groups2 and works
+        // without the offset, so it's intentionally left off.)
+        "ar" | "fa" | "ur" | "sd" => 0x600u32,
+        // Korean: the Hangul-syllable input is decomposed to conjoining jamo
+        // (U+1100 leading, U+1161 vowel, U+11A7 trailing) before lookup, and
+        // ko_rules keys its groups on those jamo — so index groups3 from the
+        // jamo block start.
+        "ko" => 0x1100u32,
+        // All other languages: no offset
+        _ => 0u32,
     }
 }
 
@@ -196,8 +196,7 @@ impl Dictionary {
         // upstream #2261 introduces.
         let path = crate::translate::dict_path(data_dir, lang)
             .unwrap_or_else(|| data_dir.join(format!("{}_dict", lang)));
-        let data = std::fs::read(&path)
-            .map_err(|e| Error::Io(e))?;
+        let data = std::fs::read(&path).map_err(|e| Error::Io(e))?;
 
         Self::from_bytes(lang, data)
     }
@@ -206,21 +205,27 @@ impl Dictionary {
     pub fn from_bytes(lang: &str, data: Vec<u8>) -> Result<Self, Error> {
         // Header validation
         if data.len() < N_HASH_DICT + 8 {
-            return Err(Error::InvalidData(
-                format!("dict '{}': file too short ({} bytes)", lang, data.len())));
+            return Err(Error::InvalidData(format!(
+                "dict '{}': file too short ({} bytes)",
+                lang,
+                data.len()
+            )));
         }
 
         let pw0 = u32::from_le_bytes(data[0..4].try_into().unwrap()) as usize;
         let pw1 = u32::from_le_bytes(data[4..8].try_into().unwrap()) as usize;
 
         if pw0 != N_HASH_DICT {
-            return Err(Error::InvalidData(
-                format!("dict '{}': bad magic 0x{:x} (expected 0x{:x})",
-                    lang, pw0, N_HASH_DICT)));
+            return Err(Error::InvalidData(format!(
+                "dict '{}': bad magic 0x{:x} (expected 0x{:x})",
+                lang, pw0, N_HASH_DICT
+            )));
         }
         if pw1 == 0 || pw1 > 0x800_0000 || pw1 > data.len() {
-            return Err(Error::InvalidData(
-                format!("dict '{}': bad rules_offset {}", lang, pw1)));
+            return Err(Error::InvalidData(format!(
+                "dict '{}': bad rules_offset {}",
+                lang, pw1
+            )));
         }
         let rules_offset = pw1;
 
@@ -234,11 +239,15 @@ impl Dictionary {
                 // Skip entries in this bucket (each starts with its total length).
                 loop {
                     if pos >= data.len() {
-                        return Err(Error::InvalidData(
-                            format!("dict '{}': hash table overran file at bucket {}", lang, hash)));
+                        return Err(Error::InvalidData(format!(
+                            "dict '{}': hash table overran file at bucket {}",
+                            lang, hash
+                        )));
                     }
                     let entry_len = data[pos] as usize;
-                    if entry_len == 0 { break; }
+                    if entry_len == 0 {
+                        break;
+                    }
                     pos += entry_len;
                 }
                 pos += 1; // skip the 0-terminator
@@ -261,7 +270,8 @@ impl Dictionary {
 
         let letter_bits = build_letter_bits(lang);
 
-        let replace_pairs = groups.replace_chars
+        let replace_pairs = groups
+            .replace_chars
             .map(|off| decode_replace_table(&data, off))
             .unwrap_or_default();
 
@@ -384,14 +394,18 @@ impl Dictionary {
     #[inline]
     pub fn group3(&self, c2: u8) -> Option<&[u8]> {
         let idx = c2.wrapping_sub(1) as usize;
-        if idx >= 128 { return None; }
+        if idx >= 128 {
+            return None;
+        }
         self.groups.groups3[idx].map(|off| &self.data[off..])
     }
 
     /// Letter-group string list for `letterGroups[ix]`.
     #[inline]
     pub fn letter_group(&self, ix: usize) -> Option<&[u8]> {
-        if ix >= N_LETTER_GROUPS { return None; }
+        if ix >= N_LETTER_GROUPS {
+            return None;
+        }
         self.groups.letter_groups[ix].map(|off| &self.data[off..])
     }
 }
@@ -446,8 +460,10 @@ fn build_groups(data: &[u8], rules_offset: usize) -> Result<Groups, Error> {
 
     while pos < rules.len() && rules[pos] != 0 {
         if rules[pos] != RULE_GROUP_START {
-            return Err(Error::InvalidData(
-                format!("bad rules data: expected RULE_GROUP_START at offset {}", rules_offset + pos)));
+            return Err(Error::InvalidData(format!(
+                "bad rules data: expected RULE_GROUP_START at offset {}",
+                rules_offset + pos
+            )));
         }
         pos += 1; // skip RULE_GROUP_START
 
@@ -490,16 +506,24 @@ fn build_groups(data: &[u8], rules_offset: usize) -> Result<Groups, Error> {
                 pos += 1;
             }
             let name_len = pos - name_start;
-            let c  = rules[name_start];       // first byte of group name
-            let c2 = if name_len >= 2 { rules[name_start + 1] } else { 0 };
+            let c = rules[name_start]; // first byte of group name
+            let c2 = if name_len >= 2 {
+                rules[name_start + 1]
+            } else {
+                0
+            };
             pos += 1; // skip the \0
 
             // abs offset of first rule for this group
             let rule_abs = rules_offset + pos;
 
             match name_len {
-                0 => { g.groups1[0] = Some(rule_abs); }
-                1 => { g.groups1[c as usize] = Some(rule_abs); }
+                0 => {
+                    g.groups1[0] = Some(rule_abs);
+                }
+                1 => {
+                    g.groups1[c as usize] = Some(rule_abs);
+                }
                 _ if c == 1 => {
                     // groups3 indexed by c2-1
                     let idx = c2.wrapping_sub(1) as usize;
@@ -512,11 +536,13 @@ fn build_groups(data: &[u8], rules_offset: usize) -> Result<Groups, Error> {
                     if g.groups2_start[c as usize] == 255 {
                         g.groups2_start[c as usize] = n_groups2 as u8;
                     }
-                    g.groups2_count[c as usize] =
-                        g.groups2_count[c as usize].saturating_add(1);
+                    g.groups2_count[c as usize] = g.groups2_count[c as usize].saturating_add(1);
                     let key = (c as u16) | ((c2 as u16) << 8);
                     if n_groups2 < N_RULE_GROUP2 {
-                        g.groups2.push(Group2Entry { key, offset: rule_abs });
+                        g.groups2.push(Group2Entry {
+                            key,
+                            offset: rule_abs,
+                        });
                         n_groups2 += 1;
                     }
                 }
@@ -554,30 +580,30 @@ fn build_letter_bits(lang: &str) -> Box<[u8; 256]> {
     let mut bits = Box::new([0u8; 256]);
 
     match lang {
-        "ru" | "bg" | "uk" | "be" | "tt" | "mk" | "mn" | "kk" | "ky"
-        | "ba" | "cv" | "tg" | "os" | "cu" => {
+        "ru" | "bg" | "uk" | "be" | "tt" | "mk" | "mn" | "kk" | "ky" | "ba" | "cv" | "tg"
+        | "os" | "cu" => {
             // Cyrillic letter groups — `letter_bits_offset = OFFSET_CYRILLIC = 0x420`
             // Indices are (codepoint - 0x420); stored at that index in bits[].
 
             // LETTERGP_A (0) = vowels: а е ё и о у ы э ю я (0x10,0x15,0x31,0x18,0x1e,0x23,0x2b,0x2d,0x2e,0x2f)
-            const RU_VOWELS: &[usize] = &[0x10, 0x15, 0x31, 0x18, 0x1e, 0x23, 0x2b, 0x2d, 0x2e, 0x2f];
+            const RU_VOWELS: &[usize] =
+                &[0x10, 0x15, 0x31, 0x18, 0x1e, 0x23, 0x2b, 0x2d, 0x2e, 0x2f];
             // LETTERGP_B (1) = soft consonants: ь й ч щ (0x2c,0x19,0x27,0x29)
             const CYRL_SOFT: &[usize] = &[0x2c, 0x19, 0x27, 0x29];
             // LETTERGP_C (2) = consonants
             const RU_CONSONANTS: &[usize] = &[
-                0x11,0x12,0x13,0x14,0x16,0x17,0x19,0x1a,0x1b,0x1c,
-                0x1d,0x1f,0x20,0x21,0x22,0x24,0x25,0x26,0x27,0x28,
-                0x29,0x2a,0x2c,
+                0x11, 0x12, 0x13, 0x14, 0x16, 0x17, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1f, 0x20, 0x21,
+                0x22, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x2c,
             ];
             // LETTERGP_H (3) = hard consonants: ъ ж ц ш (0x2a,0x16,0x26,0x28)
             const CYRL_HARD: &[usize] = &[0x2a, 0x16, 0x26, 0x28];
             // LETTERGP_F (4) = not-hard
             const CYRL_NOTHARD: &[usize] = &[
-                0x11,0x12,0x13,0x14,0x17,0x19,0x1a,0x1b,0x1c,0x1d,
-                0x1f,0x20,0x21,0x22,0x24,0x25,0x27,0x29,0x2c,
+                0x11, 0x12, 0x13, 0x14, 0x17, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1f, 0x20, 0x21, 0x22,
+                0x24, 0x25, 0x27, 0x29, 0x2c,
             ];
             // LETTERGP_G (5) = voiced obstruents: б в г д ж з (0x11-0x14,0x16-0x17)
-            const CYRL_VOICED: &[usize] = &[0x11,0x12,0x13,0x14,0x16,0x17];
+            const CYRL_VOICED: &[usize] = &[0x11, 0x12, 0x13, 0x14, 0x16, 0x17];
             // LETTERGP_Y (6) = iotated vowels + soft sign
             //   SetCyrillicLetters: ь ю я ё (0x2c,0x2e,0x2f,0x31)
             //   Translator_Russian adds: е и є ї (0x15,0x18,0x34,0x37)
@@ -590,21 +616,23 @@ fn build_letter_bits(lang: &str) -> Box<[u8; 256]> {
 
             fn set_bits(bits: &mut [u8; 256], indices: &[usize], group: u8) {
                 for &idx in indices {
-                    if idx < 256 { bits[idx] |= 1 << group; }
+                    if idx < 256 {
+                        bits[idx] |= 1 << group;
+                    }
                 }
             }
 
-            set_bits(&mut bits, RU_VOWELS,     0); // LETTERGP_A
-            set_bits(&mut bits, CYRL_SOFT,     1); // LETTERGP_B
+            set_bits(&mut bits, RU_VOWELS, 0); // LETTERGP_A
+            set_bits(&mut bits, CYRL_SOFT, 1); // LETTERGP_B
             set_bits(&mut bits, RU_CONSONANTS, 2); // LETTERGP_C
-            set_bits(&mut bits, CYRL_HARD,     3); // LETTERGP_H
-            set_bits(&mut bits, CYRL_NOTHARD,  4); // LETTERGP_F
-            set_bits(&mut bits, CYRL_VOICED,   5); // LETTERGP_G
-            set_bits(&mut bits, CYRL_IVOWELS,  6); // LETTERGP_Y
+            set_bits(&mut bits, CYRL_HARD, 3); // LETTERGP_H
+            set_bits(&mut bits, CYRL_NOTHARD, 4); // LETTERGP_F
+            set_bits(&mut bits, CYRL_VOICED, 5); // LETTERGP_G
+            set_bits(&mut bits, CYRL_IVOWELS, 6); // LETTERGP_Y
             if matches!(lang, "ru" | "uk") {
                 set_bits(&mut bits, RU_EXTRA_IVOWELS, 6);
             }
-            set_bits(&mut bits, RU_VOWELS,     7); // LETTERGP_VOWEL2
+            set_bits(&mut bits, RU_VOWELS, 7); // LETTERGP_VOWEL2
         }
         "el" | "grc" => {
             // Greek letter groups — `letter_bits_offset = OFFSET_GREEK = 0x380`,
@@ -628,26 +656,25 @@ fn build_letter_bits(lang: &str) -> Box<[u8; 256]> {
                 }
             }
             const EL_VOWELS: &[usize] = &[
-                0x10, 0x2c, 0x2d, 0x2e, 0x2f, 0x30, 0x31, 0x35, 0x37, 0x39, 0x3f,
-                0x45, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f,
+                0x10, 0x2c, 0x2d, 0x2e, 0x2f, 0x30, 0x31, 0x35, 0x37, 0x39, 0x3f, 0x45, 0x49, 0x4a,
+                0x4b, 0x4c, 0x4d, 0x4e, 0x4f,
             ];
             // ε η ι υ and their accented forms έ ή ί ύ.
             const EL_FVOWELS: &[usize] = &[0x2d, 0x2e, 0x2f, 0x35, 0x37, 0x39, 0x45, 0x4d];
             // θ κ ξ π ς σ τ φ χ
-            const EL_VOICELESS: &[usize] =
-                &[0x38, 0x3a, 0x3e, 0x40, 0x42, 0x43, 0x44, 0x46, 0x47];
+            const EL_VOICELESS: &[usize] = &[0x38, 0x3a, 0x3e, 0x40, 0x42, 0x43, 0x44, 0x46, 0x47];
             const EL_CONSONANTS: &[usize] = &[
-                0x32, 0x33, 0x34, 0x36, 0x38, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x40,
-                0x41, 0x42, 0x43, 0x44, 0x46, 0x47, 0x48,
+                0x32, 0x33, 0x34, 0x36, 0x38, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x40, 0x41, 0x42, 0x43,
+                0x44, 0x46, 0x47, 0x48,
             ];
-            set(&mut bits, EL_VOWELS, 0);     // LETTERGP_A
-            set(&mut bits, EL_VOICELESS, 1);  // LETTERGP_B
+            set(&mut bits, EL_VOWELS, 0); // LETTERGP_A
+            set(&mut bits, EL_VOICELESS, 1); // LETTERGP_B
             set(&mut bits, EL_CONSONANTS, 2); // LETTERGP_C
-            set(&mut bits, EL_FVOWELS, 6);    // LETTERGP_Y
-            set(&mut bits, EL_VOWELS, 7);     // LETTERGP_VOWEL2
+            set(&mut bits, EL_FVOWELS, 6); // LETTERGP_Y
+            set(&mut bits, EL_VOWELS, 7); // LETTERGP_VOWEL2
         }
-        "hi" | "mr" | "ne" | "sa" | "kok" | "bn" | "as" | "bpy" | "pa" | "gu" | "or"
-        | "ta" | "te" | "kn" | "ml" => {
+        "hi" | "mr" | "ne" | "sa" | "kok" | "bn" | "as" | "bpy" | "pa" | "gu" | "or" | "ta"
+        | "te" | "kn" | "ml" => {
             // Indic scripts share the ISCII-derived layout, so the built-in
             // groups apply at the same *offset-relative* positions regardless of
             // script.  Groups (from the espeak `*_rules`): A = vowel letters +
@@ -657,7 +684,9 @@ fn build_letter_bits(lang: &str) -> Box<[u8; 256]> {
             // The table is indexed by `(codepoint - offset) & 0x7f`, and all
             // Indic offsets are the block start, so index = position within block.
             let set = |bits: &mut [u8; 256], lo: usize, hi: usize, group: u8| {
-                for i in lo..=hi { bits[i] |= 1 << group; }
+                for i in lo..=hi {
+                    bits[i] |= 1 << group;
+                }
             };
             set(&mut bits, 0x15, 0x39, 2); // consonants → C
             set(&mut bits, 0x58, 0x5F, 2); // nukta consonant forms → C
@@ -666,7 +695,7 @@ fn build_letter_bits(lang: &str) -> Box<[u8; 256]> {
             set(&mut bits, 0x3E, 0x4C, 0); // dependent vowel signs → A
             set(&mut bits, 0x3E, 0x4C, 1); //                        + B
             set(&mut bits, 0x3E, 0x4C, 6); //                        + Y
-            bits[0x4D] |= 1 << 1;          // virama → B (suppresses inherent vowel)
+            bits[0x4D] |= 1 << 1; // virama → B (suppresses inherent vowel)
         }
         "si" => {
             // Sinhala (own block, offset 0x0D80).  Same abugida mechanism as the
@@ -675,19 +704,29 @@ fn build_letter_bits(lang: &str) -> Box<[u8; 256]> {
             // si_rules key the drop on group B (`ක (B → k`).  Layout differs
             // from ISCII, so the positions are Sinhala-specific.
             let set = |bits: &mut [u8; 256], lo: usize, hi: usize, group: u8| {
-                for i in lo..=hi { bits[i] |= 1 << group; }
+                for i in lo..=hi {
+                    bits[i] |= 1 << group;
+                }
             };
             set(&mut bits, 0x1A, 0x46, 2); // consonants ක–ෆ → C
             set(&mut bits, 0x05, 0x16, 0); // independent vowels අ–ඖ → A
             set(&mut bits, 0x4F, 0x5F, 1); // dependent vowel signs → B
             set(&mut bits, 0x4F, 0x5F, 0); //                        + A
             set(&mut bits, 0x72, 0x73, 1); // vocalic rr/ll signs → B
-            bits[0x4A] |= 1 << 1;          // virama (al-lakuna) → B
+            bits[0x4A] |= 1 << 1; // virama (al-lakuna) → B
         }
         _ => {
             // Latin/default: use the English letter bits
             let en = crate::translate::english_letter_bits();
             bits.copy_from_slice(en.as_slice());
+            if lang == "fr" {
+                // `tr_languages.c` French: `SetLetterVowel(tr, 'y')` — y is a
+                // vowel (groups A and VOWEL2), keeping only its front-vowel
+                // bit: `letter_bits[c] = (letter_bits[c] & 0x40) | 0x81`.
+                // Without it `A) s (A z` missed "analyse" and "physique",
+                // which read [s] for C's [z].
+                bits[b'y' as usize] = (bits[b'y' as usize] & 0x40) | 0x81;
+            }
         }
     }
 
@@ -713,31 +752,51 @@ mod tests {
 
     #[test]
     fn load_en_dict() {
-        let dict = match try_load("en") { Some(d) => d, None => return };
+        let dict = match try_load("en") {
+            Some(d) => d,
+            None => return,
+        };
         assert_eq!(dict.lang, "en");
-        assert_eq!(dict.rules_offset, 0x0001_b188,
-            "rules_offset should be 0x1b188 for installed en_dict");
+        assert_eq!(
+            dict.rules_offset, 0x0001_b188,
+            "rules_offset should be 0x1b188 for installed en_dict"
+        );
         // groups1['a'] must be non-null (English has 'a' rules)
-        assert!(dict.groups.groups1[b'a' as usize].is_some(),
-            "groups1['a'] should be set");
+        assert!(
+            dict.groups.groups1[b'a' as usize].is_some(),
+            "groups1['a'] should be set"
+        );
     }
 
     #[test]
     fn hash_table_covers_all_buckets() {
-        let dict = match try_load("en") { Some(d) => d, None => return };
+        let dict = match try_load("en") {
+            Some(d) => d,
+            None => return,
+        };
         // Every hash table entry must point somewhere inside the data.
         for (i, &off) in dict.hashtab.iter().enumerate() {
-            assert!(off < dict.data.len(),
-                "hashtab[{}] = {} out of bounds (len={})", i, off, dict.data.len());
+            assert!(
+                off < dict.data.len(),
+                "hashtab[{}] = {} out of bounds (len={})",
+                i,
+                off,
+                dict.data.len()
+            );
         }
     }
 
     #[test]
     fn group1_default_is_some() {
-        let dict = match try_load("en") { Some(d) => d, None => return };
+        let dict = match try_load("en") {
+            Some(d) => d,
+            None => return,
+        };
         // groups1[0] is the default rule chain; it should be present in English
-        assert!(dict.groups.groups1[0].is_some(),
-            "default rule chain (groups1[0]) should be set for English");
+        assert!(
+            dict.groups.groups1[0].is_some(),
+            "default rule chain (groups1[0]) should be set for English"
+        );
     }
 
     #[test]

@@ -35,15 +35,24 @@ fn latin_words_under_a_non_latin_voice_are_spoken() {
     // with the Latin voice; so do we (`(en)…(ru)` switch markers, as in C).
     let t = skip_unless!("ru");
     let got = t.text_to_ipa("привет hello").unwrap();
-    assert!(got.contains("(en)"), "ru + Latin should switch to en: {got}");
-    assert!(got.contains("həl") || got.contains("hɛl"), "the Latin word is spoken: {got}");
+    assert!(
+        got.contains("(en)"),
+        "ru + Latin should switch to en: {got}"
+    );
+    assert!(
+        got.contains("həl") || got.contains("hɛl"),
+        "the Latin word is spoken: {got}"
+    );
 }
 
 #[test]
 fn arabic_under_english_is_spoken() {
     let t = skip_unless!("en");
     let got = t.text_to_ipa("hello مرحبا").unwrap();
-    assert!(got.contains("(ar)"), "en + Arabic should switch to ar: {got}");
+    assert!(
+        got.contains("(ar)"),
+        "en + Arabic should switch to ar: {got}"
+    );
 }
 
 #[test]
@@ -73,8 +82,13 @@ fn skin_tone_sequences_are_spoken_as_base_plus_modifier() {
 fn subdivision_flags_are_named() {
     // 🏴 + tag letters: England / Scotland, not "black flag".
     let t = skip_unless!("en");
-    let england = t.text_to_ipa("\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}").unwrap();
-    assert!(england.contains("ɪŋɡlənd"), "England flag names the country: {england}");
+    let england = t
+        .text_to_ipa("\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}")
+        .unwrap();
+    assert!(
+        england.contains("ɪŋɡlənd"),
+        "England flag names the country: {england}"
+    );
     assert!(!england.contains("flˈaɡ"), "not 'black flag': {england}");
 }
 
@@ -117,7 +131,10 @@ fn virtual_phonemes_follow_their_own_language_definition() {
 fn voicing_assimilation_crosses_the_word_boundary() {
     // Portuguese coda `s#` is voiced by the *next word's* first sound.
     let t = skip_unless!("pt");
-    assert!(t.text_to_ipa("três").unwrap().ends_with('ʃ'), "before a pause: [ʃ]");
+    assert!(
+        t.text_to_ipa("três").unwrap().ends_with('ʃ'),
+        "before a pause: [ʃ]"
+    );
     let phrase = t.text_to_ipa("os amigos").unwrap();
     assert!(phrase.starts_with("uz"), "before a vowel: [z] — {phrase}");
 }
@@ -149,11 +166,16 @@ fn portuguese_number_words_keep_final_stress() {
     // are *not* the same string — the numbers come from the list's `?1 _N`
     // phonemes and the words from the letter-to-sound rules, in C as here
     // (`iˈum` vs `i ˈũm`) — so each is checked against upstream's own reading.
-    let last_word_stressed = |s: String| {
-        s.split_whitespace().last().is_some_and(|w| w.contains('ˈ'))
-    };
-    assert!(last_word_stressed(t.text_to_ipa("101").unwrap()), "101 stresses 'um'");
-    assert!(last_word_stressed(t.text_to_ipa("cento e um").unwrap()), "words stress 'um'");
+    let last_word_stressed =
+        |s: String| s.split_whitespace().last().is_some_and(|w| w.contains('ˈ'));
+    assert!(
+        last_word_stressed(t.text_to_ipa("101").unwrap()),
+        "101 stresses 'um'"
+    );
+    assert!(
+        last_word_stressed(t.text_to_ipa("cento e um").unwrap()),
+        "words stress 'um'"
+    );
     assert_eq!(t.text_to_ipa("101").unwrap(), "sˈẽntu i ˈum");
     assert_eq!(t.text_to_ipa("21").unwrap(), "vˈĩntɨ iˈum");
     assert_eq!(t.text_to_ipa("vinte e um").unwrap(), "vˈĩntɨ i ˈũm");
@@ -167,7 +189,10 @@ fn stacked_suffixes_keep_the_stem() {
     // "s" plus two possessives; the stem used to be lost.
     let t = skip_unless!("en");
     let got = t.text_to_ipa("s's's").unwrap();
-    assert!(got.starts_with('ˈ') || got.starts_with('ɛ'), "stem 'ess' survives: {got}");
+    assert!(
+        got.starts_with('ˈ') || got.starts_with('ɛ'),
+        "stem 'ess' survives: {got}"
+    );
     assert!(got.contains("ɛs"), "stem 'ess' survives: {got}");
 }
 
@@ -182,10 +207,22 @@ fn text_to_ipa_reports_the_clause_terminator() {
     assert!(end.is_sentence());
     assert_eq!(end.as_char(), Some('?'));
 
-    assert_eq!(t.text_to_ipa_with_terminator("Hello.").unwrap().1, ClauseTerminator::Period);
-    assert_eq!(t.text_to_ipa_with_terminator("Hello, there").unwrap().1, ClauseTerminator::None);
-    assert_eq!(t.text_to_ipa_with_terminator("Hello,").unwrap().1, ClauseTerminator::Comma);
-    assert_eq!(t.text_to_ipa_with_terminator("Wow!").unwrap().1, ClauseTerminator::Exclamation);
+    assert_eq!(
+        t.text_to_ipa_with_terminator("Hello.").unwrap().1,
+        ClauseTerminator::Period
+    );
+    assert_eq!(
+        t.text_to_ipa_with_terminator("Hello, there").unwrap().1,
+        ClauseTerminator::None
+    );
+    assert_eq!(
+        t.text_to_ipa_with_terminator("Hello,").unwrap().1,
+        ClauseTerminator::Comma
+    );
+    assert_eq!(
+        t.text_to_ipa_with_terminator("Wow!").unwrap().1,
+        ClauseTerminator::Exclamation
+    );
 }
 
 // ── Data coverage ───────────────────────────────────────────────────────────
@@ -200,7 +237,11 @@ fn every_advertised_voice_can_speak() {
         return;
     };
     let voices = espeak_ng::voices::list_voices(std::path::Path::new(&data_dir));
-    assert!(voices.len() > 100, "expected the full voice list, got {}", voices.len());
+    assert!(
+        voices.len() > 100,
+        "expected the full voice list, got {}",
+        voices.len()
+    );
     let mut broken = Vec::new();
     for v in &voices {
         match Translator::new(&v.language, None) {
@@ -212,7 +253,10 @@ fn every_advertised_voice_can_speak() {
             Err(_) => broken.push(v.language.clone()),
         }
     }
-    assert!(broken.is_empty(), "voices advertised but unusable: {broken:?}");
+    assert!(
+        broken.is_empty(),
+        "voices advertised but unusable: {broken:?}"
+    );
 }
 
 // ── Tone languages ──────────────────────────────────────────────────────────
@@ -240,11 +284,17 @@ fn mandarin_third_tone_sandhi() {
     // tone becomes 21.
     let t = skip_unless!("cmn");
     let nihao = t.text_to_ipa("你好").unwrap();
-    assert!(nihao.starts_with("niɜ"), "3+3 sandhi raises the first tone: {nihao}");
+    assert!(
+        nihao.starts_with("niɜ"),
+        "3+3 sandhi raises the first tone: {nihao}"
+    );
     // The sandhi pair is one word: no space, and no stress on the first half.
     assert_eq!(nihao, "niɜχˈɑu2", "the pair reads as one word: {nihao}");
     let beijing = t.text_to_ipa("北京").unwrap();
-    assert!(beijing.contains("pˈei2"), "214 before another tone → 21: {beijing}");
+    assert!(
+        beijing.contains("pˈei2"),
+        "214 before another tone → 21: {beijing}"
+    );
 }
 
 // ── Rules-engine fixes found while comparing against the oracle ─────────────
@@ -257,7 +307,10 @@ fn german_prefixed_verbs_translate_their_stem() {
     // `be-`/`ge-` verb with an inflectional ending collapsed to `b'@b@`.
     let t = skip_unless!("de");
     let beachten = t.text_to_ipa("beachten").unwrap();
-    assert!(beachten.contains("axt"), "the stem is translated: {beachten}");
+    assert!(
+        beachten.contains("axt"),
+        "the stem is translated: {beachten}"
+    );
     assert!(beachten.ends_with("ən"), "the ending is kept: {beachten}");
     assert_eq!(t.text_to_ipa("bezahlen").unwrap(), "bətsˈɑːlən");
 }
@@ -300,7 +353,9 @@ fn vowel_initial_words_get_a_break() {
     let t = skip_unless!("de");
     let codes = t.translate_to_codes("achten").unwrap();
     assert!(
-        codes.first().is_some_and(|c| c.code == 9 || c.code == 11 || c.code == 12),
+        codes
+            .first()
+            .is_some_and(|c| c.code == 9 || c.code == 11 || c.code == 12),
         "a pause phoneme opens the word: {:?}",
         codes.iter().take(3).map(|c| c.code).collect::<Vec<_>>()
     );
@@ -315,7 +370,10 @@ fn short_fractions_are_read_as_one_number() {
     if let Some(t) = tr("cs") {
         let ipa = t.text_to_ipa("0,25").unwrap();
         assert!(ipa.contains("dvˈatset"), "cs 0,25 says 'dvacet pět': {ipa}");
-        assert!(!ipa.contains("dvˈa pj"), "not read as two separate digits: {ipa}");
+        assert!(
+            !ipa.contains("dvˈa pj"),
+            "not read as two separate digits: {ipa}"
+        );
     }
     if let Some(t) = tr("fr") {
         let ipa = t.text_to_ipa("3,14").unwrap();
@@ -329,7 +387,10 @@ fn short_fractions_are_read_as_one_number() {
         assert!(ipa.contains("tˈoɾz"), "pt 3,14 says 'catorze': {ipa}");
         // More digits than the language's limit → digit by digit again.
         let long = t.text_to_ipa("1,234").unwrap();
-        assert!(long.split_whitespace().count() >= 4, "long fraction stays digits: {long}");
+        assert!(
+            long.split_whitespace().count() >= 4,
+            "long fraction stays digits: {long}"
+        );
     }
     // A language without the mode still reads digits individually.
     if let Some(t) = tr("en") {
@@ -437,7 +498,10 @@ fn decimal_separators_match_upstream() {
     }
     // …while the comma-decimal languages are unchanged.
     if let Some(t) = tr("sv") {
-        assert!(t.text_to_ipa("3,14").unwrap().contains("pˈɵŋkt"), "sv keeps its comma decimal");
+        assert!(
+            t.text_to_ipa("3,14").unwrap().contains("pˈɵŋkt"),
+            "sv keeps its comma decimal"
+        );
     }
 }
 
@@ -508,7 +572,11 @@ fn an_explicit_stress_mark_wins_over_the_placement_rule() {
     let t = skip_unless!("crh");
     for word in ["selâm", "merhaba", "kitap"] {
         let ipa = t.text_to_ipa(word).unwrap();
-        assert_eq!(ipa.matches('ˈ').count(), 1, "one primary stress in {word:?}: {ipa}");
+        assert_eq!(
+            ipa.matches('ˈ').count(),
+            1,
+            "one primary stress in {word:?}: {ipa}"
+        );
     }
 }
 
@@ -521,8 +589,14 @@ fn stress_rule_comes_from_the_voice_file_when_it_is_there() {
         return;
     };
     let dir = std::path::Path::new(&data_dir);
-    assert_eq!(espeak_ng::voices::voice_stress_rule(dir, "eu"), Some(vec![15]));
-    assert_eq!(espeak_ng::voices::voice_stress_rule(dir, "la"), Some(vec![2, 0, 2]));
+    assert_eq!(
+        espeak_ng::voices::voice_stress_rule(dir, "eu"),
+        Some(vec![15])
+    );
+    assert_eq!(
+        espeak_ng::voices::voice_stress_rule(dir, "la"),
+        Some(vec![2, 0, 2])
+    );
     assert_eq!(espeak_ng::voices::voice_stress_rule(dir, "en"), None);
 }
 
@@ -568,7 +642,11 @@ fn a_conditional_length_overrides_the_declared_one() {
             ..Default::default()
         };
         espeak_ng::synthesize::bytecode::interpret_phoneme_ctl(
-            program, &phdata.phonindex, &nb, |c| phdata.get(c).cloned(), false,
+            program,
+            &phdata.phonindex,
+            &nb,
+            |c| phdata.get(c).cloned(),
+            false,
         )
         .set_length
     };
@@ -598,7 +676,11 @@ fn phoneme_variant_indicators_are_not_printed() {
     let a_var = phdata.lookup_phoneme("a/");
     if a_var != 0 {
         let ph = phdata.get(a_var).unwrap();
-        assert_eq!(ph.mnemonic_str(), "a/", "the mnemonic itself keeps the slash");
+        assert_eq!(
+            ph.mnemonic_str(),
+            "a/",
+            "the mnemonic itself keeps the slash"
+        );
         assert_eq!(ph.mnemonic_display(), "a", "…but it is not printed");
     }
 }
@@ -609,7 +691,10 @@ fn french_liaison_that_does_not_surface_is_dropped_from_the_codes() {
     // the codes path kept it (`trwaz2`).
     let t = skip_unless!("fr");
     let codes = |s: &str| t.translate_to_codes(s).unwrap().len();
-    assert!(codes("deux enfants") > codes("deux chats"), "the liaison surfaces before a vowel");
+    assert!(
+        codes("deux enfants") > codes("deux chats"),
+        "the liaison surfaces before a vowel"
+    );
 }
 
 #[test]

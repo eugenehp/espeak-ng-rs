@@ -22,7 +22,10 @@ impl Lcg {
         Lcg(seed.wrapping_mul(6364136223846793005).wrapping_add(1))
     }
     fn next_u8(&mut self) -> u8 {
-        self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        self.0 = self
+            .0
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         (self.0 >> 33) as u8
     }
     fn bytes(&mut self, n: usize) -> Vec<u8> {
@@ -107,7 +110,9 @@ fn dictionary_parser_survives_corrupt_input() {
 #[test]
 fn mbrola_table_parser_survives_corrupt_input() {
     let Some(dir) = data_dir() else { return };
-    let Some(real) = read(&dir, "mbrola_ph/en1_phtrans") else { return };
+    let Some(real) = read(&dir, "mbrola_ph/en1_phtrans") else {
+        return;
+    };
     hammer(&real, |bytes| {
         if let Ok(t) = espeak_ng::mbrola::MbrolaTable::parse(bytes) {
             // Round-tripping and looking a name up must be total, too.
@@ -125,7 +130,9 @@ fn mbrola_table_parser_survives_corrupt_input() {
 #[test]
 fn spect_sequence_parser_survives_corrupt_input() {
     let Some(dir) = data_dir() else { return };
-    let Some(real) = read(&dir, "phondata") else { return };
+    let Some(real) = read(&dir, "phondata") else {
+        return;
+    };
     // `phondata` is large; hammer a representative slice rather than all of it.
     let slice = &real[..real.len().min(64 * 1024)];
     hammer(slice, |bytes| {
@@ -147,7 +154,9 @@ fn spect_sequence_parser_survives_corrupt_input() {
 #[test]
 fn translation_with_a_corrupt_dictionary_does_not_panic() {
     let Some(dir) = data_dir() else { return };
-    let Some(real) = read(&dir, "en_dict") else { return };
+    let Some(real) = read(&dir, "en_dict") else {
+        return;
+    };
     let mut rng = Lcg::new(0xC0FFEE);
     for _ in 0..40 {
         let mut copy = real.clone();

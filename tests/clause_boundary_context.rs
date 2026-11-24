@@ -50,9 +50,17 @@ fn voicing_does_not_propagate_past_a_clause_boundary() {
     };
     let x = |s: &str| pl.text_to_ipa(s).unwrap();
     // Across the boundary: devoiced.
-    assert!(x("flag. Zażółć").starts_with("flˈak"), "{}", x("flag. Zażółć"));
+    assert!(
+        x("flag. Zażółć").starts_with("flˈak"),
+        "{}",
+        x("flag. Zażółć")
+    );
     // Within the clause it still assimilates, in both directions.
-    assert!(x("flag zawżdy").starts_with("flˈaɡ"), "{}", x("flag zawżdy"));
+    assert!(
+        x("flag zawżdy").starts_with("flˈaɡ"),
+        "{}",
+        x("flag zawżdy")
+    );
     assert!(x("minus b").starts_with("mˈinuz"), "{}", x("minus b"));
     assert!(x("w prawo").starts_with("f"), "{}", x("w prawo"));
     // Word-final devoicing before a pause is unchanged.

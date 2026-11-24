@@ -18,15 +18,25 @@ fn vietnamese_ten_reads() {
     let ten = ipa("10");
     assert!(!ten.trim().is_empty(), "vi 10 produced no output");
     // It's the same "mười" that begins the teens (15 = mười + …).
-    assert!(ipa("15").starts_with(&ten), "vi 15 should start with the 10 word: {}", ipa("15"));
+    assert!(
+        ipa("15").starts_with(&ten),
+        "vi 15 should start with the 10 word: {}",
+        ipa("15")
+    );
     // …and appears inside larger numbers (110 = một trăm mười).
-    assert!(ipa("110").ends_with(&ten), "vi 110 should end with the 10 word: {}", ipa("110"));
+    assert!(
+        ipa("110").ends_with(&ten),
+        "vi 110 should end with the 10 word: {}",
+        ipa("110")
+    );
 }
 
 #[test]
 fn other_languages_ten_unaffected() {
     for (lang, want) in [("en", "tˈɛn"), ("de", "tsˈeːn"), ("tr", "ˈon")] {
-        let Some(t) = Translator::new(lang, None).ok() else { continue };
+        let Some(t) = Translator::new(lang, None).ok() else {
+            continue;
+        };
         assert_eq!(t.text_to_ipa("10").unwrap(), want, "{lang} 10");
     }
 }

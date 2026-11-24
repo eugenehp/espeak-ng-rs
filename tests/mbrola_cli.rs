@@ -90,7 +90,10 @@ fn compile_mbrola_missing_source_errors() {
     assert!(!out.status.success(), "missing source should fail");
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(err.contains("not found"), "clear error expected: {err}");
-    assert!(!dir.join("mbrola_ph").exists(), "nothing written on failure");
+    assert!(
+        !dir.join("mbrola_ph").exists(),
+        "nothing written on failure"
+    );
 }
 
 /// `--pho` writes one line per phoneme: `<name>\t<ms>` with, for a vowel, a tab
@@ -126,21 +129,33 @@ fn pho_output_is_well_formed() {
         if let Some(pitch) = fields.next() {
             let nums: Vec<i32> = pitch
                 .split_whitespace()
-                .map(|t| t.parse().unwrap_or_else(|_| panic!("bad pitch in {line:?}")))
+                .map(|t| {
+                    t.parse()
+                        .unwrap_or_else(|_| panic!("bad pitch in {line:?}"))
+                })
                 .collect();
             assert_eq!(nums.len() % 2, 0, "unpaired pitch target in {line:?}");
             for pair in nums.chunks(2) {
-                assert!((0..=100).contains(&pair[0]), "position out of range in {line:?}");
+                assert!(
+                    (0..=100).contains(&pair[0]),
+                    "position out of range in {line:?}"
+                );
                 assert!((50..400).contains(&pair[1]), "implausible F0 in {line:?}");
             }
             // MBROLA requires the positions to be non-decreasing.
             let pos: Vec<i32> = nums.iter().step_by(2).copied().collect();
-            assert!(pos.windows(2).all(|w| w[0] <= w[1]), "positions not sorted in {line:?}");
+            assert!(
+                pos.windows(2).all(|w| w[0] <= w[1]),
+                "positions not sorted in {line:?}"
+            );
         }
     }
 
     // The clause ends with silence, so MBROLA doesn't clip the last phoneme.
-    assert!(lines.last().unwrap().starts_with('_'), "no trailing pause: {pho}");
+    assert!(
+        lines.last().unwrap().starts_with('_'),
+        "no trailing pause: {pho}"
+    );
 }
 
 /// An `mb-*` voice maps eSpeak's phoneme names through that database's
@@ -154,20 +169,32 @@ fn mbrola_voice_translates_phoneme_names() {
             .env("ESPEAK_DATA_PATH", data_dir())
             .output()
             .expect("run --pho");
-        assert!(out.status.success(), "{voice}: {}", String::from_utf8_lossy(&out.stderr));
+        assert!(
+            out.status.success(),
+            "{voice}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
         String::from_utf8_lossy(&out.stdout).into_owned()
     };
 
     let names = |pho: &str| -> Vec<String> {
-        pho.lines().map(|l| l.split('\t').next().unwrap().to_string()).collect()
+        pho.lines()
+            .map(|l| l.split('\t').next().unwrap().to_string())
+            .collect()
     };
 
     let plain = names(&run("en"));
     let mapped = names(&run("mb-en1"));
     assert_eq!(plain.len(), mapped.len(), "same phoneme count either way");
     // en1's table renames the /oʊ/ of "hello" from eSpeak's `oU` to MBROLA `@U`.
-    assert!(plain.contains(&"oU".to_string()), "expected eSpeak's own name: {plain:?}");
-    assert!(mapped.contains(&"@U".to_string()), "expected the mapped name: {mapped:?}");
+    assert!(
+        plain.contains(&"oU".to_string()),
+        "expected eSpeak's own name: {plain:?}"
+    );
+    assert!(
+        mapped.contains(&"@U".to_string()),
+        "expected the mapped name: {mapped:?}"
+    );
 }
 
 /// An `mb-*` voice still speaks when the (unshipped) MBROLA binary and diphone
@@ -185,12 +212,22 @@ fn mbrola_voice_falls_back_to_the_builtin_synthesizer() {
         .env("ESPEAK_DATA_PATH", data_dir())
         .output()
         .expect("run -v mb-en1");
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
     let err = String::from_utf8_lossy(&out.stderr);
-    assert!(err.contains("MBROLA"), "expected a clear warning, got: {err}");
+    assert!(
+        err.contains("MBROLA"),
+        "expected a clear warning, got: {err}"
+    );
     assert!(wav.exists(), "no audio written: {err}");
-    assert!(std::fs::metadata(&wav).unwrap().len() > 1000, "audio is empty");
+    assert!(
+        std::fs::metadata(&wav).unwrap().len() > 1000,
+        "audio is empty"
+    );
 }
 
 /// The voice file lists several `language` lines with priorities; the lowest
@@ -203,13 +240,19 @@ fn mbrola_voice_file_is_parsed() {
     assert_eq!(v.phtrans, "en1_phtrans");
 
     // The bare database name and the `mb/` spelling resolve to the same voice.
-    assert_eq!(espeak_ng::voices::load_mbrola_voice(&data_dir(), "en1"), Some(v));
+    assert_eq!(
+        espeak_ng::voices::load_mbrola_voice(&data_dir(), "en1"),
+        Some(v)
+    );
 
     let de = espeak_ng::voices::load_mbrola_voice(&data_dir(), "mb-de4").expect("mb-de4");
     assert_eq!(de.language, "de");
     assert_eq!(de.database, "de4");
 
-    assert_eq!(espeak_ng::voices::load_mbrola_voice(&data_dir(), "nope"), None);
+    assert_eq!(
+        espeak_ng::voices::load_mbrola_voice(&data_dir(), "nope"),
+        None
+    );
 }
 
 /// The `.pho` pitch targets follow the *voice's* own `pitch <base> <range>` —
@@ -224,7 +267,11 @@ fn pho_pitch_follows_the_voice() {
             .env("ESPEAK_DATA_PATH", data_dir())
             .output()
             .expect("run --pho");
-        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
         String::from_utf8_lossy(&out.stdout)
             .lines()
             .filter_map(|l| l.split('\t').nth(2))
@@ -241,7 +288,10 @@ fn pho_pitch_follows_the_voice() {
     // `mb-la1` declares `pitch 82 117`; `mb-de1` declares `pitch 140 220`.
     let male = targets("mb-la1", "salve munde");
     let female = targets("mb-de1", "guten Tag");
-    assert!(!male.is_empty() && !female.is_empty(), "no pitch targets emitted");
+    assert!(
+        !male.is_empty() && !female.is_empty(),
+        "no pitch targets emitted"
+    );
 
     let mean = |v: &[i32]| v.iter().sum::<i32>() as f64 / v.len() as f64;
     assert!(

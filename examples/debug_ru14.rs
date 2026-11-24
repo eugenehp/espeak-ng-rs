@@ -8,20 +8,32 @@ fn dump_phoneme(phdata: &PhonemeData, code: u8) {
         println!("code={code}: NOT FOUND");
         return;
     };
-    let mnem: String = ph.mnemonic.to_le_bytes().iter()
-        .take_while(|&&b| b != 0).map(|&b| b as char).collect();
-    println!("code={code} mnem={mnem:?} type={} program=0x{:04x}", ph.typ, ph.program);
+    let mnem: String = ph
+        .mnemonic
+        .to_le_bytes()
+        .iter()
+        .take_while(|&&b| b != 0)
+        .map(|&b| b as char)
+        .collect();
+    println!(
+        "code={code} mnem={mnem:?} type={} program=0x{:04x}",
+        ph.typ, ph.program
+    );
     let prog = ph.program as usize;
     let pi = &phdata.phonindex;
     for i in 0..16usize {
         let off = (prog + i) * 2;
-        if off + 2 > pi.len() { break; }
-        let w = u16::from_le_bytes([pi[off], pi[off+1]]);
+        if off + 2 > pi.len() {
+            break;
+        }
+        let w = u16::from_le_bytes([pi[off], pi[off + 1]]);
         let it = w >> 12;
         let i2 = (w >> 8) & 0xf;
         let d = w & 0xff;
         println!("  [{i:2}] 0x{w:04x}  type={it} instn2=0x{i2:x} data={d}");
-        if w == 0 || w == 0xf000 { break; }
+        if w == 0 || w == 0xf000 {
+            break;
+        }
     }
     println!();
 }

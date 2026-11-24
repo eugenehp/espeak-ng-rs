@@ -19,7 +19,10 @@ fn af() -> Option<Translator> {
 
 #[test]
 fn switch_to_english_default() {
-    let Some(t) = af() else { eprintln!("[SKIP] no af data"); return };
+    let Some(t) = af() else {
+        eprintln!("[SKIP] no af data");
+        return;
+    };
     // `_^_EN` compiles to a bare phonSWITCH (EN == default voice).
     assert_eq!(t.text_to_ipa("boston").unwrap(), "(en)bˈɒstən(af)");
     assert_eq!(t.text_to_ipa("washington").unwrap(), "(en)wˈɒʃɪŋtən(af)");
@@ -28,14 +31,20 @@ fn switch_to_english_default() {
 
 #[test]
 fn switch_to_named_language() {
-    let Some(t) = af() else { eprintln!("[SKIP] no af data"); return };
+    let Some(t) = af() else {
+        eprintln!("[SKIP] no af data");
+        return;
+    };
     assert_eq!(t.text_to_ipa("zürich").unwrap(), "(de)tsˈyːrɪç(af)");
     assert_eq!(t.text_to_ipa("rhône").unwrap(), "(fr)ʁˈoːn(af)");
 }
 
 #[test]
 fn switch_inside_a_sentence() {
-    let Some(t) = af() else { eprintln!("[SKIP] no af data"); return };
+    let Some(t) = af() else {
+        eprintln!("[SKIP] no af data");
+        return;
+    };
     assert_eq!(
         t.text_to_ipa("ek woon in boston naby melbourne").unwrap(),
         "æk vˈʊən ən (en)bˈɒstən(af) nˈɑːbɛɪ (en)mˈɛlbən(af)",
@@ -44,7 +53,10 @@ fn switch_inside_a_sentence() {
 
 #[test]
 fn non_switch_words_unaffected() {
-    let Some(t) = af() else { eprintln!("[SKIP] no af data"); return };
+    let Some(t) = af() else {
+        eprintln!("[SKIP] no af data");
+        return;
+    };
     // An ordinary af word must not gain any (lang) markers.
     let ipa = t.text_to_ipa("hallo").unwrap();
     assert!(!ipa.contains('('), "unexpected switch marker in {ipa:?}");

@@ -27,8 +27,12 @@ fn oracle(lang: &str, text: &str) -> Option<String> {
 }
 
 fn trim_silence(pcm: &[i16], threshold: i16) -> &[i16] {
-    let first = pcm.iter().position(|&s| s.unsigned_abs() >= threshold as u16);
-    let last = pcm.iter().rposition(|&s| s.unsigned_abs() >= threshold as u16);
+    let first = pcm
+        .iter()
+        .position(|&s| s.unsigned_abs() >= threshold as u16);
+    let last = pcm
+        .iter()
+        .rposition(|&s| s.unsigned_abs() >= threshold as u16);
     match (first, last) {
         (Some(start), Some(end)) if start <= end => &pcm[start..=end],
         _ => &[],
@@ -42,16 +46,17 @@ fn envelope(pcm: &[i16], window: usize) -> Vec<i16> {
 
     let mut out = Vec::with_capacity(pcm.len() / window + 1);
     for chunk in pcm.chunks(window) {
-        let avg = chunk
-            .iter()
-            .map(|s| s.unsigned_abs() as u64)
-            .sum::<u64>() / chunk.len() as u64;
+        let avg = chunk.iter().map(|s| s.unsigned_abs() as u64).sum::<u64>() / chunk.len() as u64;
         out.push(avg.min(i16::MAX as u64) as i16);
     }
     out
 }
 
-fn best_aligned_snr_db(reference: &[i16], test: &[i16], max_shift: usize) -> Option<(f64, isize, usize)> {
+fn best_aligned_snr_db(
+    reference: &[i16],
+    test: &[i16],
+    max_shift: usize,
+) -> Option<(f64, isize, usize)> {
     if reference.is_empty() || test.is_empty() {
         return None;
     }
@@ -342,25 +347,25 @@ fn es_ll_digraph() {
 /// Basic Ukrainian words – full match against C espeak-ng.
 #[test]
 fn uk_basic_words() {
-    assert_matches_oracle!("uk", "він");    // he → βˈiːn
-    assert_matches_oracle!("uk", "або");   // or → abˈo
-    assert_matches_oracle!("uk", "день");  // day → dˈɛɲ
-    assert_matches_oracle!("uk", "мир");   // peace → mˈɪr
+    assert_matches_oracle!("uk", "він"); // he → βˈiːn
+    assert_matches_oracle!("uk", "або"); // or → abˈo
+    assert_matches_oracle!("uk", "день"); // day → dˈɛɲ
+    assert_matches_oracle!("uk", "мир"); // peace → mˈɪr
 }
 
 /// Ukrainian words with Ukrainian-specific letters (і ї є ґ).
 #[test]
 fn uk_specific_letters() {
-    assert_matches_oracle!("uk", "привіт");   // hello
-    assert_matches_oracle!("uk", "людина");   // person/human
-    assert_matches_oracle!("uk", "ніщо");     // nothing
+    assert_matches_oracle!("uk", "привіт"); // hello
+    assert_matches_oracle!("uk", "людина"); // person/human
+    assert_matches_oracle!("uk", "ніщо"); // nothing
 }
 
 /// Ukrainian stress placement.
 #[test]
 fn uk_stress() {
-    assert_matches_oracle!("uk", "вона");    // she → vowel stress
-    assert_matches_oracle!("uk", "Слава");  // glory
+    assert_matches_oracle!("uk", "вона"); // she → vowel stress
+    assert_matches_oracle!("uk", "Слава"); // glory
 }
 
 // ---------------------------------------------------------------------------
@@ -386,8 +391,7 @@ fn all_languages_produce_nonempty_oracle_output() {
         ("ar", "مرحبا"),
     ];
     for (lang, text) in cases {
-        let ipa = oracle(lang, text)
-            .unwrap_or_else(|| panic!("oracle failed for lang={lang:?}"));
+        let ipa = oracle(lang, text).unwrap_or_else(|| panic!("oracle failed for lang={lang:?}"));
         assert!(
             !ipa.is_empty(),
             "Oracle returned empty string for lang={lang:?} text={text:?}"
@@ -418,8 +422,10 @@ fn oracle_different_languages_differ() {
     }
     let en = oracle("en", "hello").unwrap();
     let fr = oracle("fr", "hello").unwrap();
-    assert_ne!(en, fr,
-        "same word in different languages should differ: en={en:?} fr={fr:?}");
+    assert_ne!(
+        en, fr,
+        "same word in different languages should differ: en={en:?} fr={fr:?}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -440,7 +446,10 @@ fn en_hello_audio_oracle_baseline() {
     };
 
     // Basic WAV sanity checks
-    assert!(wav_bytes.len() > 44, "WAV must have more than just a header");
+    assert!(
+        wav_bytes.len() > 44,
+        "WAV must have more than just a header"
+    );
     assert_eq!(&wav_bytes[0..4], b"RIFF", "must start with RIFF magic");
     assert_eq!(&wav_bytes[8..12], b"WAVE", "must have WAVE format marker");
 
@@ -448,7 +457,10 @@ fn en_hello_audio_oracle_baseline() {
     let rms_val = common::rms(&samples);
 
     // The audio must have some non-zero signal
-    assert!(rms_val > 10.0, "RMS should be above background noise: {rms_val}");
+    assert!(
+        rms_val > 10.0,
+        "RMS should be above background noise: {rms_val}"
+    );
 
     eprintln!(
         "[ORACLE] 'hello' in English: {} samples @ 22050 Hz, RMS = {:.1}",
@@ -506,14 +518,12 @@ fn en_hello_audio_matches_oracle_snr() {
     let c_env = envelope(c_trim, 220);
     let rust_env = envelope(rust_trim, 220);
 
-    let (snr, shift, overlap) = best_aligned_snr_db(&c_env, &rust_env, 12)
-        .expect("could not compute aligned SNR");
+    let (snr, shift, overlap) =
+        best_aligned_snr_db(&c_env, &rust_env, 12).expect("could not compute aligned SNR");
 
     eprintln!(
         "[PARITY] en/{text} envelope-SNR={:.2} dB shift={} windows overlap={}",
-        snr,
-        shift,
-        overlap
+        snr, shift, overlap
     );
 
     assert!(

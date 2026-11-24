@@ -22,7 +22,11 @@ fn run(args: &[&str]) -> String {
         .env("ESPEAK_DATA_PATH", data_dir())
         .output()
         .expect("run cli");
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     String::from_utf8_lossy(&out.stdout).into_owned()
 }
 
@@ -47,8 +51,14 @@ fn trace_matches_upstream_for_a_rules_word() {
 fn trace_reports_a_dictionary_hit() {
     let out = run(&["-X", "-q", "-v", "en", "the"]);
     assert!(out.starts_with("Found: 'the' [D@2]"), "{out}");
-    assert!(out.contains("$nounf"), "dictionary flags should be decoded: {out}");
-    assert!(out.trim_end().ends_with("D'@"), "phonemes follow the trace: {out}");
+    assert!(
+        out.contains("$nounf"),
+        "dictionary flags should be decoded: {out}"
+    );
+    assert!(
+        out.trim_end().ends_with("D'@"),
+        "phonemes follow the trace: {out}"
+    );
 }
 
 /// Rule scores and the rendered rule text carry the pre/post context.
@@ -71,7 +81,10 @@ fn deterministic_flag_is_accepted() {
 
     run(&["-D", "-v", "en", "-w", a.to_str().unwrap(), "hello world"]);
     run(&["-v", "en", "-w", b.to_str().unwrap(), "hello world"]);
-    assert!(std::fs::metadata(&a).unwrap().len() > 1000, "no audio written");
+    assert!(
+        std::fs::metadata(&a).unwrap().len() > 1000,
+        "no audio written"
+    );
     assert_eq!(
         std::fs::read(&a).unwrap().len(),
         std::fs::read(&b).unwrap().len(),
@@ -81,5 +94,9 @@ fn deterministic_flag_is_accepted() {
     // Repeat runs are byte-identical with or without the flag.
     let c = dir.join("c.wav");
     run(&["-D", "-v", "en", "-w", c.to_str().unwrap(), "hello world"]);
-    assert_eq!(std::fs::read(&a).unwrap(), std::fs::read(&c).unwrap(), "not reproducible");
+    assert_eq!(
+        std::fs::read(&a).unwrap(),
+        std::fs::read(&c).unwrap(),
+        "not reproducible"
+    );
 }

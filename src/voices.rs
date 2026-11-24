@@ -90,7 +90,11 @@ pub fn list_voices(data_dir: &Path) -> Vec<VoiceEntry> {
     let lang_root = data_dir.join("lang");
     let mut out = Vec::new();
     collect_dir(&lang_root, &lang_root, &mut out);
-    out.sort_by(|a, b| a.language.cmp(&b.language).then_with(|| a.name.cmp(&b.name)));
+    out.sort_by(|a, b| {
+        a.language
+            .cmp(&b.language)
+            .then_with(|| a.name.cmp(&b.name))
+    });
     out
 }
 
@@ -154,7 +158,11 @@ fn voice_score(v: &VoiceEntry, q: &VoiceQuery) -> i32 {
             .iter()
             .map(|(c, prio)| {
                 let m = language_component_score(&c.to_ascii_lowercase(), &want);
-                if m > 0 { m - *prio as i32 } else { 0 } // prefer higher priority (lower number)
+                if m > 0 {
+                    m - *prio as i32
+                } else {
+                    0
+                } // prefer higher priority (lower number)
             })
             .max()
             .unwrap_or(0);
@@ -329,10 +337,28 @@ fn parse_voice_file(root: &Path, path: &Path) -> Option<VoiceEntry> {
     if name.is_empty() {
         name = language.clone();
     }
-    let file = path.strip_prefix(root).ok()?.to_string_lossy().replace('\\', "/");
+    let file = path
+        .strip_prefix(root)
+        .ok()?
+        .to_string_lossy()
+        .replace('\\', "/");
     Some(VoiceEntry {
-        priority, language, other_languages, languages, name, file, gender, age,
-        intonation, stress_length, stress_opt, pitch, dictionary, stress_rule, words, replace,
+        priority,
+        language,
+        other_languages,
+        languages,
+        name,
+        file,
+        gender,
+        age,
+        intonation,
+        stress_length,
+        stress_opt,
+        pitch,
+        dictionary,
+        stress_rule,
+        words,
+        replace,
         phonemes,
         dict_rules,
         brackets,
@@ -420,7 +446,10 @@ pub fn voice_stress_length(data_dir: &Path, lang: &str) -> Option<Vec<i32>> {
 /// Bokmål (`nb` → `dictionary no` / `phonemes no`).
 pub fn voice_data_overrides(data_dir: &Path, lang: &str) -> (Option<String>, Option<String>) {
     let voices = list_voices(data_dir);
-    match voices.iter().find(|v| v.language.eq_ignore_ascii_case(lang)) {
+    match voices
+        .iter()
+        .find(|v| v.language.eq_ignore_ascii_case(lang))
+    {
         Some(v) => (v.dictionary.clone(), v.phonemes.clone()),
         None => (None, None),
     }
@@ -447,7 +476,9 @@ pub fn voice_bracket_pause(data_dir: &Path, lang: &str) -> (u8, u8) {
     voices
         .iter()
         .find(|v| v.language.eq_ignore_ascii_case(lang))
-        .map_or((4, 2), |v| (v.brackets.unwrap_or(4), v.brackets_announced.unwrap_or(2)))
+        .map_or((4, 2), |v| {
+            (v.brackets.unwrap_or(4), v.brackets_announced.unwrap_or(2))
+        })
 }
 
 /// An MBROLA voice: the `voices/mb/mb-<db>` file's `language` and its
@@ -474,7 +505,10 @@ pub struct MbrolaVoice {
 /// lists several — `mb-en1` has `en-uk 3`, `en-gb 3`, `en 2` — and the *lowest*
 /// priority number is the best match, so `en` wins.
 pub fn load_mbrola_voice(data_dir: &Path, name: &str) -> Option<MbrolaVoice> {
-    let db = name.strip_prefix("mb-").or_else(|| name.strip_prefix("mb/")).unwrap_or(name);
+    let db = name
+        .strip_prefix("mb-")
+        .or_else(|| name.strip_prefix("mb/"))
+        .unwrap_or(name);
     let text = std::fs::read_to_string(data_dir.join("voices").join("mb").join(format!("mb-{db}")))
         .ok()?;
 
@@ -502,8 +536,11 @@ pub fn load_mbrola_voice(data_dir: &Path, name: &str) -> Option<MbrolaVoice> {
             Some("mbrola") => {
                 let database = f.next()?.to_string();
                 let phtrans = f.next().unwrap_or("").to_string();
-                let phtrans =
-                    if phtrans.is_empty() { format!("{database}_phtrans") } else { phtrans };
+                let phtrans = if phtrans.is_empty() {
+                    format!("{database}_phtrans")
+                } else {
+                    phtrans
+                };
                 voice = Some((database, phtrans));
             }
             _ => {}
@@ -511,7 +548,12 @@ pub fn load_mbrola_voice(data_dir: &Path, name: &str) -> Option<MbrolaVoice> {
     }
     let (database, phtrans) = voice?;
     let language = best.map(|(_, c)| c).unwrap_or_else(|| "en".into());
-    Some(MbrolaVoice { language, pitch, database, phtrans })
+    Some(MbrolaVoice {
+        language,
+        pitch,
+        database,
+        phtrans,
+    })
 }
 
 /// One `formant <index> <freq%> <height%> [width%]` line from a variant file.
@@ -576,7 +618,10 @@ pub fn load_variant(data_dir: &Path, name: &str) -> Option<VariantParams> {
 }
 
 fn parse_variant(text: &str) -> Option<VariantParams> {
-    let mut v = VariantParams { gender: '-', ..Default::default() };
+    let mut v = VariantParams {
+        gender: '-',
+        ..Default::default()
+    };
     let mut is_variant = false;
 
     for line in text.lines() {
@@ -677,14 +722,19 @@ mod tests {
         let vs = list_voices(&d);
         assert!(vs.len() > 50, "expected many voices, got {}", vs.len());
 
-        let en = vs.iter().find(|v| v.language == "en-gb").expect("en-gb voice");
+        let en = vs
+            .iter()
+            .find(|v| v.language == "en-gb")
+            .expect("en-gb voice");
         assert_eq!(en.name, "English (Great Britain)");
         assert_eq!(en.file, "gmw/en");
         assert_eq!(en.priority, 2);
         // `language en 2` is listed as an additional language of the same file.
         assert!(en.other_languages.iter().any(|l| l == "en"));
 
-        assert!(vs.iter().any(|v| v.language == "af" && v.name == "Afrikaans"));
+        assert!(vs
+            .iter()
+            .any(|v| v.language == "af" && v.name == "Afrikaans"));
 
         // Sorted by language code ascending.
         assert!(vs.windows(2).all(|w| w[0].language <= w[1].language));
@@ -701,29 +751,65 @@ mod tests {
 
         // "fr" resolves to a French voice (its primary code may be "fr" or "fr-fr").
         assert!(
-            lang_of(VoiceQuery { language: Some("fr".into()), ..Default::default() })
-                .is_some_and(|l| l.starts_with("fr")),
+            lang_of(VoiceQuery {
+                language: Some("fr".into()),
+                ..Default::default()
+            })
+            .is_some_and(|l| l.starts_with("fr")),
             "fr should resolve to a French voice"
         );
         // Locale falls back to the highest-priority match: "en" → en-gb (priority 2).
-        assert_eq!(lang_of(VoiceQuery { language: Some("en".into()), ..Default::default() }).as_deref(), Some("en-gb"));
+        assert_eq!(
+            lang_of(VoiceQuery {
+                language: Some("en".into()),
+                ..Default::default()
+            })
+            .as_deref(),
+            Some("en-gb")
+        );
         // A more specific request prefers the exact locale when present.
-        assert_eq!(lang_of(VoiceQuery { language: Some("en-us".into()), ..Default::default() }).as_deref(), Some("en-us"));
+        assert_eq!(
+            lang_of(VoiceQuery {
+                language: Some("en-us".into()),
+                ..Default::default()
+            })
+            .as_deref(),
+            Some("en-us")
+        );
 
         // By human-readable voice name.
         assert_eq!(
-            find_voice(&voices, &VoiceQuery { name: Some("Afrikaans".into()), ..Default::default() })
-                .map(|v| v.language.as_str()),
+            find_voice(
+                &voices,
+                &VoiceQuery {
+                    name: Some("Afrikaans".into()),
+                    ..Default::default()
+                }
+            )
+            .map(|v| v.language.as_str()),
             Some("af")
         );
         // A "name" that is actually a language code also resolves.
         assert_eq!(
-            find_voice(&voices, &VoiceQuery { name: Some("de".into()), ..Default::default() })
-                .map(|v| v.language.as_str()),
+            find_voice(
+                &voices,
+                &VoiceQuery {
+                    name: Some("de".into()),
+                    ..Default::default()
+                }
+            )
+            .map(|v| v.language.as_str()),
             Some("de")
         );
         // No match → None.
-        assert!(find_voice(&voices, &VoiceQuery { language: Some("zzq".into()), ..Default::default() }).is_none());
+        assert!(find_voice(
+            &voices,
+            &VoiceQuery {
+                language: Some("zzq".into()),
+                ..Default::default()
+            }
+        )
+        .is_none());
         assert!(find_voice(&voices, &VoiceQuery::default()).is_none());
     }
 
@@ -760,7 +846,15 @@ roughness 4
         assert_eq!(v.stress_amp, vec![18, 18, 20, 20, 20, 20, 20, 20]);
         assert_eq!(v.breath, vec![0, 2, 3, 3, 3, 3, 3, 2]);
         assert_eq!(v.formants.len(), 2);
-        assert_eq!(v.formants[1], VariantFormant { index: 1, freq: 120, height: 75, width: 150 });
+        assert_eq!(
+            v.formants[1],
+            VariantFormant {
+                index: 1,
+                freq: 120,
+                height: 75,
+                width: 150
+            }
+        );
     }
 
     #[test]

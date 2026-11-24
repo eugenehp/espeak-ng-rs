@@ -80,35 +80,282 @@ struct ToneNucleus {
 }
 
 const TONE_HEAD_TABLE: [ToneHead; 13] = [
-    ToneHead { pre_start: 46, pre_end: 57, body_start: 78, body_end: 50, body_max_steps: 3, body_lower_u: 7, n_overflow: 5, overflow: &OFLOW },      // 0 statement
-    ToneHead { pre_start: 46, pre_end: 57, body_start: 78, body_end: 46, body_max_steps: 3, body_lower_u: 7, n_overflow: 5, overflow: &OFLOW },      // 1 comma
-    ToneHead { pre_start: 46, pre_end: 57, body_start: 78, body_end: 46, body_max_steps: 3, body_lower_u: 7, n_overflow: 5, overflow: &OFLOW },      // 2 question
-    ToneHead { pre_start: 46, pre_end: 57, body_start: 90, body_end: 50, body_max_steps: 3, body_lower_u: 9, n_overflow: 5, overflow: &OFLOW_EMF },  // 3 exclamation
-    ToneHead { pre_start: 46, pre_end: 57, body_start: 78, body_end: 50, body_max_steps: 3, body_lower_u: 7, n_overflow: 5, overflow: &OFLOW },      // 4 statement, emphatic
-    ToneHead { pre_start: 46, pre_end: 57, body_start: 74, body_end: 55, body_max_steps: 4, body_lower_u: 7, n_overflow: 5, overflow: &OFLOW_LESS }, // 5 statement, less intonation
-    ToneHead { pre_start: 46, pre_end: 57, body_start: 74, body_end: 55, body_max_steps: 4, body_lower_u: 7, n_overflow: 5, overflow: &OFLOW_LESS }, // 6 comma, less intonation
-    ToneHead { pre_start: 46, pre_end: 57, body_start: 74, body_end: 55, body_max_steps: 4, body_lower_u: 7, n_overflow: 5, overflow: &OFLOW_LESS }, // 7 comma, less rise
-    ToneHead { pre_start: 46, pre_end: 57, body_start: 78, body_end: 50, body_max_steps: 3, body_lower_u: 7, n_overflow: 5, overflow: &OFLOW },      // 8 raises at end
-    ToneHead { pre_start: 46, pre_end: 57, body_start: 78, body_end: 46, body_max_steps: 3, body_lower_u: 7, n_overflow: 5, overflow: &OFLOW },      // 9 comma
-    ToneHead { pre_start: 46, pre_end: 57, body_start: 78, body_end: 50, body_max_steps: 3, body_lower_u: 7, n_overflow: 5, overflow: &OFLOW },      // 10 question
-    ToneHead { pre_start: 34, pre_end: 41, body_start: 41, body_end: 32, body_max_steps: 3, body_lower_u: 7, n_overflow: 5, overflow: &OFLOW_LESS }, // 11 test
-    ToneHead { pre_start: 46, pre_end: 57, body_start: 55, body_end: 50, body_max_steps: 3, body_lower_u: 7, n_overflow: 5, overflow: &OFLOW_LESS }, // 12 test
+    ToneHead {
+        pre_start: 46,
+        pre_end: 57,
+        body_start: 78,
+        body_end: 50,
+        body_max_steps: 3,
+        body_lower_u: 7,
+        n_overflow: 5,
+        overflow: &OFLOW,
+    }, // 0 statement
+    ToneHead {
+        pre_start: 46,
+        pre_end: 57,
+        body_start: 78,
+        body_end: 46,
+        body_max_steps: 3,
+        body_lower_u: 7,
+        n_overflow: 5,
+        overflow: &OFLOW,
+    }, // 1 comma
+    ToneHead {
+        pre_start: 46,
+        pre_end: 57,
+        body_start: 78,
+        body_end: 46,
+        body_max_steps: 3,
+        body_lower_u: 7,
+        n_overflow: 5,
+        overflow: &OFLOW,
+    }, // 2 question
+    ToneHead {
+        pre_start: 46,
+        pre_end: 57,
+        body_start: 90,
+        body_end: 50,
+        body_max_steps: 3,
+        body_lower_u: 9,
+        n_overflow: 5,
+        overflow: &OFLOW_EMF,
+    }, // 3 exclamation
+    ToneHead {
+        pre_start: 46,
+        pre_end: 57,
+        body_start: 78,
+        body_end: 50,
+        body_max_steps: 3,
+        body_lower_u: 7,
+        n_overflow: 5,
+        overflow: &OFLOW,
+    }, // 4 statement, emphatic
+    ToneHead {
+        pre_start: 46,
+        pre_end: 57,
+        body_start: 74,
+        body_end: 55,
+        body_max_steps: 4,
+        body_lower_u: 7,
+        n_overflow: 5,
+        overflow: &OFLOW_LESS,
+    }, // 5 statement, less intonation
+    ToneHead {
+        pre_start: 46,
+        pre_end: 57,
+        body_start: 74,
+        body_end: 55,
+        body_max_steps: 4,
+        body_lower_u: 7,
+        n_overflow: 5,
+        overflow: &OFLOW_LESS,
+    }, // 6 comma, less intonation
+    ToneHead {
+        pre_start: 46,
+        pre_end: 57,
+        body_start: 74,
+        body_end: 55,
+        body_max_steps: 4,
+        body_lower_u: 7,
+        n_overflow: 5,
+        overflow: &OFLOW_LESS,
+    }, // 7 comma, less rise
+    ToneHead {
+        pre_start: 46,
+        pre_end: 57,
+        body_start: 78,
+        body_end: 50,
+        body_max_steps: 3,
+        body_lower_u: 7,
+        n_overflow: 5,
+        overflow: &OFLOW,
+    }, // 8 raises at end
+    ToneHead {
+        pre_start: 46,
+        pre_end: 57,
+        body_start: 78,
+        body_end: 46,
+        body_max_steps: 3,
+        body_lower_u: 7,
+        n_overflow: 5,
+        overflow: &OFLOW,
+    }, // 9 comma
+    ToneHead {
+        pre_start: 46,
+        pre_end: 57,
+        body_start: 78,
+        body_end: 50,
+        body_max_steps: 3,
+        body_lower_u: 7,
+        n_overflow: 5,
+        overflow: &OFLOW,
+    }, // 10 question
+    ToneHead {
+        pre_start: 34,
+        pre_end: 41,
+        body_start: 41,
+        body_end: 32,
+        body_max_steps: 3,
+        body_lower_u: 7,
+        n_overflow: 5,
+        overflow: &OFLOW_LESS,
+    }, // 11 test
+    ToneHead {
+        pre_start: 46,
+        pre_end: 57,
+        body_start: 55,
+        body_end: 50,
+        body_max_steps: 3,
+        body_lower_u: 7,
+        n_overflow: 5,
+        overflow: &OFLOW_LESS,
+    }, // 12 test
 ];
 
 const TONE_NUCLEUS_TABLE: [ToneNucleus; 13] = [
-    ToneNucleus { pitch_env0: PITCH_FALL,   tonic_max0: 64, tonic_min0:  8, pitch_env1: PITCH_FALL,   tonic_max1: 70, tonic_min1: 18, tail_start: 24, tail_end: 12, flags: 0 },
-    ToneNucleus { pitch_env0: PITCH_FRISE,  tonic_max0: 80, tonic_min0: 18, pitch_env1: PITCH_FRISE2, tonic_max1: 78, tonic_min1: 22, tail_start: 34, tail_end: 52, flags: 0 },
-    ToneNucleus { pitch_env0: PITCH_FRISE,  tonic_max0: 88, tonic_min0: 22, pitch_env1: PITCH_FRISE2, tonic_max1: 82, tonic_min1: 22, tail_start: 34, tail_end: 64, flags: 0 },
-    ToneNucleus { pitch_env0: PITCH_FALL,   tonic_max0: 92, tonic_min0:  8, pitch_env1: PITCH_FALL,   tonic_max1: 92, tonic_min1: 80, tail_start: 76, tail_end:  8, flags: T_EMPH },
-    ToneNucleus { pitch_env0: PITCH_FALL,   tonic_max0: 86, tonic_min0:  4, pitch_env1: PITCH_FALL,   tonic_max1: 94, tonic_min1: 66, tail_start: 34, tail_end: 10, flags: 0 },
-    ToneNucleus { pitch_env0: PITCH_FALL,   tonic_max0: 62, tonic_min0: 10, pitch_env1: PITCH_FALL,   tonic_max1: 62, tonic_min1: 20, tail_start: 28, tail_end: 16, flags: 0 },
-    ToneNucleus { pitch_env0: PITCH_FRISE,  tonic_max0: 68, tonic_min0: 18, pitch_env1: PITCH_FRISE2, tonic_max1: 68, tonic_min1: 22, tail_start: 30, tail_end: 44, flags: 0 },
-    ToneNucleus { pitch_env0: PITCH_FRISE2, tonic_max0: 64, tonic_min0: 16, pitch_env1: PITCH_FALL,   tonic_max1: 66, tonic_min1: 32, tail_start: 32, tail_end: 18, flags: 0 },
-    ToneNucleus { pitch_env0: PITCH_RISE,   tonic_max0: 68, tonic_min0: 46, pitch_env1: PITCH_FALL,   tonic_max1: 42, tonic_min1: 32, tail_start: 46, tail_end: 58, flags: 0 },
-    ToneNucleus { pitch_env0: PITCH_FRISE,  tonic_max0: 78, tonic_min0: 24, pitch_env1: PITCH_FRISE2, tonic_max1: 72, tonic_min1: 22, tail_start: 42, tail_end: 52, flags: 0 },
-    ToneNucleus { pitch_env0: PITCH_FRISE,  tonic_max0: 88, tonic_min0: 34, pitch_env1: PITCH_FALL,   tonic_max1: 64, tonic_min1: 32, tail_start: 46, tail_end: 82, flags: 0 },
-    ToneNucleus { pitch_env0: PITCH_FALL,   tonic_max0: 56, tonic_min0: 12, pitch_env1: PITCH_FALL,   tonic_max1: 56, tonic_min1: 20, tail_start: 24, tail_end: 12, flags: 0 },
-    ToneNucleus { pitch_env0: PITCH_FALL,   tonic_max0: 70, tonic_min0: 18, pitch_env1: PITCH_FALL,   tonic_max1: 70, tonic_min1: 24, tail_start: 32, tail_end: 20, flags: 0 },
+    ToneNucleus {
+        pitch_env0: PITCH_FALL,
+        tonic_max0: 64,
+        tonic_min0: 8,
+        pitch_env1: PITCH_FALL,
+        tonic_max1: 70,
+        tonic_min1: 18,
+        tail_start: 24,
+        tail_end: 12,
+        flags: 0,
+    },
+    ToneNucleus {
+        pitch_env0: PITCH_FRISE,
+        tonic_max0: 80,
+        tonic_min0: 18,
+        pitch_env1: PITCH_FRISE2,
+        tonic_max1: 78,
+        tonic_min1: 22,
+        tail_start: 34,
+        tail_end: 52,
+        flags: 0,
+    },
+    ToneNucleus {
+        pitch_env0: PITCH_FRISE,
+        tonic_max0: 88,
+        tonic_min0: 22,
+        pitch_env1: PITCH_FRISE2,
+        tonic_max1: 82,
+        tonic_min1: 22,
+        tail_start: 34,
+        tail_end: 64,
+        flags: 0,
+    },
+    ToneNucleus {
+        pitch_env0: PITCH_FALL,
+        tonic_max0: 92,
+        tonic_min0: 8,
+        pitch_env1: PITCH_FALL,
+        tonic_max1: 92,
+        tonic_min1: 80,
+        tail_start: 76,
+        tail_end: 8,
+        flags: T_EMPH,
+    },
+    ToneNucleus {
+        pitch_env0: PITCH_FALL,
+        tonic_max0: 86,
+        tonic_min0: 4,
+        pitch_env1: PITCH_FALL,
+        tonic_max1: 94,
+        tonic_min1: 66,
+        tail_start: 34,
+        tail_end: 10,
+        flags: 0,
+    },
+    ToneNucleus {
+        pitch_env0: PITCH_FALL,
+        tonic_max0: 62,
+        tonic_min0: 10,
+        pitch_env1: PITCH_FALL,
+        tonic_max1: 62,
+        tonic_min1: 20,
+        tail_start: 28,
+        tail_end: 16,
+        flags: 0,
+    },
+    ToneNucleus {
+        pitch_env0: PITCH_FRISE,
+        tonic_max0: 68,
+        tonic_min0: 18,
+        pitch_env1: PITCH_FRISE2,
+        tonic_max1: 68,
+        tonic_min1: 22,
+        tail_start: 30,
+        tail_end: 44,
+        flags: 0,
+    },
+    ToneNucleus {
+        pitch_env0: PITCH_FRISE2,
+        tonic_max0: 64,
+        tonic_min0: 16,
+        pitch_env1: PITCH_FALL,
+        tonic_max1: 66,
+        tonic_min1: 32,
+        tail_start: 32,
+        tail_end: 18,
+        flags: 0,
+    },
+    ToneNucleus {
+        pitch_env0: PITCH_RISE,
+        tonic_max0: 68,
+        tonic_min0: 46,
+        pitch_env1: PITCH_FALL,
+        tonic_max1: 42,
+        tonic_min1: 32,
+        tail_start: 46,
+        tail_end: 58,
+        flags: 0,
+    },
+    ToneNucleus {
+        pitch_env0: PITCH_FRISE,
+        tonic_max0: 78,
+        tonic_min0: 24,
+        pitch_env1: PITCH_FRISE2,
+        tonic_max1: 72,
+        tonic_min1: 22,
+        tail_start: 42,
+        tail_end: 52,
+        flags: 0,
+    },
+    ToneNucleus {
+        pitch_env0: PITCH_FRISE,
+        tonic_max0: 88,
+        tonic_min0: 34,
+        pitch_env1: PITCH_FALL,
+        tonic_max1: 64,
+        tonic_min1: 32,
+        tail_start: 46,
+        tail_end: 82,
+        flags: 0,
+    },
+    ToneNucleus {
+        pitch_env0: PITCH_FALL,
+        tonic_max0: 56,
+        tonic_min0: 12,
+        pitch_env1: PITCH_FALL,
+        tonic_max1: 56,
+        tonic_min1: 20,
+        tail_start: 24,
+        tail_end: 12,
+        flags: 0,
+    },
+    ToneNucleus {
+        pitch_env0: PITCH_FALL,
+        tonic_max0: 70,
+        tonic_min0: 18,
+        pitch_env1: PITCH_FALL,
+        tonic_max1: 70,
+        tonic_min1: 24,
+        tail_start: 32,
+        tail_end: 20,
+        flags: 0,
+    },
 ];
 
 /// A tune from the `intonations` data file (68-byte `TUNE` records).
@@ -185,7 +432,11 @@ pub struct Syllable {
 
 impl Syllable {
     pub fn new(stress: u8) -> Self {
-        Syllable { stress, env: PITCH_FALL, ..Default::default() }
+        Syllable {
+            stress,
+            env: PITCH_FALL,
+            ..Default::default()
+        }
     }
 
     /// The syllable's pitch value (espeak's 0–254 scale) at `t` ∈ [0,1] through
@@ -236,7 +487,13 @@ struct Layout {
 }
 
 /// `count_pitch_vowels()`.
-fn count_pitch_vowels(syls: &mut [Syllable], start: usize, end: usize, clause_end: usize, no_tonic: bool) -> Layout {
+fn count_pitch_vowels(
+    syls: &mut [Syllable],
+    start: usize,
+    end: usize,
+    clause_end: usize,
+    no_tonic: bool,
+) -> Layout {
     let mut max_stress = 0u8;
     let mut max_stress_posn = start;
     let mut max_stress_posn2 = start;
@@ -246,7 +503,11 @@ fn count_pitch_vowels(syls: &mut [Syllable], start: usize, end: usize, clause_en
     for ix in start..end {
         let stress = syls[ix].stress;
         if stress >= max_stress {
-            max_stress_posn2 = if stress > max_stress { ix } else { max_stress_posn };
+            max_stress_posn2 = if stress > max_stress {
+                ix
+            } else {
+                max_stress_posn
+            };
             max_stress_posn = ix;
             max_stress = stress;
         }
@@ -271,7 +532,12 @@ fn count_pitch_vowels(syls: &mut [Syllable], start: usize, end: usize, clause_en
         syls[tone_posn].stress = PRIMARY_LAST;
     }
 
-    Layout { number_pre, number_tail, tone_posn, tone_posn2 }
+    Layout {
+        number_pre,
+        number_tail,
+        tone_posn,
+        tone_posn2,
+    }
 }
 
 /// `count_increments()` — primary stresses up to the tonic syllable.
@@ -304,7 +570,13 @@ fn count_unstressed(syls: &[Syllable], start: usize, end: usize, limit: u8) -> i
 
 /// `SetPitchGradient()` — a linear pitch change over a run of syllables, used
 /// for the pre-head, the unstressed syllables in the body, and the tail.
-fn set_pitch_gradient(syls: &mut [Syllable], start_ix: usize, end_ix: usize, start_pitch: i32, end_pitch: i32) {
+fn set_pitch_gradient(
+    syls: &mut [Syllable],
+    start_ix: usize,
+    end_ix: usize,
+    start_pitch: i32,
+    end_pitch: i32,
+) {
     let n_increments = end_ix as i32 - start_ix as i32;
     if n_increments <= 0 {
         return;
@@ -336,7 +608,12 @@ fn set_pitch_gradient(syls: &mut [Syllable], start_ix: usize, end_ix: usize, sta
 
 /// `SetHeadIntonation()` — the clause body, stepping the pitch once per primary
 /// stress and falling back to the tune's overflow table when the steps run out.
-fn set_head_intonation(syls: &mut [Syllable], tune: &Tune, mut syl_ix: usize, end_ix: usize) -> usize {
+fn set_head_intonation(
+    syls: &mut [Syllable],
+    tune: &Tune,
+    mut syl_ix: usize,
+    end_ix: usize,
+) -> usize {
     let pitch_range = (tune.head_end as i32 - tune.head_start as i32) * 256;
     let pitch_range_abs = pitch_range.abs();
     let drops = &DROPS_0;
@@ -380,7 +657,11 @@ fn set_head_intonation(syls: &mut [Syllable], tune: &Tune, mut syl_ix: usize, en
                 if n_steps > tune.head_max_steps {
                     n_steps = tune.head_max_steps;
                 }
-                increment = if n_steps > 1 { pitch_range / (n_steps - 1) } else { 0 };
+                increment = if n_steps > 1 {
+                    pitch_range / (n_steps - 1)
+                } else {
+                    0
+                };
             } else if syl_ix == head_final {
                 pitch = tune.head_last as i32 * 256;
                 stage = 2;
@@ -418,7 +699,8 @@ fn set_head_intonation(syls: &mut [Syllable], tune: &Tune, mut syl_ix: usize, en
             } else {
                 0
             };
-            let base = pitch / 256 + tune.unstr_start[stage] as i32 + unstressed_inc * unstressed_ix;
+            let base =
+                pitch / 256 + tune.unstr_start[stage] as i32 + unstressed_inc * unstressed_ix;
             set_pitch(&mut syls[syl_ix], base, drops[stress as usize]);
             unstressed_ix += 1;
         }
@@ -466,7 +748,11 @@ fn calc_pitch_segment(
                 if n_steps > th.body_max_steps as i32 {
                     n_steps = th.body_max_steps as i32;
                 }
-                increment = if n_steps > 1 { pitch_range / (n_steps - 1) } else { 0 };
+                increment = if n_steps > 1 {
+                    pitch_range / (n_steps - 1)
+                } else {
+                    0
+                };
                 pitch = th.body_start as i32 * 256;
             } else if n_steps > 0 {
                 pitch += increment;
@@ -500,9 +786,22 @@ fn calc_pitch_segment(
 }
 
 /// `calc_pitches2()` — assign pitches using a `TUNE` from the data file.
-fn calc_pitches_tune(syls: &mut [Syllable], start: usize, end: usize, tune: &Tune, layout: &Layout, no_tonic: bool) -> u8 {
+fn calc_pitches_tune(
+    syls: &mut [Syllable],
+    start: usize,
+    end: usize,
+    tune: &Tune,
+    layout: &Layout,
+    no_tonic: bool,
+) -> u8 {
     let mut ix = start;
-    set_pitch_gradient(syls, ix, ix + layout.number_pre, tune.prehead_start as i32, tune.prehead_end as i32);
+    set_pitch_gradient(
+        syls,
+        ix,
+        ix + layout.number_pre,
+        tune.prehead_start as i32,
+        tune.prehead_end as i32,
+    );
     ix += layout.number_pre;
 
     ix = set_head_intonation(syls, tune, ix, layout.tone_posn);
@@ -537,13 +836,26 @@ fn calc_pitches_tune(syls: &mut [Syllable], start: usize, end: usize, tune: &Tun
 }
 
 /// `calc_pitches()` with `control != 0` — the built-in tone head/nucleus tables.
-fn calc_pitches_table(syls: &mut [Syllable], start: usize, end: usize, tune_number: usize, layout: &Layout, no_tonic: bool) -> u8 {
+fn calc_pitches_table(
+    syls: &mut [Syllable],
+    start: usize,
+    end: usize,
+    tune_number: usize,
+    layout: &Layout,
+    no_tonic: bool,
+) -> u8 {
     let th = &TONE_HEAD_TABLE[tune_number.min(TONE_HEAD_TABLE.len() - 1)];
     let tn = &TONE_NUCLEUS_TABLE[tune_number.min(TONE_NUCLEUS_TABLE.len() - 1)];
     let continuing = start > 0;
 
     let mut ix = start;
-    set_pitch_gradient(syls, ix, ix + layout.number_pre, th.pre_start as i32, th.pre_end as i32);
+    set_pitch_gradient(
+        syls,
+        ix,
+        ix + layout.number_pre,
+        th.pre_start as i32,
+        th.pre_end as i32,
+    );
     ix += layout.number_pre;
 
     ix = calc_pitch_segment(syls, ix, layout.tone_posn, th, PRIMARY, continuing);
@@ -618,20 +930,23 @@ pub const PUNCT_TO_TONE: [[u8; 6]; 8] = [
 
 /// The tone table for a clause type under an `intonation_group`.
 pub fn tone_for_clause(intonation_group: usize, clause_type: usize) -> usize {
-    let group = if intonation_group >= PUNCT_TO_TONE.len() { 1 } else { intonation_group };
+    let group = if intonation_group >= PUNCT_TO_TONE.len() {
+        1
+    } else {
+        intonation_group
+    };
     PUNCT_TO_TONE[group][clause_type.min(5)] as usize
 }
 
 /// `pitch_adjust_tab[]` — how the user's pitch parameter (0–100, default 50)
 /// scales the voice's base pitch; 128 is unity.
 pub static PITCH_ADJUST_TAB: [u8; 102] = [
-    64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79,
-    80, 81, 82, 83, 84, 86, 87, 88, 89, 91, 92, 93, 94, 96, 97, 98,
-    100, 101, 103, 104, 105, 107, 108, 110, 111, 113, 115, 116, 118, 119, 121, 123,
-    124, 126, 128, 130, 132, 133, 135, 137, 139, 141, 143, 145, 147, 149, 151, 153,
-    155, 158, 160, 162, 164, 167, 169, 171, 174, 176, 179, 181, 184, 186, 189, 191,
-    194, 197, 199, 202, 205, 208, 211, 214, 217, 220, 223, 226, 229, 232, 236, 239,
-    242, 246, 249, 252, 254, 255,
+    64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 86, 87, 88,
+    89, 91, 92, 93, 94, 96, 97, 98, 100, 101, 103, 104, 105, 107, 108, 110, 111, 113, 115, 116,
+    118, 119, 121, 123, 124, 126, 128, 130, 132, 133, 135, 137, 139, 141, 143, 145, 147, 149, 151,
+    153, 155, 158, 160, 162, 164, 167, 169, 171, 174, 176, 179, 181, 184, 186, 189, 191, 194, 197,
+    199, 202, 205, 208, 211, 214, 217, 220, 223, 226, 229, 232, 236, 239, 242, 246, 249, 252, 254,
+    255,
 ];
 
 /// Convert a syllable pitch value (espeak's 0–254 scale) to Hz, using the same
@@ -689,7 +1004,10 @@ mod tests {
     fn the_tonic_syllable_gets_the_tune_envelope() {
         let mut syls = syllables(&[1, 4, 1, 4]);
         calc_pitches(&mut syls, 2, None); // question → fall-rise nucleus
-        assert_eq!(syls[3].env, PITCH_FRISE, "tonic carries the question envelope");
+        assert_eq!(
+            syls[3].env, PITCH_FRISE,
+            "tonic carries the question envelope"
+        );
         assert_eq!(syls[0].env, PITCH_FALL, "others keep the default");
     }
 
@@ -700,15 +1018,27 @@ mod tests {
         // body still runs, which is why the stresses are promoted as usual.
         let mut syls = syllables(&[1, 4, 1, 4]);
         calc_pitches(&mut syls, 4, None);
-        assert!(syls.iter().all(|s| s.env == PITCH_FALL), "no nucleus envelope: {syls:?}");
+        assert!(
+            syls.iter().all(|s| s.env == PITCH_FALL),
+            "no nucleus envelope: {syls:?}"
+        );
     }
 
     #[test]
     fn envelope_interpolates_between_the_span() {
-        let syl = Syllable { stress: 4, env: PITCH_FALL, pitch1: 40, pitch2: 20, flags: 0 };
+        let syl = Syllable {
+            stress: 4,
+            env: PITCH_FALL,
+            pitch1: 40,
+            pitch2: 20,
+            flags: 0,
+        };
         let start = syl.pitch_at(0.0);
         let end = syl.pitch_at(1.0);
-        assert!(start > end, "a falling envelope starts high: {start} → {end}");
+        assert!(
+            start > end,
+            "a falling envelope starts high: {start} → {end}"
+        );
         assert!((20.0..=40.0).contains(&start) && (20.0..=40.0).contains(&end));
     }
 

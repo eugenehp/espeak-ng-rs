@@ -17,7 +17,10 @@ fn dash_b_2_decodes_latin1_file() {
     let bin = env!("CARGO_BIN_EXE_espeak_cli");
     let path = std::env::temp_dir().join("espeak_rs_latin1_input.txt");
     // "café" in Latin-1: é = 0xE9, which is NOT valid UTF-8 on its own.
-    std::fs::File::create(&path).unwrap().write_all(b"caf\xe9").unwrap();
+    std::fs::File::create(&path)
+        .unwrap()
+        .write_all(b"caf\xe9")
+        .unwrap();
 
     // Default (UTF-8) rejects the invalid byte → no phoneme output.
     let utf8 = Command::new(bin)
@@ -37,7 +40,10 @@ fn dash_b_2_decodes_latin1_file() {
         .output()
         .expect("run latin1");
     let out = String::from_utf8_lossy(&latin1.stdout);
-    assert!(out.trim_start().starts_with("kaf"), "expected café-like IPA, got {out:?}");
+    assert!(
+        out.trim_start().starts_with("kaf"),
+        "expected café-like IPA, got {out:?}"
+    );
 
     let _ = std::fs::remove_file(&path);
 }

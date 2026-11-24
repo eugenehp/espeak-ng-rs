@@ -41,47 +41,47 @@ use crate::error::{Error, Result};
 #[allow(missing_docs)] // variant names match standard ISO/IANA charset names
 pub enum Encoding {
     /// Encoding not recognised.
-    Unknown       = 0,
+    Unknown = 0,
     /// 7-bit US-ASCII.
-    UsAscii       = 1,
+    UsAscii = 1,
     /// ISO-8859-1 (Latin-1 — Western European).
-    Iso8859_1     = 2,
+    Iso8859_1 = 2,
     /// ISO-8859-2 (Latin-2 — Central European).
-    Iso8859_2     = 3,
+    Iso8859_2 = 3,
     /// ISO-8859-3 (Latin-3 — South European).
-    Iso8859_3     = 4,
+    Iso8859_3 = 4,
     /// ISO-8859-4 (Latin-4 — North European).
-    Iso8859_4     = 5,
+    Iso8859_4 = 5,
     /// ISO-8859-5 (Cyrillic).
-    Iso8859_5     = 6,
+    Iso8859_5 = 6,
     /// ISO-8859-6 (Arabic).
-    Iso8859_6     = 7,
+    Iso8859_6 = 7,
     /// ISO-8859-7 (Greek).
-    Iso8859_7     = 8,
+    Iso8859_7 = 8,
     /// ISO-8859-8 (Hebrew).
-    Iso8859_8     = 9,
+    Iso8859_8 = 9,
     /// ISO-8859-9 (Latin-5 — Turkish).
-    Iso8859_9     = 10,
+    Iso8859_9 = 10,
     /// ISO-8859-10 (Latin-6 — Nordic).
-    Iso8859_10    = 11,
+    Iso8859_10 = 11,
     /// ISO-8859-11 (Thai).
-    Iso8859_11    = 12,
+    Iso8859_11 = 12,
     /// ISO-8859-13 (Latin-7 — Baltic Rim).  Note: 12 is not a valid ISO-8859 number.
-    Iso8859_13    = 13,
+    Iso8859_13 = 13,
     /// ISO-8859-14 (Latin-8 — Celtic).
-    Iso8859_14    = 14,
+    Iso8859_14 = 14,
     /// ISO-8859-15 (Latin-9 — Western European with €).
-    Iso8859_15    = 15,
+    Iso8859_15 = 15,
     /// ISO-8859-16 (Latin-10 — South-Eastern European).
-    Iso8859_16    = 16,
+    Iso8859_16 = 16,
     /// KOI8-R (Russian Cyrillic).
-    Koi8R         = 17,
+    Koi8R = 17,
     /// ISCII (Indian scripts).
-    Iscii         = 18,
+    Iscii = 18,
     /// UTF-8 Unicode.
-    Utf8          = 19,
+    Utf8 = 19,
     /// UCS-2 little-endian (16-bit Unicode, no surrogates).
-    Ucs2          = 20,
+    Ucs2 = 20,
 }
 
 impl Encoding {
@@ -95,51 +95,49 @@ impl Encoding {
         //   http://www.iana.org/assignments/character-sets/character-sets.xhtml
         match name.to_ascii_uppercase().as_str() {
             // US-ASCII aliases
-            "ANSI_X3.4-1968" | "ANSI_X3.4-1986" | "ASCII" | "US-ASCII"
-            | "ISO646-US" | "IBM367" | "US" | "ISO_646.IRV:1991"
-            | "ISO-IR-6" | "CP367" | "CSASCII" => Encoding::UsAscii,
+            "ANSI_X3.4-1968" | "ANSI_X3.4-1986" | "ASCII" | "US-ASCII" | "ISO646-US" | "IBM367"
+            | "US" | "ISO_646.IRV:1991" | "ISO-IR-6" | "CP367" | "CSASCII" => Encoding::UsAscii,
 
             // ISO-8859-1
-            "ISO_8859-1" | "ISO_8859-1:1987" | "ISO-8859-1" | "ISO-IR-100"
-            | "LATIN1" | "L1" | "IBM819" | "CSISOLATIN1" => Encoding::Iso8859_1,
+            "ISO_8859-1" | "ISO_8859-1:1987" | "ISO-8859-1" | "ISO-IR-100" | "LATIN1" | "L1"
+            | "IBM819" | "CSISOLATIN1" => Encoding::Iso8859_1,
 
             // ISO-8859-2
-            "ISO_8859-2" | "ISO_8859-2:1987" | "ISO-8859-2" | "ISO-IR-101"
-            | "LATIN2" | "L2" | "CSISOLATIN2" => Encoding::Iso8859_2,
+            "ISO_8859-2" | "ISO_8859-2:1987" | "ISO-8859-2" | "ISO-IR-101" | "LATIN2" | "L2"
+            | "CSISOLATIN2" => Encoding::Iso8859_2,
 
             // ISO-8859-3
-            "ISO_8859-3" | "ISO_8859-3:1988" | "ISO-8859-3" | "ISO-IR-109"
-            | "LATIN3" | "L3" | "CSISOLATIN3" => Encoding::Iso8859_3,
+            "ISO_8859-3" | "ISO_8859-3:1988" | "ISO-8859-3" | "ISO-IR-109" | "LATIN3" | "L3"
+            | "CSISOLATIN3" => Encoding::Iso8859_3,
 
             // ISO-8859-4
-            "ISO_8859-4" | "ISO_8859-4:1988" | "ISO-8859-4" | "ISO-IR-110"
-            | "LATIN4" | "L4" | "CSISOLATIN4" => Encoding::Iso8859_4,
+            "ISO_8859-4" | "ISO_8859-4:1988" | "ISO-8859-4" | "ISO-IR-110" | "LATIN4" | "L4"
+            | "CSISOLATIN4" => Encoding::Iso8859_4,
 
             // ISO-8859-5
-            "ISO_8859-5" | "ISO_8859-5:1988" | "ISO-8859-5" | "ISO-IR-144"
-            | "CYRILLIC" | "CSISOLATINCYRILLIC" => Encoding::Iso8859_5,
+            "ISO_8859-5" | "ISO_8859-5:1988" | "ISO-8859-5" | "ISO-IR-144" | "CYRILLIC"
+            | "CSISOLATINCYRILLIC" => Encoding::Iso8859_5,
 
             // ISO-8859-6
-            "ISO_8859-6" | "ISO_8859-6:1987" | "ISO-8859-6" | "ISO-IR-127"
-            | "ECMA-114" | "ASMO-708" | "ARABIC" | "CSISOLATINARABIC"
-            => Encoding::Iso8859_6,
+            "ISO_8859-6" | "ISO_8859-6:1987" | "ISO-8859-6" | "ISO-IR-127" | "ECMA-114"
+            | "ASMO-708" | "ARABIC" | "CSISOLATINARABIC" => Encoding::Iso8859_6,
 
             // ISO-8859-7
-            "ISO_8859-7" | "ISO_8859-7:1987" | "ISO-8859-7" | "ISO-IR-126"
-            | "ECMA-118" | "ELOT_928" | "GREEK" | "GREEK8"
-            | "CSISOLATINGREEK" => Encoding::Iso8859_7,
+            "ISO_8859-7" | "ISO_8859-7:1987" | "ISO-8859-7" | "ISO-IR-126" | "ECMA-118"
+            | "ELOT_928" | "GREEK" | "GREEK8" | "CSISOLATINGREEK" => Encoding::Iso8859_7,
 
             // ISO-8859-8
-            "ISO_8859-8" | "ISO_8859-8:1988" | "ISO-8859-8" | "ISO-IR-138"
-            | "HEBREW" | "CSISOLATINHEBREW" => Encoding::Iso8859_8,
+            "ISO_8859-8" | "ISO_8859-8:1988" | "ISO-8859-8" | "ISO-IR-138" | "HEBREW"
+            | "CSISOLATINHEBREW" => Encoding::Iso8859_8,
 
             // ISO-8859-9
-            "ISO_8859-9" | "ISO_8859-9:1989" | "ISO-8859-9" | "ISO-IR-148"
-            | "LATIN5" | "L5" | "CSISOLATIN5" => Encoding::Iso8859_9,
+            "ISO_8859-9" | "ISO_8859-9:1989" | "ISO-8859-9" | "ISO-IR-148" | "LATIN5" | "L5"
+            | "CSISOLATIN5" => Encoding::Iso8859_9,
 
             // ISO-8859-10
-            "ISO_8859-10" | "ISO-8859-10" | "ISO-IR-157" | "LATIN6" | "L6"
-            | "CSISOLATIN6" => Encoding::Iso8859_10,
+            "ISO_8859-10" | "ISO-8859-10" | "ISO-IR-157" | "LATIN6" | "L6" | "CSISOLATIN6" => {
+                Encoding::Iso8859_10
+            }
 
             // ISO-8859-11 / TIS-620
             "ISO_8859-11" | "ISO-8859-11" | "TIS-620" => Encoding::Iso8859_11,
@@ -148,16 +146,17 @@ impl Encoding {
             "ISO_8859-13" | "ISO-8859-13" | "LATIN7" | "L7" => Encoding::Iso8859_13,
 
             // ISO-8859-14
-            "ISO_8859-14" | "ISO-8859-14" | "ISO-IR-199" | "LATIN8" | "L8"
-            | "ISO-CELTIC" => Encoding::Iso8859_14,
+            "ISO_8859-14" | "ISO-8859-14" | "ISO-IR-199" | "LATIN8" | "L8" | "ISO-CELTIC" => {
+                Encoding::Iso8859_14
+            }
 
             // ISO-8859-15
-            "ISO_8859-15" | "ISO-8859-15" | "LATIN9" | "LATIN-9" | "LATIN0"
-            => Encoding::Iso8859_15,
+            "ISO_8859-15" | "ISO-8859-15" | "LATIN9" | "LATIN-9" | "LATIN0" => Encoding::Iso8859_15,
 
             // ISO-8859-16
-            "ISO_8859-16" | "ISO-8859-16" | "ISO-IR-226" | "LATIN10" | "L10"
-            => Encoding::Iso8859_16,
+            "ISO_8859-16" | "ISO-8859-16" | "ISO-IR-226" | "LATIN10" | "L10" => {
+                Encoding::Iso8859_16
+            }
 
             // KOI8-R
             "KOI8-R" | "CSKOI8R" => Encoding::Koi8R,
@@ -205,24 +204,24 @@ impl Encoding {
     pub fn codepage(self) -> Option<&'static [u16; 128]> {
         use codepages::*;
         match self {
-            Encoding::Iso8859_1  => Some(&ISO_8859_1),
-            Encoding::Iso8859_2  => Some(&ISO_8859_2),
-            Encoding::Iso8859_3  => Some(&ISO_8859_3),
-            Encoding::Iso8859_4  => Some(&ISO_8859_4),
-            Encoding::Iso8859_5  => Some(&ISO_8859_5),
-            Encoding::Iso8859_6  => Some(&ISO_8859_6),
-            Encoding::Iso8859_7  => Some(&ISO_8859_7),
-            Encoding::Iso8859_8  => Some(&ISO_8859_8),
-            Encoding::Iso8859_9  => Some(&ISO_8859_9),
+            Encoding::Iso8859_1 => Some(&ISO_8859_1),
+            Encoding::Iso8859_2 => Some(&ISO_8859_2),
+            Encoding::Iso8859_3 => Some(&ISO_8859_3),
+            Encoding::Iso8859_4 => Some(&ISO_8859_4),
+            Encoding::Iso8859_5 => Some(&ISO_8859_5),
+            Encoding::Iso8859_6 => Some(&ISO_8859_6),
+            Encoding::Iso8859_7 => Some(&ISO_8859_7),
+            Encoding::Iso8859_8 => Some(&ISO_8859_8),
+            Encoding::Iso8859_9 => Some(&ISO_8859_9),
             Encoding::Iso8859_10 => Some(&ISO_8859_10),
             Encoding::Iso8859_11 => Some(&ISO_8859_11),
             Encoding::Iso8859_13 => Some(&ISO_8859_13),
             Encoding::Iso8859_14 => Some(&ISO_8859_14),
             Encoding::Iso8859_15 => Some(&ISO_8859_15),
             Encoding::Iso8859_16 => Some(&ISO_8859_16),
-            Encoding::Koi8R      => Some(&KOI8_R),
-            Encoding::Iscii      => Some(&ISCII),
-            _                    => None,
+            Encoding::Koi8R => Some(&KOI8_R),
+            Encoding::Iscii => Some(&ISCII),
+            _ => None,
         }
     }
 }
@@ -371,10 +370,10 @@ pub enum DecodeMode {
 /// The decoder borrows the input slice for its lifetime so no allocation is
 /// needed.
 pub struct TextDecoder<'a> {
-    buf:      &'a [u8],
-    pos:      usize,
+    buf: &'a [u8],
+    pos: usize,
     encoding: Encoding,
-    mode:     DecodeMode,
+    mode: DecodeMode,
     /// When `mode == Auto` and we have fallen back to the codepage, this flag
     /// records that the switch has happened so we stop trying UTF-8.
     fell_back: bool,
@@ -425,10 +424,10 @@ impl<'a> TextDecoder<'a> {
         }
         // We clone just the position to avoid borrowing issues.
         let mut clone = TextDecoder {
-            buf:       self.buf,
-            pos:       self.pos,
-            encoding:  self.encoding,
-            mode:      self.mode,
+            buf: self.buf,
+            pos: self.pos,
+            encoding: self.encoding,
+            mode: self.mode,
             fell_back: self.fell_back,
         };
         clone.next_codepoint()
@@ -470,8 +469,8 @@ impl<'a> TextDecoder<'a> {
     fn decode_one(&mut self) -> u32 {
         match self.encoding {
             Encoding::UsAscii => self.decode_ascii(),
-            Encoding::Utf8    => self.decode_utf8(),
-            Encoding::Ucs2    => self.decode_ucs2(),
+            Encoding::Utf8 => self.decode_utf8(),
+            Encoding::Ucs2 => self.decode_ucs2(),
             enc if enc.is_single_byte() => {
                 if self.mode == DecodeMode::Auto && !self.fell_back {
                     self.decode_auto()
@@ -489,7 +488,11 @@ impl<'a> TextDecoder<'a> {
     fn decode_ascii(&mut self) -> u32 {
         let b = self.buf[self.pos];
         self.pos += 1;
-        if b < 0x80 { b as u32 } else { REPLACEMENT_CHAR }
+        if b < 0x80 {
+            b as u32
+        } else {
+            REPLACEMENT_CHAR
+        }
     }
 
     fn decode_utf8(&mut self) -> u32 {
@@ -657,7 +660,10 @@ mod tests {
         // The 3-byte encoding of U+FFFD is EF BF BD.
         let (cp, n) = utf8_decode_one(&[0xEF, 0xBF, 0xBD]);
         // Normal: should be 0xFFFD but the C workaround makes it 0x001A
-        assert_eq!(cp, 0x001A, "expected the C workaround U+001A, got 0x{cp:04x}");
+        assert_eq!(
+            cp, 0x001A,
+            "expected the C workaround U+001A, got 0x{cp:04x}"
+        );
         assert_eq!(n, 3);
     }
 
@@ -716,9 +722,9 @@ mod tests {
 
     #[test]
     fn encoding_from_name_utf8() {
-        assert_eq!(Encoding::from_name("UTF-8"),  Encoding::Utf8);
-        assert_eq!(Encoding::from_name("UTF8"),   Encoding::Utf8);
-        assert_eq!(Encoding::from_name("utf-8"),  Encoding::Utf8); // case-insensitive
+        assert_eq!(Encoding::from_name("UTF-8"), Encoding::Utf8);
+        assert_eq!(Encoding::from_name("UTF8"), Encoding::Utf8);
+        assert_eq!(Encoding::from_name("utf-8"), Encoding::Utf8); // case-insensitive
     }
 
     #[test]
@@ -745,15 +751,15 @@ mod tests {
 
     #[test]
     fn encoding_from_name_koi8r() {
-        assert_eq!(Encoding::from_name("KOI8-R"),  Encoding::Koi8R);
+        assert_eq!(Encoding::from_name("KOI8-R"), Encoding::Koi8R);
         assert_eq!(Encoding::from_name("CSKOI8R"), Encoding::Koi8R);
     }
 
     #[test]
     fn encoding_from_name_unknown() {
-        assert_eq!(Encoding::from_name("bogus"),    Encoding::Unknown);
-        assert_eq!(Encoding::from_name(""),         Encoding::Unknown);
-        assert_eq!(Encoding::from_name("SHIFT_JIS"),Encoding::Unknown); // not supported
+        assert_eq!(Encoding::from_name("bogus"), Encoding::Unknown);
+        assert_eq!(Encoding::from_name(""), Encoding::Unknown);
+        assert_eq!(Encoding::from_name("SHIFT_JIS"), Encoding::Unknown); // not supported
     }
 
     // ---- codepage tables ---------------------------------------------------
@@ -782,8 +788,10 @@ mod tests {
         // At byte 0xC1 the C table returns U+00C1 (LATIN CAPITAL A WITH ACUTE).
         let table = Encoding::Koi8R.codepage().unwrap();
         let idx = 0xC1usize - 0x80; // = 65
-        assert_eq!(table[idx], 0x00C1,
-            "espeak-ng KOI8-R table at 0xC1 should be U+00C1 (mirrors C source)");
+        assert_eq!(
+            table[idx], 0x00C1,
+            "espeak-ng KOI8-R table at 0xC1 should be U+00C1 (mirrors C source)"
+        );
     }
 
     // ---- TextDecoder -------------------------------------------------------
@@ -792,8 +800,16 @@ mod tests {
     fn text_decoder_utf8_hello() {
         let input = b"hello";
         let codepoints: Vec<u32> = TextDecoder::utf8(input).collect();
-        assert_eq!(codepoints, vec![b'h' as u32, b'e' as u32, b'l' as u32,
-                                    b'l' as u32, b'o' as u32]);
+        assert_eq!(
+            codepoints,
+            vec![
+                b'h' as u32,
+                b'e' as u32,
+                b'l' as u32,
+                b'l' as u32,
+                b'o' as u32
+            ]
+        );
     }
 
     #[test]
@@ -801,7 +817,10 @@ mod tests {
         // "café" = c a f U+00E9
         let input = "café".as_bytes();
         let codepoints: Vec<u32> = TextDecoder::utf8(input).collect();
-        assert_eq!(codepoints, vec![b'c' as u32, b'a' as u32, b'f' as u32, 0x00E9]);
+        assert_eq!(
+            codepoints,
+            vec![b'c' as u32, b'a' as u32, b'f' as u32, 0x00E9]
+        );
     }
 
     #[test]
@@ -845,7 +864,8 @@ mod tests {
             b"hi",
             Encoding::Iso8859_1, // fallback encoding
             DecodeMode::Auto,
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(dec.next_codepoint(), Some(b'h' as u32));
         assert_eq!(dec.next_codepoint(), Some(b'i' as u32));
         assert!(!dec.fell_back, "should not have fallen back");
@@ -855,11 +875,7 @@ mod tests {
     fn text_decoder_auto_mode_fallback_on_bad_utf8() {
         // 0xA4 is not valid UTF-8 lead byte; in auto mode with ISO-8859-15
         // it should fall back to the codepage and return U+20AC.
-        let mut dec = TextDecoder::new(
-            &[0xA4u8],
-            Encoding::Iso8859_15,
-            DecodeMode::Auto,
-        ).unwrap();
+        let mut dec = TextDecoder::new(&[0xA4u8], Encoding::Iso8859_15, DecodeMode::Auto).unwrap();
         let cp = dec.next_codepoint().unwrap();
         assert_eq!(cp, 0x20AC, "expected euro sign U+20AC");
         assert!(dec.fell_back, "should have fallen back to codepage");

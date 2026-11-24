@@ -60,18 +60,32 @@ pub fn parse_phoneme_dsl(source: &str) -> Vec<PhonemeTabList> {
                     .and_then(|b| tables.iter().position(|t| t.name == b))
                     .map(|i| (i + 1) as u8)
                     .unwrap_or(0);
-                tables.push(PhonemeTabList { name, phonemes: Vec::new(), n_phonemes: 0, includes });
+                tables.push(PhonemeTabList {
+                    name,
+                    phonemes: Vec::new(),
+                    n_phonemes: 0,
+                    includes,
+                });
                 next_code = 1;
             }
             "phoneme" => {
                 flush_phoneme(&mut cur, tables.last_mut());
                 if tables.is_empty() {
                     // A phoneme before any table: start an anonymous one.
-                    tables.push(PhonemeTabList { name: String::new(), phonemes: Vec::new(), n_phonemes: 0, includes: 0 });
+                    tables.push(PhonemeTabList {
+                        name: String::new(),
+                        phonemes: Vec::new(),
+                        n_phonemes: 0,
+                        includes: 0,
+                    });
                     next_code = 1;
                 }
                 let mnem = tokens.next().unwrap_or("");
-                let mut ph = PhonemeTab { mnemonic: PhonemeTab::pack_mnemonic(mnem), code: next_code, ..Default::default() };
+                let mut ph = PhonemeTab {
+                    mnemonic: PhonemeTab::pack_mnemonic(mnem),
+                    code: next_code,
+                    ..Default::default()
+                };
                 next_code = next_code.wrapping_add(1);
                 // A `phoneme` head may carry inline feature tags on the same line.
                 apply_tokens(&mut ph, tokens);
@@ -81,12 +95,18 @@ pub fn parse_phoneme_dsl(source: &str) -> Vec<PhonemeTabList> {
                 flush_phoneme(&mut cur, tables.last_mut());
             }
             "length" => {
-                if let (Some(ph), Some(v)) = (cur.as_mut(), tokens.next().and_then(|t| t.parse::<u32>().ok())) {
+                if let (Some(ph), Some(v)) = (
+                    cur.as_mut(),
+                    tokens.next().and_then(|t| t.parse::<u32>().ok()),
+                ) {
                     ph.std_length = v.min(u8::MAX as u32) as u8;
                 }
             }
             "lengthmod" => {
-                if let (Some(ph), Some(v)) = (cur.as_mut(), tokens.next().and_then(|t| t.parse::<u32>().ok())) {
+                if let (Some(ph), Some(v)) = (
+                    cur.as_mut(),
+                    tokens.next().and_then(|t| t.parse::<u32>().ok()),
+                ) {
                     ph.length_mod = v.min(u8::MAX as u32) as u8;
                 }
             }
@@ -145,7 +165,9 @@ fn flush_phoneme(cur: &mut Option<PhonemeTab>, table: Option<&mut PhonemeTabList
 mod tests {
     use super::*;
     use crate::phoneme::table::{compile_phontab, PhonemeTab};
-    use crate::phoneme::{PH_STOP, PH_VOWEL, PH_VOICED, PH_VOICELESS, PHFLAG_ARTICULATION, PLACE_BILABIAL};
+    use crate::phoneme::{
+        PHFLAG_ARTICULATION, PH_STOP, PH_VOICED, PH_VOICELESS, PH_VOWEL, PLACE_BILABIAL,
+    };
 
     #[test]
     fn parse_basic_phoneme_block() {
@@ -171,7 +193,10 @@ endphoneme
         assert_eq!(t.phonemes.len(), 3);
 
         // codes assigned sequentially from 1
-        assert_eq!(t.phonemes.iter().map(|p| p.code).collect::<Vec<_>>(), vec![1, 2, 3]);
+        assert_eq!(
+            t.phonemes.iter().map(|p| p.code).collect::<Vec<_>>(),
+            vec![1, 2, 3]
+        );
 
         // `_` pause with length
         assert_eq!(t.phonemes[0].mnemonic_str(), "_");
@@ -235,6 +260,15 @@ endphoneme
         let a = &reparsed[1].phonemes[0];
         assert_eq!(a.typ, PH_VOWEL);
         assert_eq!(a.std_length, 200);
-        assert_eq!(a, &PhonemeTab { mnemonic: PhonemeTab::pack_mnemonic("a"), code: a.code, typ: PH_VOWEL, std_length: 200, ..Default::default() });
+        assert_eq!(
+            a,
+            &PhonemeTab {
+                mnemonic: PhonemeTab::pack_mnemonic("a"),
+                code: a.code,
+                typ: PH_VOWEL,
+                std_length: 200,
+                ..Default::default()
+            }
+        );
     }
 }

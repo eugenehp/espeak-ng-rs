@@ -32,6 +32,9 @@ fn norwegian_bokmaal_uses_the_no_dictionary() {
 fn common_language_resolution_is_unaffected() {
     // A language with its own dict/table resolves without touching voice files.
     if let Some(en) = tr("en") {
-        assert!(en.text_to_ipa("hello").unwrap().contains("l"), "en still works");
+        assert!(
+            en.text_to_ipa("hello").unwrap().contains("l"),
+            "en still works"
+        );
     }
 }

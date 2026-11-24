@@ -32,15 +32,24 @@ fn document_prosody_rate_changes_wav_length() {
     let slow = run(&format!(r#"<prosody rate="50%">{text}</prosody>"#));
     let fast = run(&format!(r#"<prosody rate="200%">{text}</prosody>"#));
     assert!(normal > 0, "no audio produced");
-    assert!(slow > normal, "rate 50% should lengthen audio: {slow} vs {normal}");
-    assert!(fast < normal, "rate 200% should shorten audio: {fast} vs {normal}");
+    assert!(
+        slow > normal,
+        "rate 50% should lengthen audio: {slow} vs {normal}"
+    );
+    assert!(
+        fast < normal,
+        "rate 200% should shorten audio: {fast} vs {normal}"
+    );
 
     // A span that wraps only part of the text slows just that part: longer than
     // no prosody at all, shorter than the same span scaled over everything.
     let scoped = run(&format!(r#"a <prosody rate="50%">{text}</prosody> b"#));
     let scoped_ref = run(&format!("a {text} b"));
     let all_slow = run(&format!(r#"<prosody rate="50%">a {text} b</prosody>"#));
-    assert!(scoped > scoped_ref, "scoped prosody should slow its span: {scoped} vs {scoped_ref}");
+    assert!(
+        scoped > scoped_ref,
+        "scoped prosody should slow its span: {scoped} vs {scoped_ref}"
+    );
     assert!(
         scoped < all_slow,
         "the words outside the span should stay at the normal rate: {scoped} vs {all_slow}"
@@ -49,5 +58,8 @@ fn document_prosody_rate_changes_wav_length() {
     // The span closes: text after `</prosody>` is back to normal.
     let trailing = run(&format!(r#"<prosody rate="50%">a</prosody> {text}"#));
     let leading = run(&format!(r#"a <prosody rate="50%">{text}</prosody>"#));
-    assert!(trailing < leading, "the change must not leak past the closing tag");
+    assert!(
+        trailing < leading,
+        "the change must not leak past the closing tag"
+    );
 }

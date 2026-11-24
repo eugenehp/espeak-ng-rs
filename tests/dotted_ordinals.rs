@@ -20,7 +20,11 @@ fn spanish_dotted_ordinal_matches_undotted() {
     }
     assert_eq!(ipa("3.º"), "tɛɾθˈɛɾo", "es 3.º = tercero");
     // In a sentence the ordinal is read (not the bare cardinal + a pause).
-    assert!(ipa("el 3.º gato").contains("tɛɾθˈɛɾo"), "{}", ipa("el 3.º gato"));
+    assert!(
+        ipa("el 3.º gato").contains("tɛɾθˈɛɾo"),
+        "{}",
+        ipa("el 3.º gato")
+    );
 }
 
 #[test]
@@ -31,7 +35,10 @@ fn portuguese_and_italian_dotted_ordinals() {
             continue;
         };
         let got = t.text_to_ipa(s).unwrap();
-        assert!(got.contains(sub), "{lang} {s} should be an ordinal ({sub}): {got}");
+        assert!(
+            got.contains(sub),
+            "{lang} {s} should be an ordinal ({sub}): {got}"
+        );
     }
 }
 
@@ -39,14 +46,25 @@ fn portuguese_and_italian_dotted_ordinals() {
 fn bare_dot_and_german_ordinal_are_unaffected() {
     // A bare "3." (no º/ª) stays a cardinal in Spanish, and a decimal is untouched.
     if let Some(es) = Translator::new("es", None).ok() {
-        assert_eq!(es.text_to_ipa("3.").unwrap(), "tɾˈes", "bare es 3. stays cardinal");
-        assert!(es.text_to_ipa("3.5").unwrap().contains("θˈinko"), "es decimal unaffected");
+        assert_eq!(
+            es.text_to_ipa("3.").unwrap(),
+            "tɾˈes",
+            "bare es 3. stays cardinal"
+        );
+        assert!(
+            es.text_to_ipa("3.5").unwrap().contains("θˈinko"),
+            "es decimal unaffected"
+        );
     }
     // German uses the dot itself as the ordinal marker — "3." and "3.º" must
     // both still read "dritte" (the dot-before-indicator skip is gated off for
     // dot_marks_ordinal languages).
     if let Some(de) = Translator::new("de", None).ok() {
         assert_eq!(de.text_to_ipa("3.").unwrap(), "dɾˈɪtə", "de 3. = dritte");
-        assert_eq!(de.text_to_ipa("3.º").unwrap(), "dɾˈɪtə", "de 3.º stays dritte (not empty)");
+        assert_eq!(
+            de.text_to_ipa("3.º").unwrap(),
+            "dɾˈɪtə",
+            "de 3.º stays dritte (not empty)"
+        );
     }
 }

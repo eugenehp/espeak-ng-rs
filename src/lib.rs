@@ -74,19 +74,19 @@
 // Modules
 // ---------------------------------------------------------------------------
 
-pub mod encoding;
-pub mod phoneme;
-pub mod dictionary;
-pub mod translate;
-pub mod synthesize;
-pub mod soundicon;
-pub mod voices;
 pub mod async_synth;
+pub mod dictionary;
+pub mod encoding;
+pub mod engine;
+pub mod error;
+pub mod mbrola;
+pub mod phoneme;
+pub mod soundicon;
+pub mod synthesize;
 #[cfg(feature = "tokio-runtime")]
 pub mod tokio_synth;
-pub mod mbrola;
-pub mod error;
-pub mod engine;
+pub mod translate;
+pub mod voices;
 
 pub use translate::ipa_table;
 
@@ -157,10 +157,7 @@ pub fn install_bundled_data(dest_dir: &std::path::Path) -> std::io::Result<()> {
 mod bundled_data_generated;
 
 pub use bundled_data_generated::{
-    bundled_languages,
-    has_bundled_language,
-    install_bundled_language,
-    install_bundled_languages,
+    bundled_languages, has_bundled_language, install_bundled_language, install_bundled_languages,
     BUNDLED_LANGUAGES,
 };
 
@@ -173,30 +170,33 @@ pub use error::{Error, Result};
 /// Text encoding enum and decoder.
 ///
 /// Re-exported from [`encoding`] for convenience.
-pub use encoding::{Encoding, TextDecoder, DecodeMode};
+pub use encoding::{DecodeMode, Encoding, TextDecoder};
 
 /// Phoneme data types.
 ///
 /// Re-exported from [`phoneme`] for convenience.
-pub use phoneme::{PhonemeData, PhonemeTab, PhonemeFeature};
+pub use phoneme::{PhonemeData, PhonemeFeature, PhonemeTab};
 
 /// Text translator.
 ///
 /// Re-exported from [`translate`] for convenience.
-pub use translate::{Translator, PhonemeCode, WordPhonemes};
+pub use translate::semivowels::french_semivowels;
+pub use translate::{PhonemeCode, Translator, WordPhonemes};
 
 /// Synthesizer and voice parameters.
 ///
 /// Re-exported from [`synthesize`] for convenience.
-pub use synthesize::{Synthesizer, VoiceParams, PcmBuffer};
+pub use synthesize::{PcmBuffer, Synthesizer, VoiceParams};
 
 pub use soundicon::{SoundIcon, SoundIconTable};
 
 /// Main TTS engine — drop-in replacement for the C library session.
 ///
 /// Re-exported from [`engine`] for convenience.
-pub use engine::{EspeakNg, Builder, Parameter, VoiceSpec, VoiceSpecBuilder, Gender,
-                 SynthEvent, EventKind, OutputMode, TextToPhonemesOptions};
+pub use engine::{
+    Builder, EspeakNg, EventKind, Gender, OutputMode, Parameter, SynthEvent, TextToPhonemesOptions,
+    VoiceSpec, VoiceSpecBuilder,
+};
 
 // ---------------------------------------------------------------------------
 // Convenience functions
@@ -229,7 +229,7 @@ pub use engine::{EspeakNg, Builder, Parameter, VoiceSpec, VoiceSpecBuilder, Gend
 /// assert_eq!(espeak_ng::text_to_ipa("de", "schön")?,       "ʃˈøːn");
 ///
 /// // French
-/// assert_eq!(espeak_ng::text_to_ipa("fr", "bonjour")?,     "bɔ̃ʒˈuːɹ");
+/// assert_eq!(espeak_ng::text_to_ipa("fr", "bonjour")?,     "bɔ̃ʒˈuʁ");
 /// # Ok::<(), espeak_ng::Error>(())
 /// ```
 pub fn text_to_ipa(lang: &str, text: &str) -> Result<String> {

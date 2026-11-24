@@ -14,7 +14,9 @@ fn main() -> std::io::Result<()> {
         eprintln!("This example requires bundled data features");
         eprintln!("Run one of:");
         eprintln!("  cargo run --example bundled_data_demo --features bundled-data");
-        eprintln!("  cargo run --example bundled_data_demo --features bundled-data-en,bundled-data-de");
+        eprintln!(
+            "  cargo run --example bundled_data_demo --features bundled-data-en,bundled-data-de"
+        );
         return Ok(());
     }
 
@@ -29,8 +31,8 @@ fn main() -> std::io::Result<()> {
         println!("  {} files installed", count_files(&data_dir));
 
         // Use the extracted data
-        let engine = espeak_ng::EspeakNg::with_data_dir("en", &data_dir)
-            .expect("failed to init engine");
+        let engine =
+            espeak_ng::EspeakNg::with_data_dir("en", &data_dir).expect("failed to init engine");
 
         let test_cases = [
             ("en", "hello world"),
@@ -43,8 +45,8 @@ fn main() -> std::io::Result<()> {
 
         println!("\nText → IPA (using bundled data):");
         for (lang, text) in &test_cases {
-            let engine = espeak_ng::EspeakNg::with_data_dir(lang, &data_dir)
-                .expect("failed to init engine");
+            let engine =
+                espeak_ng::EspeakNg::with_data_dir(lang, &data_dir).expect("failed to init engine");
             let ipa = engine.text_to_phonemes(text).unwrap_or_default();
             println!("  [{lang}] {text:20} → {ipa}");
         }
@@ -65,7 +67,11 @@ fn main() -> std::io::Result<()> {
         std::fs::create_dir_all(&data_dir)?;
 
         let selected = espeak_ng::bundled_languages();
-        println!("Installing selective bundled data {:?} -> {}", selected, data_dir.display());
+        println!(
+            "Installing selective bundled data {:?} -> {}",
+            selected,
+            data_dir.display()
+        );
         espeak_ng::install_bundled_languages(&data_dir, selected)?;
         println!("  {} files installed", count_files(&data_dir));
 
@@ -86,8 +92,8 @@ fn main() -> std::io::Result<()> {
             if !espeak_ng::has_bundled_language(base) {
                 continue;
             }
-            let engine = espeak_ng::EspeakNg::with_data_dir(lang, &data_dir)
-                .expect("failed to init engine");
+            let engine =
+                espeak_ng::EspeakNg::with_data_dir(lang, &data_dir).expect("failed to init engine");
             let ipa = engine.text_to_phonemes(text).unwrap_or_default();
             println!("  [{lang}] {text:20} -> {ipa}");
         }
@@ -103,9 +109,15 @@ fn count_files(dir: &std::path::Path) -> usize {
 }
 
 fn walkdir(dir: &std::path::Path, acc: usize) -> usize {
-    let Ok(rd) = std::fs::read_dir(dir) else { return acc };
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return acc;
+    };
     rd.flatten().fold(acc, |a, e| {
         let p = e.path();
-        if p.is_dir() { walkdir(&p, a) } else { a + 1 }
+        if p.is_dir() {
+            walkdir(&p, a)
+        } else {
+            a + 1
+        }
     })
 }

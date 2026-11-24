@@ -13,7 +13,6 @@ pub enum Error {
     // Variants that map 1-to-1 onto espeak_ng_STATUS codes
     // C: ENS_COMPILE_ERROR
     // ------------------------------------------------------------------
-
     /// `ENS_COMPILE_ERROR` — a compile error occurred in voice/dictionary data.
     #[error("compile error in voice/dictionary data")]
     CompileError,
@@ -86,7 +85,6 @@ pub enum Error {
     // ------------------------------------------------------------------
     // Rust-native errors
     // ------------------------------------------------------------------
-
     /// The data path does not exist or cannot be opened.
     #[error("data path error: {0}")]
     DataPath(String),

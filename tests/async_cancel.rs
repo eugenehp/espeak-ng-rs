@@ -25,7 +25,11 @@ fn cancel_stops_delivery_and_drains_the_queue() {
     let after_cancel = Arc::new(AtomicUsize::new(0));
     let cancelled = Arc::new(AtomicBool::new(false));
     let chunks = Arc::new(AtomicUsize::new(0));
-    let (a, c, n) = (Arc::clone(&after_cancel), Arc::clone(&cancelled), Arc::clone(&chunks));
+    let (a, c, n) = (
+        Arc::clone(&after_cancel),
+        Arc::clone(&cancelled),
+        Arc::clone(&chunks),
+    );
 
     let synth = AsyncSynth::new("en", None, move |_chunk| {
         n.fetch_add(1, Ordering::SeqCst);
@@ -59,7 +63,10 @@ fn cancel_stops_delivery_and_drains_the_queue() {
 
     // Nothing may be delivered once `cancel()` has returned.
     let leaked = after_cancel.load(Ordering::SeqCst);
-    assert_eq!(leaked, 0, "{leaked} chunks were delivered after cancel returned");
+    assert_eq!(
+        leaked, 0,
+        "{leaked} chunks were delivered after cancel returned"
+    );
     // …and the other nineteen utterances never ran.
     assert!(
         chunks.load(Ordering::SeqCst) < 20,
@@ -86,5 +93,9 @@ fn cancel_when_idle_does_not_break_the_next_utterance() {
     synth.cancel();
     synth.speak("hello");
     synth.synchronize();
-    assert_eq!(finals.load(Ordering::SeqCst), 1, "the utterance after cancel should speak");
+    assert_eq!(
+        finals.load(Ordering::SeqCst),
+        1,
+        "the utterance after cancel should speak"
+    );
 }

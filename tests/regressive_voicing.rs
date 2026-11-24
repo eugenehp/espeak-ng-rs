@@ -33,13 +33,19 @@ fn bulgarian_reads_a_bare_hyphen_as_nothing() {
     // Two bugs met here: `groups3` was also indexed by the raw first byte, so
     // Bulgarian matched the rule for `ь` on the ASCII hyphen of `-5` ("j пет"),
     // and bg had no regressive-voicing setting (C: 0x107).
-    let Some(bg) = tr("bg") else { eprintln!("[SKIP] no bg data"); return };
+    let Some(bg) = tr("bg") else {
+        eprintln!("[SKIP] no bg data");
+        return;
+    };
     assert_eq!(bg.text_to_ipa("-5").unwrap(), bg.text_to_ipa("5").unwrap());
 }
 
 #[test]
 fn russian_assimilation_still_works() {
     // The pre-existing case, unchanged: `світ` voices its /s/ before /v/.
-    let Some(ru) = tr("ru") else { eprintln!("[SKIP] no ru data"); return };
+    let Some(ru) = tr("ru") else {
+        eprintln!("[SKIP] no ru data");
+        return;
+    };
     assert_eq!(ru.text_to_ipa("світ").unwrap(), "svˈit");
 }

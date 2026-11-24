@@ -72,15 +72,17 @@ pub struct SpectFrame {
 impl SpectFrame {
     /// Parse a non-Klatt frame_t2 from 44 bytes.
     pub fn from_bytes_t2(data: &[u8]) -> Option<Self> {
-        if data.len() < FRAME_T2_SIZE { return None; }
+        if data.len() < FRAME_T2_SIZE {
+            return None;
+        }
         let mut f = SpectFrame::default();
         f.frflags = u16::from_le_bytes([data[0], data[1]]);
         for i in 0..7 {
-            f.ffreq[i] = i16::from_le_bytes([data[2 + i*2], data[3 + i*2]]);
+            f.ffreq[i] = i16::from_le_bytes([data[2 + i * 2], data[3 + i * 2]]);
         }
         // offset 16
         f.length = data[16];
-        f.rms    = data[17];
+        f.rms = data[17];
         // offset 18
         f.fheight.copy_from_slice(&data[18..26]);
         // offset 26
@@ -128,14 +130,16 @@ impl SpectFrame {
 
     /// Parse a Klatt frame_t from 64 bytes.
     pub fn from_bytes_t(data: &[u8]) -> Option<Self> {
-        if data.len() < FRAME_T_SIZE { return None; }
+        if data.len() < FRAME_T_SIZE {
+            return None;
+        }
         let mut f = SpectFrame::default();
         f.frflags = u16::from_le_bytes([data[0], data[1]]);
         for i in 0..7 {
-            f.ffreq[i] = i16::from_le_bytes([data[2 + i*2], data[3 + i*2]]);
+            f.ffreq[i] = i16::from_le_bytes([data[2 + i * 2], data[3 + i * 2]]);
         }
         f.length = data[16];
-        f.rms    = data[17];
+        f.rms = data[17];
         f.fheight.copy_from_slice(&data[18..26]);
         f.fwidth.copy_from_slice(&data[26..32]);
         f.fright.copy_from_slice(&data[32..35]);
@@ -150,15 +154,21 @@ impl SpectFrame {
 
     /// Return the F1 frequency in Hz (for synthesis).
     #[inline]
-    pub fn f1_hz(&self) -> f64 { self.ffreq[1] as f64 }
+    pub fn f1_hz(&self) -> f64 {
+        self.ffreq[1] as f64
+    }
 
     /// Return the F2 frequency in Hz.
     #[inline]
-    pub fn f2_hz(&self) -> f64 { self.ffreq[2] as f64 }
+    pub fn f2_hz(&self) -> f64 {
+        self.ffreq[2] as f64
+    }
 
     /// Return the F3 frequency in Hz.
     #[inline]
-    pub fn f3_hz(&self) -> f64 { self.ffreq[3] as f64 }
+    pub fn f3_hz(&self) -> f64 {
+        self.ffreq[3] as f64
+    }
 
     /// Return duration in samples at 22050 Hz (STEPSIZE = 64 samples).
     #[inline]
@@ -175,8 +185,14 @@ impl SpectFrame {
 pub fn compile_spect_seq(frames: &[SpectFrame]) -> Vec<u8> {
     // Klatt vs non-Klatt is chosen (and detected on read) from the first frame's
     // FRFLAG_KLATT bit, matching `SpectSeq::parse`.
-    let is_klatt = frames.first().is_some_and(|f| f.frflags & FRFLAG_KLATT != 0);
-    let frame_size = if is_klatt { FRAME_T_SIZE } else { FRAME_T2_SIZE };
+    let is_klatt = frames
+        .first()
+        .is_some_and(|f| f.frflags & FRFLAG_KLATT != 0);
+    let frame_size = if is_klatt {
+        FRAME_T_SIZE
+    } else {
+        FRAME_T2_SIZE
+    };
     let length_total: i16 = frames.iter().map(|f| f.length as i16).sum();
     let mut out = Vec::with_capacity(4 + frames.len() * frame_size);
     out.extend_from_slice(&length_total.to_le_bytes());
@@ -213,18 +229,30 @@ impl SpectSeq {
     /// Returns `None` if the data is truncated or the frame count is 0.
     pub fn parse(phondata: &[u8], offset: usize) -> Option<Self> {
         // Header: length_total(i16) + n_frames(u8) + sqflags(u8) = 4 bytes
-        if offset + 4 > phondata.len() { return None; }
+        if offset + 4 > phondata.len() {
+            return None;
+        }
         let data = &phondata[offset..];
         let n_frames = data[2] as usize;
-        if n_frames == 0 || n_frames > N_SEQ_FRAMES { return None; }
+        if n_frames == 0 || n_frames > N_SEQ_FRAMES {
+            return None;
+        }
 
         // Determine Klatt vs non-Klatt from first frame's frflags
-        if data.len() < 4 + 2 { return None; } // need at least frflags of frame 0
+        if data.len() < 4 + 2 {
+            return None;
+        } // need at least frflags of frame 0
         let first_frflags = u16::from_le_bytes([data[4], data[5]]);
         let is_klatt = (first_frflags & FRFLAG_KLATT) != 0;
-        let frame_size = if is_klatt { FRAME_T_SIZE } else { FRAME_T2_SIZE };
+        let frame_size = if is_klatt {
+            FRAME_T_SIZE
+        } else {
+            FRAME_T2_SIZE
+        };
 
-        if data.len() < 4 + n_frames * frame_size { return None; }
+        if data.len() < 4 + n_frames * frame_size {
+            return None;
+        }
 
         let mut frames = Vec::with_capacity(n_frames);
         for i in 0..n_frames {
@@ -246,9 +274,9 @@ impl SpectSeq {
     /// A sequence is considered voiced if any frame has non-zero klattp[0] (AV).
     /// For non-Klatt frames, we check whether F1 is non-zero.
     pub fn is_voiced(&self) -> bool {
-        self.frames.iter().any(|f| {
-            f.klattp[0] > 0 || f.ffreq[1] > 0
-        })
+        self.frames
+            .iter()
+            .any(|f| f.klattp[0] > 0 || f.ffreq[1] > 0)
     }
 }
 
@@ -317,16 +345,16 @@ mod tests {
     fn make_seq_1frame() -> Vec<u8> {
         let mut data = vec![0u8; 4 + FRAME_T2_SIZE];
         data[2] = 1; // n_frames
-        // Frame starts at offset 4
-        // frflags = 0 (non-Klatt)
-        // ffreq[1] = 500 Hz (F1)
+                     // Frame starts at offset 4
+                     // frflags = 0 (non-Klatt)
+                     // ffreq[1] = 500 Hz (F1)
         let f1 = 500i16.to_le_bytes();
         let f2 = 1500i16.to_le_bytes();
-        data[4+2..4+4].copy_from_slice(&[0,0]); // ffreq[0] = 0
-        data[4+4..4+6].copy_from_slice(&f1);    // ffreq[1] = 500
-        data[4+6..4+8].copy_from_slice(&f2);    // ffreq[2] = 1500
-        data[4+16] = 4;  // length = 4 steps
-        data[4+17] = 80; // rms = 80
+        data[4 + 2..4 + 4].copy_from_slice(&[0, 0]); // ffreq[0] = 0
+        data[4 + 4..4 + 6].copy_from_slice(&f1); // ffreq[1] = 500
+        data[4 + 6..4 + 8].copy_from_slice(&f2); // ffreq[2] = 1500
+        data[4 + 16] = 4; // length = 4 steps
+        data[4 + 17] = 80; // rms = 80
         data
     }
 
@@ -368,12 +396,16 @@ mod tests {
     fn frame_t2_round_trip() {
         let mut raw = [0u8; FRAME_T2_SIZE];
         // frflags = 2
-        raw[0] = 2; raw[1] = 0;
+        raw[0] = 2;
+        raw[1] = 0;
         // ffreq[0]=100, ffreq[1]=500, ffreq[2]=1500
-        raw[2] = 100; raw[3] = 0;
-        raw[4] = 244; raw[5] = 1;  // 500 = 0x01F4
-        raw[6] = 220; raw[7] = 5;  // 1500 = 0x05DC
-        raw[16] = 8;  // length
+        raw[2] = 100;
+        raw[3] = 0;
+        raw[4] = 244;
+        raw[5] = 1; // 500 = 0x01F4
+        raw[6] = 220;
+        raw[7] = 5; // 1500 = 0x05DC
+        raw[16] = 8; // length
         raw[17] = 60; // rms
         let frame = SpectFrame::from_bytes_t2(&raw).unwrap();
         assert_eq!(frame.frflags, 2);
@@ -406,13 +438,14 @@ mod tests {
         let mut raw = make_seq_1frame();
         // set klattp[0] (AV) = 0 initially → not voiced
         // klattp starts at offset 4+39 = 43
-        raw[4+39] = 0;
+        raw[4 + 39] = 0;
         let seq_unvoiced = SpectSeq::parse(&raw, 0).unwrap();
         // F1 is 500, so is_voiced via ffreq check
         assert!(seq_unvoiced.is_voiced(), "non-zero F1 → voiced");
 
         // Now set F1 = 0 and AV = 0 → unvoiced
-        raw[4+4] = 0; raw[4+5] = 0; // ffreq[1] = 0
+        raw[4 + 4] = 0;
+        raw[4 + 5] = 0; // ffreq[1] = 0
         let seq_v2 = SpectSeq::parse(&raw, 0).unwrap();
         assert!(!seq_v2.is_voiced());
     }

@@ -3,11 +3,11 @@
 //! `cargo run --example debug_suffix -- nl vorige vorig` prints the `end_type`
 //! (suffix length in its low 6 bits, `SUFX_*` flags above), where the suffix
 //! starts, and the stem/suffix phoneme split for each word.
-use std::path::Path;
 use espeak_ng::dictionary::file::Dictionary;
 use espeak_ng::dictionary::lookup::{lookup, LookupCtx};
 use espeak_ng::dictionary::rules::translate_rules;
 use espeak_ng::phoneme::PhonemeData;
+use std::path::Path;
 
 fn main() {
     let mut args = std::env::args().skip(1);
@@ -17,10 +17,17 @@ fn main() {
     let mut phdata = PhonemeData::load(data).unwrap();
     phdata.select_table_by_name(&lang).ok();
     let mnem = |codes: &[u8]| -> String {
-        codes.iter().take_while(|&&c| c != 0)
-            .map(|&c| phdata.get(c).map(|p| p.mnemonic_str().to_string())
-                 .unwrap_or_else(|| format!("<{c}>")))
-            .collect::<Vec<_>>().join(" ")
+        codes
+            .iter()
+            .take_while(|&&c| c != 0)
+            .map(|&c| {
+                phdata
+                    .get(c)
+                    .map(|p| p.mnemonic_str().to_string())
+                    .unwrap_or_else(|| format!("<{c}>"))
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
     };
     let letter_bits = [0u8; 256];
     for word in args {
@@ -40,9 +47,17 @@ fn main() {
             mnem(&r.phonemes),
             mnem(&r.end_phonemes),
         );
-        let ctx = LookupCtx { lookup_symbol: true, ..Default::default() };
+        let ctx = LookupCtx {
+            lookup_symbol: true,
+            ..Default::default()
+        };
         if let Some(l) = lookup(&dict, &word, &ctx) {
-            println!("{:>12}list entry: found={} [{}]", "", l.flags1.found(), mnem(&l.phonemes));
+            println!(
+                "{:>12}list entry: found={} [{}]",
+                "",
+                l.flags1.found(),
+                mnem(&l.phonemes)
+            );
         }
     }
 }

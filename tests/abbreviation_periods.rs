@@ -16,11 +16,26 @@ fn title_abbreviation_period_is_not_a_clause_break() {
     let ipa = |s: &str| t.text_to_ipa(s).unwrap();
 
     // No clause break (no newline) after a title abbreviation.
-    for s in ["Dr. Smith", "Mr. Jones", "Mrs. Brown", "Prof. Lee", "St. Louis", "Gen. Grant"] {
-        assert!(!ipa(s).contains('\n'), "{s:?} should not pause after the title: {:?}", ipa(s));
+    for s in [
+        "Dr. Smith",
+        "Mr. Jones",
+        "Mrs. Brown",
+        "Prof. Lee",
+        "St. Louis",
+        "Gen. Grant",
+    ] {
+        assert!(
+            !ipa(s).contains('\n'),
+            "{s:?} should not pause after the title: {:?}",
+            ipa(s)
+        );
     }
     // Two titles in a row, still no pauses.
-    assert!(!ipa("Mr. and Mrs. Smith").contains('\n'), "{}", ipa("Mr. and Mrs. Smith"));
+    assert!(
+        !ipa("Mr. and Mrs. Smith").contains('\n'),
+        "{}",
+        ipa("Mr. and Mrs. Smith")
+    );
     // The word after the title is still spoken.
     assert!(ipa("Dr. Smith").contains("smˈɪθ"), "{}", ipa("Dr. Smith"));
 }
@@ -34,11 +49,27 @@ fn real_sentence_period_still_breaks() {
     let ipa = |s: &str| t.text_to_ipa(s).unwrap();
 
     // A period after an ordinary word is a genuine clause boundary.
-    assert!(ipa("the end. Next one.").contains('\n'), "real sentence break lost: {:?}", ipa("the end. Next one."));
+    assert!(
+        ipa("the end. Next one.").contains('\n'),
+        "real sentence break lost: {:?}",
+        ipa("the end. Next one.")
+    );
     // A period before a *lowercase* word is not a sentence end at all, whatever
     // precedes it — upstream reads "etc. and" and "5. item" as one clause.
-    assert!(!ipa("etc. and").contains('\n'), "etc. + lowercase is one clause: {:?}", ipa("etc. and"));
-    assert!(!ipa("5. item").contains('\n'), "number-dot + lowercase: {:?}", ipa("5. item"));
+    assert!(
+        !ipa("etc. and").contains('\n'),
+        "etc. + lowercase is one clause: {:?}",
+        ipa("etc. and")
+    );
+    assert!(
+        !ipa("5. item").contains('\n'),
+        "number-dot + lowercase: {:?}",
+        ipa("5. item")
+    );
     // …but a capitalised word after it still starts a new clause.
-    assert!(ipa("etc. And").contains('\n'), "etc. + capital breaks: {:?}", ipa("etc. And"));
+    assert!(
+        ipa("etc. And").contains('\n'),
+        "etc. + capital breaks: {:?}",
+        ipa("etc. And")
+    );
 }

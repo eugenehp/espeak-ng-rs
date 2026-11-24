@@ -21,8 +21,7 @@ use std::{env, fs};
 // ---------------------------------------------------------------------------
 
 const VERSION: &str = "1.52.0";
-const TARBALL_URL: &str =
-    "https://github.com/espeak-ng/espeak-ng/archive/refs/tags/1.52.0.tar.gz";
+const TARBALL_URL: &str = "https://github.com/espeak-ng/espeak-ng/archive/refs/tags/1.52.0.tar.gz";
 
 // ---------------------------------------------------------------------------
 // Entry point
@@ -113,7 +112,10 @@ fn build_espeak_ng() -> PathBuf {
 
     if stamp.exists() {
         // Already built – nothing to do.
-        eprintln!("[bundled-espeak] cached build found at {}", install_dir.display());
+        eprintln!(
+            "[bundled-espeak] cached build found at {}",
+            install_dir.display()
+        );
         return install_dir;
     }
 
@@ -124,7 +126,10 @@ fn build_espeak_ng() -> PathBuf {
 
     // Write stamp so subsequent builds skip straight here.
     fs::write(&stamp, VERSION).unwrap();
-    eprintln!("[bundled-espeak] build complete → {}", install_dir.display());
+    eprintln!(
+        "[bundled-espeak] build complete → {}",
+        install_dir.display()
+    );
     install_dir
 }
 
@@ -141,7 +146,12 @@ fn download_and_extract(out_dir: &Path) -> PathBuf {
     if !src_dir.exists() {
         eprintln!("[bundled-espeak] extracting tarball…");
         let status = Command::new("tar")
-            .args(["-xzf", tarball.to_str().unwrap(), "-C", out_dir.to_str().unwrap()])
+            .args([
+                "-xzf",
+                tarball.to_str().unwrap(),
+                "-C",
+                out_dir.to_str().unwrap(),
+            ])
             .status()
             .expect("[bundled-espeak] `tar` must be available");
         assert!(status.success(), "[bundled-espeak] tar extraction failed");
@@ -154,8 +164,15 @@ fn download_and_extract(out_dir: &Path) -> PathBuf {
 fn download_file(url: &str, dest: &Path) {
     // Try curl first (available on macOS and most Linux distros).
     let curl_ok = Command::new("curl")
-        .args(["--fail", "--location", "--silent", "--show-error",
-               "--output", dest.to_str().unwrap(), url])
+        .args([
+            "--fail",
+            "--location",
+            "--silent",
+            "--show-error",
+            "--output",
+            dest.to_str().unwrap(),
+            url,
+        ])
         .status()
         .map(|s| s.success())
         .unwrap_or(false);
@@ -192,8 +209,10 @@ fn cmake_build(src: &Path, out_dir: &Path, install: &Path) {
     eprintln!("[bundled-espeak] cmake configure…");
     let status = Command::new("cmake")
         .args([
-            "-S", src.to_str().unwrap(),
-            "-B", build_dir.to_str().unwrap(),
+            "-S",
+            src.to_str().unwrap(),
+            "-B",
+            build_dir.to_str().unwrap(),
             &format!("-DCMAKE_INSTALL_PREFIX={}", install.display()),
             "-DCMAKE_BUILD_TYPE=Release",
             // Disable optional audio / speech backends that need extra libs.
@@ -213,8 +232,10 @@ fn cmake_build(src: &Path, out_dir: &Path, install: &Path) {
     eprintln!("[bundled-espeak] cmake build (j={jobs})…");
     let status = Command::new("cmake")
         .args([
-            "--build", build_dir.to_str().unwrap(),
-            "--parallel", &jobs.to_string(),
+            "--build",
+            build_dir.to_str().unwrap(),
+            "--parallel",
+            &jobs.to_string(),
         ])
         .status()
         .expect("[bundled-espeak] cmake build failed");
@@ -246,23 +267,27 @@ fn emit_bundled_env(install: &Path) {
         install.join("lib").join("espeak-ng-data"),
         install.join("share").join("espeak-ng-data"),
         // Debian multiarch layout
-        install.join("lib").join("x86_64-linux-gnu").join("espeak-ng-data"),
-        install.join("lib").join("aarch64-linux-gnu").join("espeak-ng-data"),
+        install
+            .join("lib")
+            .join("x86_64-linux-gnu")
+            .join("espeak-ng-data"),
+        install
+            .join("lib")
+            .join("aarch64-linux-gnu")
+            .join("espeak-ng-data"),
     ];
-    let data_dir = candidates
-        .iter()
-        .find(|p| p.exists())
-        .unwrap_or_else(|| {
-            panic!(
-                "[bundled-espeak] could not find espeak-ng-data under {}.\n\
+    let data_dir = candidates.iter().find(|p| p.exists()).unwrap_or_else(|| {
+        panic!(
+            "[bundled-espeak] could not find espeak-ng-data under {}.\n\
                  Searched:\n{}",
-                install.display(),
-                candidates.iter()
-                    .map(|p| format!("  {}", p.display()))
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            )
-        });
+            install.display(),
+            candidates
+                .iter()
+                .map(|p| format!("  {}", p.display()))
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+    });
     println!("cargo:rustc-env=ESPEAK_NG_DATA={}", data_dir.display());
 
     eprintln!(

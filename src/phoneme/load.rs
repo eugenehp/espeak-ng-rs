@@ -13,11 +13,11 @@
 
 use std::path::Path;
 
-use crate::error::{Error, Result};
 use super::{
-    N_PHONEME_TAB, N_PHONEME_TAB_NAME, VERSION_PHDATA,
     table::{PhonemeTab, PhonemeTabList},
+    N_PHONEME_TAB, N_PHONEME_TAB_NAME, VERSION_PHDATA,
 };
+use crate::error::{Error, Result};
 
 const PHONEME_TAB_ENTRY_SIZE: usize = 16;
 
@@ -66,8 +66,8 @@ impl PhonemeData {
     /// Mirrors `LoadPhData()` from `synthdata.c`.
     pub fn load(data_dir: &Path) -> Result<Self> {
         let phoneme_tab_data = read_file(data_dir, "phontab")?;
-        let phonindex        = read_file(data_dir, "phonindex")?;
-        let intonations      = read_file(data_dir, "intonations")?;
+        let phonindex = read_file(data_dir, "phonindex")?;
+        let intonations = read_file(data_dir, "intonations")?;
 
         // phondata is the waveform/formant data for espeak's own synthesizer.
         // Phonemization (text -> IPA) never touches it, so the file is
@@ -83,7 +83,10 @@ impl PhonemeData {
             }
             let version = u32::from_le_bytes(phondata[0..4].try_into().unwrap());
             if version != VERSION_PHDATA {
-                return Err(Error::VersionMismatch { got: version, expected: VERSION_PHDATA });
+                return Err(Error::VersionMismatch {
+                    got: version,
+                    expected: VERSION_PHDATA,
+                });
             }
             u32::from_le_bytes(phondata[4..8].try_into().unwrap())
         };
@@ -117,9 +120,10 @@ impl PhonemeData {
             return Ok(());
         }
         if number >= self.tables.len() {
-            return Err(Error::InvalidData(
-                format!("phoneme table index {number} out of range (have {})", self.tables.len())
-            ));
+            return Err(Error::InvalidData(format!(
+                "phoneme table index {number} out of range (have {})",
+                self.tables.len()
+            )));
         }
         *self.active = [None; N_PHONEME_TAB];
         self.setup_table_recursive(number);
@@ -219,10 +223,14 @@ impl PhonemeData {
     // -----------------------------------------------------------------------
 
     /// Number of loaded phoneme tables.
-    pub fn n_tables(&self) -> usize { self.tables.len() }
+    pub fn n_tables(&self) -> usize {
+        self.tables.len()
+    }
 
     /// Number of intonation tunes (each is 68 bytes).
-    pub fn n_tunes(&self) -> usize { self.intonations.len() / 68 }
+    pub fn n_tunes(&self) -> usize {
+        self.intonations.len() / 68
+    }
 
     /// Raw slice of `phondata` at a byte offset.
     pub fn phondata_at(&self, offset: usize) -> &[u8] {
@@ -249,25 +257,35 @@ impl PhonemeData {
     /// This implements a simplified version of C's `InterpretPhoneme2`/
     /// `InterpretPhoneme` for the stress-ChangeIf path.
     pub fn resolve_stressed_phoneme(&self, code: u8, is_stressed: bool) -> u8 {
-        let Some(ph) = self.get(code) else { return code };
-        if ph.program == 0 { return code; }
+        let Some(ph) = self.get(code) else {
+            return code;
+        };
+        if ph.program == 0 {
+            return code;
+        }
 
         // STRESS constants (from synthesize.h)
-        const STRESS_IS_DIMINISHED:   u8 = 0;
-        const STRESS_IS_PRIMARY:      u8 = 4;
+        const STRESS_IS_DIMINISHED: u8 = 0;
+        const STRESS_IS_PRIMARY: u8 = 4;
 
         // condition_level[condition] table from StressCondition()
         // condition 0→1, 1→2, 2→4(PRIMARY), 3→15
         const CONDITION_LEVEL: [u8; 4] = [1, 2, 4, 15];
 
-        let stress_level: u8 = if is_stressed { STRESS_IS_PRIMARY } else { STRESS_IS_DIMINISHED };
+        let stress_level: u8 = if is_stressed {
+            STRESS_IS_PRIMARY
+        } else {
+            STRESS_IS_DIMINISHED
+        };
         let prog = ph.program as usize;
         let pi = &self.phonindex;
 
         // Only apply complex bytecode tracing for vowels.
         // Consonant phonemes may also have ChangePhoneme instructions (palatalization etc.)
         // but those are context-dependent and we handle them via letter_bits in the rules engine.
-        if ph.typ != 2 { return code; } // not a vowel
+        if ph.typ != 2 {
+            return code;
+        } // not a vowel
 
         // i_JUMP_FALSE: type=6, instn2>>1 = 4 (0x6800..0x68ff)
         // i_CONDITION type-2 with `thisPh(isMaxStress)` = 0x2884
@@ -278,11 +296,13 @@ impl PhonemeData {
         let mut i = 0usize;
         while i < 16 {
             let off = (prog + i) * 2;
-            if off + 2 > pi.len() { break; }
+            if off + 2 > pi.len() {
+                break;
+            }
             let w = u16::from_le_bytes([pi[off], pi[off + 1]]);
             let instn_type = w >> 12;
             let instn2 = ((w >> 8) & 0xf) as u8;
-            let data_u8 = (w & 0xff) as u8;   // lower 8 bits for phoneme code / jump offset
+            let data_u8 = (w & 0xff) as u8; // lower 8 bits for phoneme code / jump offset
 
             if instn_type == 1 && instn2 < 8 {
                 // ChangeIf(condition, phoneme) — type 1
@@ -388,17 +408,22 @@ impl PhonemeData {
     /// Mirrors the `InterpretPhoneme2(ph->code, &phdata)` path in WritePhMnemonic()
     /// in dictionary.c, which uses NULL context (unconditional path only).
     pub fn phoneme_ipa_string(&self, program: u16) -> Option<String> {
-        if program == 0 { return None; }
+        if program == 0 {
+            return None;
+        }
 
         const I_IPA_NAME: u16 = 0x0d; // i_IPA_NAME from synthesize.h
-        const MAX_SCAN: usize = 8;    // scan up to this many instructions for logic phonemes
+        const MAX_SCAN: usize = 8; // scan up to this many instructions for logic phonemes
 
         let phonindex = &self.phonindex;
         let prog = program as usize;
 
         let first_offset = prog * 2;
-        if first_offset + 2 > phonindex.len() { return None; }
-        let first_instn = u16::from_le_bytes([phonindex[first_offset], phonindex[first_offset + 1]]);
+        if first_offset + 2 > phonindex.len() {
+            return None;
+        }
+        let first_instn =
+            u16::from_le_bytes([phonindex[first_offset], phonindex[first_offset + 1]]);
 
         // Synthesis-only phonemes (i_FMT=0xb000+, i_WAV=0xc000+, etc.) have no
         // conditional IPA logic — scanning forward would bleed into adjacent phoneme
@@ -413,12 +438,14 @@ impl PhonemeData {
         // Scan through up to max_scan instructions looking for i_IPA_NAME.
         for i in 0..max_scan {
             let offset = (prog + i) * 2;
-            if offset + 2 > phonindex.len() { break; }
+            if offset + 2 > phonindex.len() {
+                break;
+            }
 
             let instn = u16::from_le_bytes([phonindex[offset], phonindex[offset + 1]]);
             let instn_type = instn >> 12;
-            let instn2     = (instn >> 8) & 0xf;
-            let data       = (instn & 0xff) as usize;
+            let instn2 = (instn >> 8) & 0xf;
+            let data = (instn & 0xff) as usize;
 
             // Stop scanning if we hit a conditional (types 2/3), jump (type 6),
             // or CALLPH (0x9100, type 9).  These are either context-dependent or
@@ -453,11 +480,10 @@ impl PhonemeData {
                 let n_words = (data + 1) / 2;
                 for j in 0..n_words {
                     let word_off = (prog + i + 1 + j) * 2;
-                    if word_off + 2 > phonindex.len() { break; }
-                    let word = u16::from_le_bytes([
-                        phonindex[word_off],
-                        phonindex[word_off + 1],
-                    ]);
+                    if word_off + 2 > phonindex.len() {
+                        break;
+                    }
+                    let word = u16::from_le_bytes([phonindex[word_off], phonindex[word_off + 1]]);
                     ipa_bytes.push(((word >> 8) & 0xff) as u8);
                     ipa_bytes.push((word & 0xff) as u8);
                 }
@@ -494,28 +520,29 @@ pub fn parse_phontab(data: &[u8]) -> Result<Vec<PhonemeTabList>> {
     for _i in 0..n_tables {
         // 4-byte table header
         if pos + 4 > data.len() {
-            return Err(Error::InvalidData("phontab truncated in table header".into()));
+            return Err(Error::InvalidData(
+                "phontab truncated in table header".into(),
+            ));
         }
         let n_phonemes = data[pos] as usize;
-        let includes   = data[pos + 1];
+        let includes = data[pos + 1];
         pos += 4;
 
         // 32-byte name
         if pos + N_PHONEME_TAB_NAME > data.len() {
             return Err(Error::InvalidData("phontab truncated in table name".into()));
         }
-        let name_buf: &[u8; N_PHONEME_TAB_NAME] = data[pos..pos + N_PHONEME_TAB_NAME]
-            .try_into()
-            .unwrap();
+        let name_buf: &[u8; N_PHONEME_TAB_NAME] =
+            data[pos..pos + N_PHONEME_TAB_NAME].try_into().unwrap();
         let name = PhonemeTabList::parse_name(name_buf);
         pos += N_PHONEME_TAB_NAME;
 
         // n_phonemes × 16-byte entries
         let entries_size = n_phonemes * PHONEME_TAB_ENTRY_SIZE;
         if pos + entries_size > data.len() {
-            return Err(Error::InvalidData(
-                format!("phontab truncated in phoneme entries for table '{name}'")
-            ));
+            return Err(Error::InvalidData(format!(
+                "phontab truncated in phoneme entries for table '{name}'"
+            )));
         }
         let mut phonemes = Vec::with_capacity(n_phonemes);
         for j in 0..n_phonemes {
@@ -525,7 +552,12 @@ pub fn parse_phontab(data: &[u8]) -> Result<Vec<PhonemeTabList>> {
         }
         pos += entries_size;
 
-        tables.push(PhonemeTabList { name, phonemes, n_phonemes, includes });
+        tables.push(PhonemeTabList {
+            name,
+            phonemes,
+            n_phonemes,
+            includes,
+        });
     }
 
     Ok(tables)
@@ -596,12 +628,17 @@ mod tests {
         assert_eq!(parsed[1].includes, 1);
         assert_eq!(parsed[1].phonemes[0].mnemonic_str(), "k");
         // Full 16-byte field-level round-trip.
-        assert_eq!(parsed[0].phonemes[0].to_bytes(), tables[0].phonemes[0].to_bytes());
+        assert_eq!(
+            parsed[0].phonemes[0].to_bytes(),
+            tables[0].phonemes[0].to_bytes()
+        );
     }
 
     #[test]
     fn load_phdata_basic() {
-        if !data_available() { return; }
+        if !data_available() {
+            return;
+        }
         let d = PhonemeData::load(Path::new(DATA_DIR)).expect("load_phdata");
 
         // Should have loaded 134 tables (value from installed 1.52.0 data)
@@ -621,7 +658,9 @@ mod tests {
     // blob. Load a data dir with phondata removed and confirm IPA still works.
     #[test]
     fn load_and_phonemize_without_phondata() {
-        if !data_available() { return; }
+        if !data_available() {
+            return;
+        }
         let dir = std::env::temp_dir().join("espeak-ng-rs-no-phondata");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -637,31 +676,43 @@ mod tests {
             .unwrap()
             .text_to_ipa("hello")
             .unwrap();
-        assert!(!ipa.is_empty(), "phonemizer produced no output without phondata");
+        assert!(
+            !ipa.is_empty(),
+            "phonemizer produced no output without phondata"
+        );
     }
 
     #[test]
     fn table_names_include_base() {
-        if !data_available() { return; }
+        if !data_available() {
+            return;
+        }
         let d = PhonemeData::load(Path::new(DATA_DIR)).unwrap();
         assert_eq!(d.tables[0].name, "base");
         assert_eq!(d.tables[1].name, "base1");
         // 'en' table should exist somewhere
-        assert!(d.tables.iter().any(|t| t.name == "en"), "no 'en' table found");
+        assert!(
+            d.tables.iter().any(|t| t.name == "en"),
+            "no 'en' table found"
+        );
     }
 
     #[test]
     fn base_table_phoneme_count() {
-        if !data_available() { return; }
+        if !data_available() {
+            return;
+        }
         let d = PhonemeData::load(Path::new(DATA_DIR)).unwrap();
         // base table has 35 phonemes per the hexdump analysis
         assert_eq!(d.tables[0].n_phonemes, 35, "base table phoneme count");
-        assert_eq!(d.tables[0].includes,   0,  "base table has no parent");
+        assert_eq!(d.tables[0].includes, 0, "base table has no parent");
     }
 
     #[test]
     fn base1_includes_base() {
-        if !data_available() { return; }
+        if !data_available() {
+            return;
+        }
         let d = PhonemeData::load(Path::new(DATA_DIR)).unwrap();
         // base1 includes table index 0 (includes=1 means 1-based)
         assert_eq!(d.tables[1].includes, 1);
@@ -669,7 +720,9 @@ mod tests {
 
     #[test]
     fn phoneme_tab_roundtrip_bytes() {
-        if !data_available() { return; }
+        if !data_available() {
+            return;
+        }
         let raw = std::fs::read(Path::new(DATA_DIR).join("phontab")).unwrap();
         let tables = parse_phontab(&raw).unwrap();
 
@@ -693,7 +746,9 @@ mod tests {
 
     #[test]
     fn select_table_en() {
-        if !data_available() { return; }
+        if !data_available() {
+            return;
+        }
         let mut d = PhonemeData::load(Path::new(DATA_DIR)).unwrap();
         let idx = d.select_table_by_name("en").expect("'en' table");
         assert!(idx < d.n_tables());
@@ -704,7 +759,9 @@ mod tests {
 
     #[test]
     fn lookup_pause_phoneme() {
-        if !data_available() { return; }
+        if !data_available() {
+            return;
+        }
         let mut d = PhonemeData::load(Path::new(DATA_DIR)).unwrap();
         d.select_table_by_name("en").unwrap();
         // "_" is the short pause phoneme, code = PHON_PAUSE_SHORT = 10
@@ -714,7 +771,9 @@ mod tests {
 
     #[test]
     fn lookup_unknown_returns_zero() {
-        if !data_available() { return; }
+        if !data_available() {
+            return;
+        }
         let mut d = PhonemeData::load(Path::new(DATA_DIR)).unwrap();
         d.select_table_by_name("en").unwrap();
         assert_eq!(d.lookup_phoneme("???"), 0);
@@ -722,14 +781,18 @@ mod tests {
 
     #[test]
     fn select_nonexistent_table_errors() {
-        if !data_available() { return; }
+        if !data_available() {
+            return;
+        }
         let mut d = PhonemeData::load(Path::new(DATA_DIR)).unwrap();
         assert!(d.select_table_by_name("no_such_language").is_err());
     }
 
     #[test]
     fn find_table_returns_index() {
-        if !data_available() { return; }
+        if !data_available() {
+            return;
+        }
         let d = PhonemeData::load(Path::new(DATA_DIR)).unwrap();
         let idx = d.find_table("base").unwrap();
         assert_eq!(idx, 0);

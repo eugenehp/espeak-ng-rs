@@ -156,7 +156,10 @@ fn ensure_initialized(inner: &mut OracleInner) {
         let path_ptr = path_cstr.as_ref().map_or(std::ptr::null(), |s| s.as_ptr());
         espeak_ng_InitializePath(path_ptr);
         let status = espeak_ng_Initialize(std::ptr::null_mut());
-        assert_eq!(status, 0, "espeak_ng_Initialize failed with status {status}");
+        assert_eq!(
+            status, 0,
+            "espeak_ng_Initialize failed with status {status}"
+        );
 
         // ENOUTPUT_MODE_SYNCHRONOUS = 0x0001
         let status = espeak_ng_InitializeOutput(0x0001, 0, std::ptr::null());
@@ -225,12 +228,7 @@ pub fn text_to_ipa(lang: &str, text: &str) -> String {
         let legacy_path_ptr = legacy_path_cstr
             .as_ref()
             .map_or(std::ptr::null(), |s| s.as_ptr());
-        let sr = espeak_Initialize(
-            AUDIO_OUTPUT_SYNCHRONOUS,
-            0,
-            legacy_path_ptr,
-            0,
-        );
+        let sr = espeak_Initialize(AUDIO_OUTPUT_SYNCHRONOUS, 0, legacy_path_ptr, 0);
         assert!(sr > 0, "espeak_Initialize (legacy) failed: sr={sr}");
 
         let cname = CString::new(lang).unwrap();
@@ -242,17 +240,11 @@ pub fn text_to_ipa(lang: &str, text: &str) -> String {
         let mut ptr: *const c_void = c_text.as_ptr() as *const c_void;
 
         loop {
-            let result = espeak_TextToPhonemes(
-                &mut ptr,
-                ESPEAK_CHARS_UTF8,
-                ESPEAK_PHONEMES_IPA,
-            );
+            let result = espeak_TextToPhonemes(&mut ptr, ESPEAK_CHARS_UTF8, ESPEAK_PHONEMES_IPA);
             if result.is_null() {
                 break;
             }
-            let part = CStr::from_ptr(result)
-                .to_string_lossy()
-                .into_owned();
+            let part = CStr::from_ptr(result).to_string_lossy().into_owned();
             if !part.trim().is_empty() {
                 ipa_parts.push(part);
             }
@@ -293,9 +285,7 @@ pub fn text_to_ipa_cli(lang: &str, text: &str) -> Result<String, String> {
         ));
     }
 
-    Ok(String::from_utf8_lossy(&output.stdout)
-        .trim()
-        .to_string())
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
 /// Synthesize `text` to raw 16-bit PCM samples using the C library.

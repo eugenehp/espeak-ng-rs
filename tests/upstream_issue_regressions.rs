@@ -30,9 +30,27 @@ macro_rules! skip_unless {
 #[test]
 fn repeated_one_letter_words_all_speak() {
     let en = skip_unless!("en-us");
-    assert_eq!(en.text_to_ipa("b b b b b b").unwrap().split_whitespace().count(), 6);
-    assert_eq!(en.text_to_ipa("B b B b B b").unwrap().split_whitespace().count(), 6);
-    assert_eq!(en.text_to_ipa("I I I I I I").unwrap().split_whitespace().count(), 6);
+    assert_eq!(
+        en.text_to_ipa("b b b b b b")
+            .unwrap()
+            .split_whitespace()
+            .count(),
+        6
+    );
+    assert_eq!(
+        en.text_to_ipa("B b B b B b")
+            .unwrap()
+            .split_whitespace()
+            .count(),
+        6
+    );
+    assert_eq!(
+        en.text_to_ipa("I I I I I I")
+            .unwrap()
+            .split_whitespace()
+            .count(),
+        6
+    );
 }
 
 /// Upstream #2552 draws the line the other way for *symbols*: `$max3` keeps a
@@ -56,7 +74,10 @@ fn long_russian_fractions_read_in_full() {
     let ipa = ru.text_to_ipa("0,123456").unwrap();
     // "ноль и сто двадцать три тысячи четыреста пятьдесят шесть миллионных":
     // C drops everything before the last four digits ("…и три тысячи…").
-    assert!(ipa.contains("stˈo dvˈɑtsatʲ"), "the leading digits are spoken: {ipa}");
+    assert!(
+        ipa.contains("stˈo dvˈɑtsatʲ"),
+        "the leading digits are spoken: {ipa}"
+    );
 }
 
 /// Upstream #2437 / #2438: Pashto "5" read as "carrot" and Nepali digits read in
@@ -68,7 +89,10 @@ fn digits_use_the_languages_own_words() {
     }
     if let Some(ne) = tr("ne") {
         let five = ne.text_to_ipa("5").unwrap();
-        assert!(!five.contains("(en)"), "ne 5 should not switch to English: {five}");
+        assert!(
+            !five.contains("(en)"),
+            "ne 5 should not switch to English: {five}"
+        );
     }
 }
 

@@ -16,8 +16,14 @@ fn tr(lang: &str) -> Option<Translator> {
 fn x(lang: &str, text: &str) -> Option<String> {
     let t = tr(lang)?;
     let codes = t.translate_to_codes(text).ok()?;
-    let mut ph = espeak_ng::phoneme::PhonemeData::load(std::path::Path::new("espeak-ng-data")).ok()?;
-    espeak_ng::translate::select_phoneme_table(&mut ph, std::path::Path::new("espeak-ng-data"), lang).ok()?;
+    let mut ph =
+        espeak_ng::phoneme::PhonemeData::load(std::path::Path::new("espeak-ng-data")).ok()?;
+    espeak_ng::translate::select_phoneme_table(
+        &mut ph,
+        std::path::Path::new("espeak-ng-data"),
+        lang,
+    )
+    .ok()?;
     Some(espeak_ng::translate::phoneme_ipa::codes_to_ipa(
         &codes,
         &ph,
@@ -73,9 +79,14 @@ fn stress_flags_reach_the_languages_that_set_them() {
 /// A hyphen between two letters breaks the word for lookup but not for speech.
 #[test]
 fn hyphen_joins_the_words_it_separates() {
-    let Some(got) = x("en", "well-known") else { return };
+    let Some(got) = x("en", "well-known") else {
+        return;
+    };
     assert_eq!(got, "wˈɛlnˈəʊn");
-    assert_eq!(x("en", "twenty-two thousand").unwrap(), "twˈɛntitˈuː θˈaʊzənd");
+    assert_eq!(
+        x("en", "twenty-two thousand").unwrap(),
+        "twˈɛntitˈuː θˈaʊzənd"
+    );
     // Each part still carries its own stress.
     assert_eq!(x("en", "state-of-the-art").unwrap().matches('ˈ').count(), 2);
 }
@@ -101,7 +112,9 @@ fn word_gaps_and_vowel_pauses() {
     if let Some(t) = tr("sw") {
         let codes = t.translate_to_codes("Habari za asubuhi").unwrap();
         assert!(
-            codes.iter().any(|c| c.code == espeak_ng::phoneme::PHON_PAUSE_NOLINK),
+            codes
+                .iter()
+                .any(|c| c.code == espeak_ng::phoneme::PHON_PAUSE_NOLINK),
             "$brk inserts a no-link pause"
         );
     }
@@ -123,14 +136,18 @@ fn cyrillic_iotated_vowels_are_russian_only() {
 /// to keep it.
 #[test]
 fn length_marks_are_removed_from_unstressed_syllables() {
-    let Some(got) = x("sl", "Dobro jutro svet") else { return };
+    let Some(got) = x("sl", "Dobro jutro svet") else {
+        return;
+    };
     assert_eq!(got, "dˈɔːbrɔ jˈuːtrɔ sʋˈeːt");
 }
 
 /// `isFirstVowel` keeps a word's first vowel out of the reduction branch.
 #[test]
 fn first_vowel_condition_is_evaluated() {
-    let Some(got) = x("ml", "ഹലോ") else { return };
+    let Some(got) = x("ml", "ഹലോ") else {
+        return;
+    };
     assert_eq!(got, "hɐlˈoː");
 }
 
@@ -143,7 +160,10 @@ fn phon_x1_is_not_spoken() {
         !codes.iter().any(|c| c.code == espeak_ng::phoneme::PHON_X1),
         "phonX1 must not reach the phoneme list"
     );
-    assert_eq!(x("fi", "Hyvää huomenta kaikille.").unwrap(), "hˈyvæː hˈuomenta kˈaikɪlle");
+    assert_eq!(
+        x("fi", "Hyvää huomenta kaikille.").unwrap(),
+        "hˈyvæː hˈuomenta kˈaikɪlle"
+    );
 }
 
 /// The voice file's own `replace <flags> <old> <new>` substitutions.
@@ -171,7 +191,11 @@ fn abbreviations_are_spelled_letter_by_letter() {
     assert_eq!(ipa("street"), "stɹˈiːt");
     assert!(ipa("brown").starts_with("bɹ"), "{}", ipa("brown"));
     // A four-letter acronym the dictionary knows stays a word.
-    assert!(ipa("NASA and the USA").starts_with("nˈasɐ"), "{}", ipa("NASA and the USA"));
+    assert!(
+        ipa("NASA and the USA").starts_with("nˈasɐ"),
+        "{}",
+        ipa("NASA and the USA")
+    );
 }
 
 /// A rule's post-context may reach past the word boundary into the next word.
@@ -190,7 +214,7 @@ fn digits_have_a_combining_form_before_scale_words() {
     let ipa = |s: &str| t.text_to_ipa(s).unwrap();
     // "einhundert" / "ein tausend", but standalone "eins".
     assert!(ipa("100").contains("ˈaɪnhˈʊnd"), "{}", ipa("100"));
-    assert!(ipa("1000").starts_with("ˈaɪn ") , "{}", ipa("1000"));
+    assert!(ipa("1000").starts_with("ˈaɪn "), "{}", ipa("1000"));
     assert!(ipa("1").ends_with("ˈaɪns"), "{}", ipa("1"));
     assert!(ipa("1001").ends_with("ˈaɪns"), "{}", ipa("1001"));
 }

@@ -3,7 +3,7 @@ use espeak_ng::translate::Translator;
 fn main() {
     use espeak_ng::EspeakNg;
     match EspeakNg::new("ru") {
-        Ok(_)  => println!("Engine loaded OK"),
+        Ok(_) => println!("Engine loaded OK"),
         Err(e) => println!("Engine load FAILED: {e}"),
     }
 

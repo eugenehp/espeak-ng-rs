@@ -212,9 +212,9 @@ pub enum Gender {
     #[default]
     Unknown = 0,
     /// Male voice.
-    Male    = 1,
+    Male = 1,
     /// Female voice.
-    Female  = 2,
+    Female = 2,
     /// Gender-neutral voice.
     Neutral = 3,
 }
@@ -299,30 +299,30 @@ pub struct EspeakNg {
     /// Active voice specification.
     voice_spec: VoiceSpec,
     /// Speech rate in words-per-minute.
-    rate:       u32,
+    rate: u32,
     /// Output volume (0–200).
-    volume:     u32,
+    volume: u32,
     /// Base pitch (0–100).
-    pitch:      u32,
+    pitch: u32,
     /// Pitch range (0–100).
-    range:      u32,
+    range: u32,
     /// Word gap in 10ms units.
-    word_gap:   i32,
+    word_gap: i32,
     /// Capital-letter indication (`-k`): 0 = none, 2 = announce "capital".
-    capitals:   u8,
+    capitals: u8,
     /// Announce punctuation by name (`--punct`): `None` = off, `Some(empty)` =
     /// all, `Some(chars)` = only those.
-    punct:      Option<Vec<char>>,
+    punct: Option<Vec<char>>,
     /// Suppress the end-of-utterance trailing silence (`-z`).
     no_final_pause: bool,
     /// Seed for the unvoiced-noise generator (`espeak_ng_SetRandSeed`, `-D`).
     rand_seed: u32,
     /// Path to the espeak-ng data directory.
-    data_dir:   PathBuf,
+    data_dir: PathBuf,
     /// Registered sound icons (external WAV clips spliced into the output).
     soundicons: crate::soundicon::SoundIconTable,
     /// When set, `synth` interprets SSML `<audio src="…">` markup.
-    markup:     bool,
+    markup: bool,
     /// `espeakSSML_BREAK_MUL` (`--ssml-break`) as a percentage: scales every
     /// SSML `<break time=…>`.  100 = the duration as written.
     ssml_break: u32,
@@ -375,18 +375,18 @@ impl EspeakNg {
         }
         Ok(EspeakNg {
             voice_spec: VoiceSpec::by_name(lang),
-            rate:       175,
-            volume:     100,
-            pitch:      50,
-            range:      50,
-            word_gap:   0,
-            capitals:   0,
-            punct:      None,
+            rate: 175,
+            volume: 100,
+            pitch: 50,
+            range: 50,
+            word_gap: 0,
+            capitals: 0,
+            punct: None,
             no_final_pause: false,
             rand_seed: 0,
-            data_dir:   data_dir.to_path_buf(),
+            data_dir: data_dir.to_path_buf(),
             soundicons: crate::soundicon::SoundIconTable::new(22_050),
-            markup:     false,
+            markup: false,
             ssml_break: 100,
             voice_pitch: None,
             post_tempo: 1.0,
@@ -497,10 +497,10 @@ impl EspeakNg {
     /// Does not panic; silently clamps out-of-range values.
     pub fn set_parameter(&mut self, param: Parameter, value: i32) {
         match param {
-            Parameter::Rate   => self.rate      = value.clamp(80, 450) as u32,
-            Parameter::Volume => self.volume    = value.clamp(0, 200)  as u32,
-            Parameter::Pitch  => self.pitch     = value.clamp(0, 100)  as u32,
-            Parameter::Range  => self.range     = value.clamp(0, 100)  as u32,
+            Parameter::Rate => self.rate = value.clamp(80, 450) as u32,
+            Parameter::Volume => self.volume = value.clamp(0, 200) as u32,
+            Parameter::Pitch => self.pitch = value.clamp(0, 100) as u32,
+            Parameter::Range => self.range = value.clamp(0, 100) as u32,
             Parameter::WordGap => self.word_gap = value,
             // `Punctuation`: 0 = off, non-zero = announce all punctuation.  Use
             // [`set_punctuation_list`] to restrict to specific characters.
@@ -525,14 +525,14 @@ impl EspeakNg {
     /// Equivalent to `espeak_GetParameter(parameter, /*current=*/1)`.
     pub fn get_parameter(&self, param: Parameter) -> i32 {
         match param {
-            Parameter::Rate      => self.rate     as i32,
-            Parameter::Volume    => self.volume   as i32,
-            Parameter::Pitch     => self.pitch    as i32,
-            Parameter::Range     => self.range    as i32,
-            Parameter::WordGap   => self.word_gap,
+            Parameter::Rate => self.rate as i32,
+            Parameter::Volume => self.volume as i32,
+            Parameter::Pitch => self.pitch as i32,
+            Parameter::Range => self.range as i32,
+            Parameter::WordGap => self.word_gap,
             Parameter::Punctuation => self.punct.is_some() as i32,
-            Parameter::Capitals    => self.capitals as i32,
-            Parameter::SsmlBreak   => self.ssml_break as i32,
+            Parameter::Capitals => self.capitals as i32,
+            Parameter::SsmlBreak => self.ssml_break as i32,
         }
     }
 
@@ -595,10 +595,7 @@ impl EspeakNg {
     ///
     /// Rust form of upstream's proposed `espeak_TextToWordPhonemePairs`
     /// (PR #2533).  See [`crate::translate::Translator::text_to_ipa_words`].
-    pub fn text_to_phoneme_words(
-        &self,
-        text: &str,
-    ) -> Result<Vec<crate::translate::WordPhonemes>> {
+    pub fn text_to_phoneme_words(&self, text: &str) -> Result<Vec<crate::translate::WordPhonemes>> {
         self.make_translator()?.text_to_ipa_words(text)
     }
 
@@ -745,7 +742,7 @@ impl EspeakNg {
     /// Synthesize a plain (icon-free) text run through the normal pipeline.
     fn synth_text(&self, text: &str) -> Result<PcmBuffer> {
         let translator = self.make_translator()?;
-        let mut phdata  = self.load_phdata()?;
+        let mut phdata = self.load_phdata()?;
         // A regional locale may have no phoneme table of its own
         // (`en-gb-scotland`, `pt-br`); `select_phoneme_table` honours the
         // voice's `phonemes` directive and then falls back to the base
@@ -757,10 +754,10 @@ impl EspeakNg {
         )
         .map_err(|_| Error::VoiceNotFound(self.voice_spec.effective_lang().to_string()))?;
 
-        let codes   = translator.translate_to_codes(text)?;
+        let codes = translator.translate_to_codes(text)?;
         // Inline embedded commands (`\x01…P/S/A`) adjust the utterance levels.
-        let voice   = self.make_voice_params_levels(self.rate, self.pitch, self.volume);
-        let synth   = Synthesizer::new(voice);
+        let voice = self.make_voice_params_levels(self.rate, self.pitch, self.volume);
+        let synth = Synthesizer::new(voice);
         synth.synthesize_codes(&codes, &phdata)
     }
 
@@ -792,7 +789,10 @@ impl EspeakNg {
             let mut events = Vec::new();
             if self.markup {
                 let (_segs, marks) = crate::translate::ssml::process_markup_with_marks(text);
-                let total = crate::translate::ssml::strip_markup(text).chars().count().max(1);
+                let total = crate::translate::ssml::strip_markup(text)
+                    .chars()
+                    .count()
+                    .max(1);
                 for m in marks {
                     let at = (m.position as u64 * end_ms as u64 / total as u64) as u32;
                     events.push(SynthEvent {
@@ -830,7 +830,14 @@ impl EspeakNg {
         let word_offsets = word_char_offsets(text);
         let end_ms = ms(samples.len());
 
-        let events = build_events(text, &word_offsets, &word_marks, &sentence_marks, mark_ms, end_ms);
+        let events = build_events(
+            text,
+            &word_offsets,
+            &word_marks,
+            &sentence_marks,
+            mark_ms,
+            end_ms,
+        );
         Ok((samples, rate, events))
     }
 
@@ -908,7 +915,8 @@ impl EspeakNg {
         )
         .map_err(|_| Error::VoiceNotFound(self.voice_spec.effective_lang().to_string()))?;
         let codes = translator.translate_to_codes(text)?;
-        let synth = Synthesizer::new(self.make_voice_params_levels(self.rate, self.pitch, self.volume));
+        let synth =
+            Synthesizer::new(self.make_voice_params_levels(self.rate, self.pitch, self.volume));
 
         let mut emitted = 0usize;
         let mut stopped = false;
@@ -927,8 +935,14 @@ impl EspeakNg {
 
         let end_ms = ms(emitted + tail.len());
         let word_offsets = word_char_offsets(text);
-        let events =
-            build_events(text, &word_offsets, &word_marks, &sentence_marks, ms, end_ms);
+        let events = build_events(
+            text,
+            &word_offsets,
+            &word_marks,
+            &sentence_marks,
+            ms,
+            end_ms,
+        );
         callback(&tail, true, &events);
         Ok(rate)
     }
@@ -981,7 +995,8 @@ impl EspeakNg {
         .map_err(|_| Error::VoiceNotFound(self.voice_spec.effective_lang().to_string()))?;
 
         let codes = translator.translate_to_codes(text)?;
-        let synth = Synthesizer::new(self.make_voice_params_levels(self.rate, self.pitch, self.volume));
+        let synth =
+            Synthesizer::new(self.make_voice_params_levels(self.rate, self.pitch, self.volume));
         synth.synthesize_codes_streaming(&codes, &phdata, &mut callback)?;
         Ok(rate)
     }
@@ -990,7 +1005,7 @@ impl EspeakNg {
     /// returns each spoken word's and sentence's start sample offset.
     fn synth_text_with_marks(&self, text: &str) -> Result<(PcmBuffer, Vec<usize>, Vec<usize>)> {
         let translator = self.make_translator()?;
-        let mut phdata  = self.load_phdata()?;
+        let mut phdata = self.load_phdata()?;
         crate::translate::select_phoneme_table(
             &mut phdata,
             &self.data_dir,
@@ -1026,10 +1041,7 @@ impl EspeakNg {
     // ── Helpers ──────────────────────────────────────────────────────────
 
     fn make_translator(&self) -> Result<Translator> {
-        let mut t = Translator::new(
-            self.voice_spec.effective_lang(),
-            Some(&self.data_dir),
-        )?;
+        let mut t = Translator::new(self.voice_spec.effective_lang(), Some(&self.data_dir))?;
         // Carry the runtime text options through to the audio path so `-g`,
         // `-k` and `--punct` affect synthesis, not just `-x`/`--ipa`.
         t.options.word_gap = self.word_gap;
@@ -1039,12 +1051,13 @@ impl EspeakNg {
     }
 
     fn load_phdata(&self) -> Result<PhonemeData> {
-        PhonemeData::load(&self.data_dir)
-            .map_err(|_| Error::VoiceNotFound(
-                format!("phoneme data not found in {}", self.data_dir.display())
+        PhonemeData::load(&self.data_dir).map_err(|_| {
+            Error::VoiceNotFound(format!(
+                "phoneme data not found in {}",
+                self.data_dir.display()
             ))
+        })
     }
-
 
     fn make_voice_params_levels(&self, rate: u32, pitch: u32, volume: u32) -> VoiceParams {
         // Map rate (wpm) to `speed_percent` through upstream's `speed_lookup`
@@ -1070,17 +1083,15 @@ impl EspeakNg {
         const DEFAULT_PITCH_BASE: i32 = 0x47000;
         const DEFAULT_PITCH_RANGE: i32 = 4104;
         const DEFAULT_PITCH1: f64 = ((DEFAULT_PITCH_BASE >> 12) + 9) as f64;
-        const DEFAULT_PITCH2: f64 =
-            DEFAULT_PITCH1 + (DEFAULT_PITCH_RANGE as f64) / 108.0;
+        const DEFAULT_PITCH2: f64 = DEFAULT_PITCH1 + (DEFAULT_PITCH_RANGE as f64) / 108.0;
 
         // A voice file may declare its own `pitch <base> <range>`.
-        let (voice_pitch1, voice_pitch2) =
-            match self.voice_pitch.or_else(|| {
-                crate::voices::voice_pitch(&self.data_dir, self.voice_spec.effective_lang())
-            }) {
-                Some((p1, p2)) => (p1 as f64, p2 as f64),
-                None => (DEFAULT_PITCH1, DEFAULT_PITCH2),
-            };
+        let (voice_pitch1, voice_pitch2) = match self.voice_pitch.or_else(|| {
+            crate::voices::voice_pitch(&self.data_dir, self.voice_spec.effective_lang())
+        }) {
+            Some((p1, p2)) => (p1 as f64, p2 as f64),
+            None => (DEFAULT_PITCH1, DEFAULT_PITCH2),
+        };
         let mut pitch_hz =
             crate::synthesize::intonation::base_pitch_hz(voice_pitch1, pitch).round() as u32;
         let pitch_range_units = (voice_pitch2 - voice_pitch1) * 108.0;
@@ -1100,8 +1111,9 @@ impl EspeakNg {
         let (mut echo_delay_samples, mut echo_amp) = (0usize, 0i32);
         let mut flutter = 0i32;
         let mut stress_amps = [0i32; 8];
-        let mut tone_adjust =
-            crate::synthesize::wavegen::set_tone_adjust(&crate::synthesize::wavegen::DEFAULT_TONE_POINTS);
+        let mut tone_adjust = crate::synthesize::wavegen::set_tone_adjust(
+            &crate::synthesize::wavegen::DEFAULT_TONE_POINTS,
+        );
         if let Some(var) = &self.voice_spec.variant {
             if let Some(vp) = crate::voices::load_variant(&self.data_dir, var) {
                 pitch_hz = variant_scaled_pitch(pitch_hz, &vp);
@@ -1109,10 +1121,16 @@ impl EspeakNg {
                     let factor = (p1 as f64 - DEFAULT_PITCH1) / DEFAULT_PITCH1;
                     formant_factor = ((1.0 + factor / 4.0) * 256.0).round() as i32;
                 }
-                variant_formant_pct(&mut formant_freq_pct, &mut formant_height_pct, &mut formant_width_pct, &vp);
+                variant_formant_pct(
+                    &mut formant_freq_pct,
+                    &mut formant_height_pct,
+                    &mut formant_width_pct,
+                    &vp,
+                );
                 if let Some((delay_ms, amp)) = vp.echo {
                     if delay_ms > 0 && amp > 0 {
-                        echo_delay_samples = (self.sample_rate() as i64 * delay_ms as i64 / 1000).max(0) as usize;
+                        echo_delay_samples =
+                            (self.sample_rate() as i64 * delay_ms as i64 / 1000).max(0) as usize;
                         echo_amp = amp;
                     }
                 }
@@ -1213,7 +1231,11 @@ fn build_events(
 ) -> Vec<SynthEvent> {
     let mut events = Vec::with_capacity(word_marks.len() + sentence_marks.len() + 3);
     // Sentence 0 begins at the start; each later clause boundary opens another.
-    events.push(SynthEvent { kind: EventKind::Sentence, text_position: 0, audio_position_ms: 0 });
+    events.push(SynthEvent {
+        kind: EventKind::Sentence,
+        text_position: 0,
+        audio_position_ms: 0,
+    });
     for &start in sentence_marks {
         events.push(SynthEvent {
             kind: EventKind::Sentence,
@@ -1230,7 +1252,11 @@ fn build_events(
     }
     // Keep events in audio order (Sentence markers interleaved with words).
     events.sort_by_key(|e| e.audio_position_ms);
-    events.push(SynthEvent { kind: EventKind::End, text_position: text.len(), audio_position_ms: end_ms });
+    events.push(SynthEvent {
+        kind: EventKind::End,
+        text_position: text.len(),
+        audio_position_ms: end_ms,
+    });
     events.push(SynthEvent {
         kind: EventKind::MsgTerminated,
         text_position: text.len(),
@@ -1289,22 +1315,22 @@ fn variant_formant_pct(
 /// Obtain one from [`EspeakNg::builder()`].
 #[derive(Debug)]
 pub struct Builder {
-    lang:     String,
-    rate:     u32,
-    volume:   u32,
-    pitch:    u32,
-    range:    u32,
+    lang: String,
+    rate: u32,
+    volume: u32,
+    pitch: u32,
+    range: u32,
     data_dir: Option<PathBuf>,
 }
 
 impl Default for Builder {
     fn default() -> Self {
         Builder {
-            lang:     "en".to_string(),
-            rate:     175,
-            volume:   100,
-            pitch:    50,
-            range:    50,
+            lang: "en".to_string(),
+            rate: 175,
+            volume: 100,
+            pitch: 50,
+            range: 50,
             data_dir: None,
         }
     }
@@ -1355,14 +1381,15 @@ impl Builder {
     /// # Errors
     /// Returns [`Error::DataPath`] if the data directory does not exist.
     pub fn build(self) -> Result<EspeakNg> {
-        let dir = self.data_dir
+        let dir = self
+            .data_dir
             .unwrap_or_else(|| PathBuf::from(default_data_dir()));
 
         let mut engine = EspeakNg::with_data_dir(&self.lang, &dir)?;
-        engine.rate   = self.rate;
+        engine.rate = self.rate;
         engine.volume = self.volume;
-        engine.pitch  = self.pitch;
-        engine.range  = self.range;
+        engine.pitch = self.pitch;
+        engine.range = self.range;
         Ok(engine)
     }
 }
@@ -1378,9 +1405,9 @@ mod tests {
     #[test]
     fn builder_default_values() {
         let b = Builder::default();
-        assert_eq!(b.lang,   "en");
-        assert_eq!(b.rate,   175);
-        assert_eq!(b.pitch,  50);
+        assert_eq!(b.lang, "en");
+        assert_eq!(b.rate, 175);
+        assert_eq!(b.pitch, 50);
         assert_eq!(b.volume, 100);
     }
 
@@ -1390,10 +1417,30 @@ mod tests {
         let (mut freq, mut height, mut width) = ([100i32; 7], [100i32; 7], [100i32; 7]);
         let vp = VariantParams {
             formants: vec![
-                VariantFormant { index: 1, freq: 120, height: 75, width: 150 },
-                VariantFormant { index: 2, freq: 135, height: 70, width: 160 },
-                VariantFormant { index: 9, freq: 110, height: 70, width: 150 }, // out of range
-                VariantFormant { index: 3, freq: 0,   height: 80, width: 0 },   // freq/width 0 → skip those
+                VariantFormant {
+                    index: 1,
+                    freq: 120,
+                    height: 75,
+                    width: 150,
+                },
+                VariantFormant {
+                    index: 2,
+                    freq: 135,
+                    height: 70,
+                    width: 160,
+                },
+                VariantFormant {
+                    index: 9,
+                    freq: 110,
+                    height: 70,
+                    width: 150,
+                }, // out of range
+                VariantFormant {
+                    index: 3,
+                    freq: 0,
+                    height: 80,
+                    width: 0,
+                }, // freq/width 0 → skip those
             ],
             ..Default::default()
         };
@@ -1402,7 +1449,11 @@ mod tests {
         assert_eq!((height[2], width[2]), (70, 160));
         assert_eq!(freq[0], 100, "untouched formant stays unity");
         assert_eq!(freq[3], 100, "freq 0 leaves unity");
-        assert_eq!((height[3], width[3]), (80, 100), "height applies, width 0 skipped");
+        assert_eq!(
+            (height[3], width[3]),
+            (80, 100),
+            "height applies, width 0 skipped"
+        );
         assert_eq!(freq[6], 100, "out-of-range index ignored (no panic)");
     }
 
@@ -1421,12 +1472,24 @@ mod tests {
     #[test]
     fn variant_pitch_scales_directionally() {
         use crate::voices::VariantParams;
-        let f3 = VariantParams { pitch: Some((140, 240)), ..Default::default() };
-        let m3 = VariantParams { pitch: Some((80, 122)), ..Default::default() };
-        let none = VariantParams { pitch: None, ..Default::default() };
+        let f3 = VariantParams {
+            pitch: Some((140, 240)),
+            ..Default::default()
+        };
+        let m3 = VariantParams {
+            pitch: Some((80, 122)),
+            ..Default::default()
+        };
+        let none = VariantParams {
+            pitch: None,
+            ..Default::default()
+        };
 
         // Female variant raises the base pitch; male stays about the same.
-        assert!(variant_scaled_pitch(118, &f3) > 118, "f3 should raise pitch");
+        assert!(
+            variant_scaled_pitch(118, &f3) > 118,
+            "f3 should raise pitch"
+        );
         assert!(
             variant_scaled_pitch(118, &f3) > variant_scaled_pitch(118, &m3),
             "f3 must be higher than m3"
@@ -1434,7 +1497,10 @@ mod tests {
         // No `pitch` line → unchanged.
         assert_eq!(variant_scaled_pitch(118, &none), 118);
         // Clamped into a sane vocal range.
-        let extreme = VariantParams { pitch: Some((10000, 0)), ..Default::default() };
+        let extreme = VariantParams {
+            pitch: Some((10000, 0)),
+            ..Default::default()
+        };
         assert!(variant_scaled_pitch(118, &extreme) <= 600);
     }
 
@@ -1479,7 +1545,9 @@ mod tests {
     #[test]
     fn engine_sample_rate() {
         let data_dir = PathBuf::from(default_data_dir());
-        if !data_dir.exists() { return; }
+        if !data_dir.exists() {
+            return;
+        }
         let engine = EspeakNg::new("en").unwrap();
         assert_eq!(engine.sample_rate(), 22050);
     }
@@ -1487,7 +1555,9 @@ mod tests {
     #[test]
     fn engine_set_get_parameter() {
         let data_dir = PathBuf::from(default_data_dir());
-        if !data_dir.exists() { return; }
+        if !data_dir.exists() {
+            return;
+        }
         let mut engine = EspeakNg::new("en").unwrap();
 
         engine.set_parameter(Parameter::Rate, 200);
@@ -1507,7 +1577,9 @@ mod tests {
     #[test]
     fn engine_set_parameter_relative() {
         let data_dir = PathBuf::from(default_data_dir());
-        if !data_dir.exists() { return; }
+        if !data_dir.exists() {
+            return;
+        }
         let mut engine = EspeakNg::new("en").unwrap();
         engine.set_parameter(Parameter::Pitch, 50);
         engine.set_parameter_relative(Parameter::Pitch, 10);
@@ -1517,7 +1589,9 @@ mod tests {
     #[test]
     fn engine_text_to_phonemes_en() {
         let data_dir = PathBuf::from(default_data_dir());
-        if !data_dir.join("en_dict").exists() { return; }
+        if !data_dir.join("en_dict").exists() {
+            return;
+        }
         let engine = EspeakNg::new("en").unwrap();
         let ipa = engine.text_to_phonemes("hello").unwrap();
         assert!(ipa.contains('h'), "expected IPA with 'h', got: {ipa}");
@@ -1526,7 +1600,9 @@ mod tests {
     #[test]
     fn engine_synth_returns_samples() {
         let data_dir = PathBuf::from(default_data_dir());
-        if !data_dir.join("en_dict").exists() { return; }
+        if !data_dir.join("en_dict").exists() {
+            return;
+        }
         let engine = EspeakNg::new("en").unwrap();
         let (samples, rate) = engine.synth("hello").unwrap();
         assert_eq!(rate, 22050);
@@ -1541,7 +1617,9 @@ mod tests {
     #[test]
     fn engine_builder_chain() {
         let data_dir = PathBuf::from(default_data_dir());
-        if !data_dir.exists() { return; }
+        if !data_dir.exists() {
+            return;
+        }
         let engine = EspeakNg::builder()
             .voice("en")
             .rate(200)
@@ -1549,8 +1627,8 @@ mod tests {
             .volume(80)
             .build()
             .unwrap();
-        assert_eq!(engine.get_parameter(Parameter::Rate),   200);
-        assert_eq!(engine.get_parameter(Parameter::Pitch),   60);
-        assert_eq!(engine.get_parameter(Parameter::Volume),  80);
+        assert_eq!(engine.get_parameter(Parameter::Rate), 200);
+        assert_eq!(engine.get_parameter(Parameter::Pitch), 60);
+        assert_eq!(engine.get_parameter(Parameter::Volume), 80);
     }
 }

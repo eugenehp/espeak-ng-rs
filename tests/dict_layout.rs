@@ -38,10 +38,15 @@ fn dictionaries_load_from_a_dicts_subdirectory() {
     }
     // `lang/` is a directory and is needed for voice lookup.
     let _ = std::process::Command::new("cp")
-        .arg("-R").arg(src.join("lang")).arg(dir.join("lang"))
+        .arg("-R")
+        .arg(src.join("lang"))
+        .arg(dir.join("lang"))
         .status();
 
-    assert!(!dir.join("en_dict").exists(), "the flat dictionary must be gone");
+    assert!(
+        !dir.join("en_dict").exists(),
+        "the flat dictionary must be gone"
+    );
     assert!(dir.join("dicts").join("en_dict").exists());
 
     let e = espeak_ng::EspeakNg::with_data_dir("en", &dir).expect("engine");

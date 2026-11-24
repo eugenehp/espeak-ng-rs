@@ -84,7 +84,9 @@ fn bundled_data_installs_voice_files_for_every_language() {
     let mut declared: Vec<String> = Vec::new();
     let mut stack = vec![data_dir.join("lang")];
     while let Some(dir) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
         for entry in entries.filter_map(Result::ok) {
             let path = entry.path();
             if path.is_dir() {
@@ -94,7 +96,9 @@ fn bundled_data_installs_voice_files_for_every_language() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                 declared.push(name.to_owned());
             }
-            let Ok(text) = std::fs::read_to_string(&path) else { continue };
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                continue;
+            };
             for line in text.lines() {
                 let line = line.trim();
                 for key in ["language ", "dictionary "] {
@@ -135,7 +139,9 @@ fn bundled_data_phonemizes_split_out_and_new_languages() {
     std::fs::create_dir_all(&data_dir).expect("create temp data dir");
     espeak_ng::install_bundled_data(&data_dir).expect("install bundled data");
 
-    for lang in ["en", "ru", "fo", "ps", "ab", "crh", "kaa", "lij", "mn", "rup", "xex"] {
+    for lang in [
+        "en", "ru", "fo", "ps", "ab", "crh", "kaa", "lij", "mn", "rup", "xex",
+    ] {
         let engine = espeak_ng::EspeakNg::with_data_dir(lang, &data_dir)
             .unwrap_or_else(|e| panic!("{lang}: engine init failed: {e}"));
         let ipa = engine

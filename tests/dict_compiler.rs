@@ -44,11 +44,14 @@ fn scratch(name: &str) -> PathBuf {
 #[test]
 fn uppercase_context_letters_are_commands() {
     let Some(p) = phdata("en") else { return };
-    let groups = parse_rules_dsl("\
+    let groups = parse_rules_dsl(
+        "\
 .group w
         w          w
      w) wor (K     w
-", &p);
+",
+        &p,
+    );
     let bytes = compile_rules(&groups);
     assert!(
         bytes.contains(&espeak_ng::dictionary::RULE_NOTVOWEL),
@@ -75,8 +78,14 @@ fn uppercase_context_letters_are_commands() {
 fn word_start_context_uses_pre_atstart() {
     let Some(p) = phdata("en") else { return };
     let bytes = compile_rules(&parse_rules_dsl(".group k\n   _) k (n     \n", &p));
-    assert!(bytes.contains(&RULE_PRE_ATSTART), "expected RULE_PRE_ATSTART: {bytes:?}");
-    assert!(!bytes.contains(&RULE_PRE), "the `_` is implied, not written");
+    assert!(
+        bytes.contains(&RULE_PRE_ATSTART),
+        "expected RULE_PRE_ATSTART: {bytes:?}"
+    );
+    assert!(
+        !bytes.contains(&RULE_PRE),
+        "the `_` is implied, not written"
+    );
     assert!(bytes.contains(&RULE_POST));
 }
 
@@ -125,7 +134,11 @@ fn groups_are_sorted_and_merged() {
             i += 1;
         }
     }
-    assert_eq!(names, vec!["ab", "a", "b"], "long names first, `a` merged once");
+    assert_eq!(
+        names,
+        vec!["ab", "a", "b"],
+        "long names first, `a` merged once"
+    );
     assert_eq!(bytes.iter().filter(|&&b| b == RULE_GROUP_END).count(), 3);
 }
 
@@ -149,7 +162,10 @@ fn list_entries_are_written_in_reverse_source_order() {
         ..Default::default()
     };
     let r = espeak_ng::dictionary::lookup::lookup(&dict, "a", &ctx).expect("found");
-    assert!(!r.phonemes.is_empty(), "the `$atend` entry wins at a clause end");
+    assert!(
+        !r.phonemes.is_empty(),
+        "the `$atend` entry wins at a clause end"
+    );
 }
 
 /// A capitalised key is stored lowercased, and `U+xxxx` names a character.
@@ -170,7 +186,13 @@ fn compiled_dictionary_speaks() {
         return;
     }
     let dir = scratch("dict_compiler_e2e");
-    for f in ["phontab", "phonindex", "phondata", "phondata-manifest", "intonations"] {
+    for f in [
+        "phontab",
+        "phonindex",
+        "phondata",
+        "phondata-manifest",
+        "intonations",
+    ] {
         let _ = std::fs::copy(data.join(f), dir.join(f));
     }
     for sub in ["lang", "voices"] {
@@ -203,7 +225,11 @@ fn compiled_dictionary_speaks() {
         .arg(&dir)
         .output()
         .expect("run --compile");
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     assert!(dir.join("en_dict").exists());
 
     let spoken = std::process::Command::new(env!("CARGO_BIN_EXE_espeak_cli"))

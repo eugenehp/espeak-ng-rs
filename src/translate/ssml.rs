@@ -150,16 +150,24 @@ pub fn document_prosody(input: &str) -> Option<Prosody> {
     // Everything outside the <prosody>…</prosody> must be non-speakable
     // (only <speak>/whitespace/comments) — else the span is partial.
     let before = &input[..open_start];
-    let after_close = input[close_start..].find('>').map(|p| close_start + p + 1)?;
+    let after_close = input[close_start..]
+        .find('>')
+        .map(|p| close_start + p + 1)?;
     let after = &input[after_close..];
     if !strip_markup(before).trim().is_empty() || !strip_markup(after).trim().is_empty() {
         return None;
     }
     let attrs = &input[open_start + "<prosody".len()..open_end];
     let p = Prosody {
-        rate: get_attr(attrs, "rate").as_deref().and_then(parse_prosody_value),
-        pitch: get_attr(attrs, "pitch").as_deref().and_then(parse_prosody_value),
-        volume: get_attr(attrs, "volume").as_deref().and_then(parse_prosody_value),
+        rate: get_attr(attrs, "rate")
+            .as_deref()
+            .and_then(parse_prosody_value),
+        pitch: get_attr(attrs, "pitch")
+            .as_deref()
+            .and_then(parse_prosody_value),
+        volume: get_attr(attrs, "volume")
+            .as_deref()
+            .and_then(parse_prosody_value),
     };
     (!p.is_empty()).then_some(p)
 }
@@ -208,7 +216,10 @@ pub fn process_markup_with_marks(input: &str) -> (Vec<Segment>, Vec<Mark>) {
 pub fn process_markup_opts(input: &str, break_mul: u32) -> (Vec<Segment>, Vec<Mark>) {
     let chars: Vec<char> = input.chars().collect();
     let n = chars.len();
-    let mut w = Walker { break_mul, ..Walker::default() };
+    let mut w = Walker {
+        break_mul,
+        ..Walker::default()
+    };
     let mut i = 0;
 
     while i < n {
@@ -341,7 +352,10 @@ impl Walker {
     /// Total characters emitted to the stripped output so far (finished
     /// segments plus the pending buffer) — the offset a `<mark>` sits at.
     fn output_len(&self) -> usize {
-        self.segments.iter().map(|s| s.text.chars().count()).sum::<usize>()
+        self.segments
+            .iter()
+            .map(|s| s.text.chars().count())
+            .sum::<usize>()
             + self.cur.chars().count()
     }
 
@@ -349,7 +363,11 @@ impl Walker {
         if !self.cur.is_empty() {
             let text = std::mem::take(&mut self.cur);
             let lang = self.current_lang();
-            self.segments.push(Segment { text, lang, interpret: self.interpret });
+            self.segments.push(Segment {
+                text,
+                lang,
+                interpret: self.interpret,
+            });
         }
     }
 
@@ -452,7 +470,10 @@ impl Walker {
             ms = BREAK_VALUE[level];
             weak = level < 3;
         }
-        if let Some(t) = get_attr(attrs, "time").as_deref().and_then(parse_break_time) {
+        if let Some(t) = get_attr(attrs, "time")
+            .as_deref()
+            .and_then(parse_break_time)
+        {
             // `time` wins, and restores the clause boundary a weak `strength`
             // had taken away.
             ms = (t as u64 * self.break_mul as u64 / 100).min(u32::MAX as u64) as u32;
@@ -498,7 +519,10 @@ impl Walker {
                 } else if !self_close {
                     self.prosody_stack.push(self.prosody);
                     let scale = |attr: &str, base: i32, cur: i32| -> i32 {
-                        match get_attr(attrs, attr).as_deref().and_then(parse_prosody_value) {
+                        match get_attr(attrs, attr)
+                            .as_deref()
+                            .and_then(parse_prosody_value)
+                        {
                             Some(m) => (base as f32 * m).round() as i32,
                             None => cur,
                         }
@@ -523,7 +547,10 @@ impl Walker {
                 // stripped output (finished segments + the current buffer).
                 if let Some(name) = get_attr(attrs, "name") {
                     let position = self.output_len();
-                    self.marks.push(Mark { name: name.to_string(), position });
+                    self.marks.push(Mark {
+                        name: name.to_string(),
+                        position,
+                    });
                 }
             }
 
@@ -744,7 +771,9 @@ fn is_name_char(c: char) -> bool {
 }
 
 fn starts_with(chars: &[char], at: usize, pat: &str) -> bool {
-    pat.chars().enumerate().all(|(k, pc)| chars.get(at + k) == Some(&pc))
+    pat.chars()
+        .enumerate()
+        .all(|(k, pc)| chars.get(at + k) == Some(&pc))
 }
 
 fn find_char(chars: &[char], from: usize, target: char) -> Option<usize> {
@@ -797,7 +826,8 @@ mod tests {
 
     #[test]
     fn mark_captures_name_and_position() {
-        let (_segs, marks) = process_markup_with_marks("one <mark name=\"a\"/> two <mark name=\"b\"/>");
+        let (_segs, marks) =
+            process_markup_with_marks("one <mark name=\"a\"/> two <mark name=\"b\"/>");
         assert_eq!(marks.len(), 2);
         assert_eq!(marks[0].name, "a");
         assert_eq!(marks[1].name, "b");
@@ -869,7 +899,10 @@ mod tests {
             ["0", "0", "7"]
         );
         // `cardinal`/`number` are read as a whole number (content untouched).
-        assert_eq!(strip_markup(r#"<say-as interpret-as="cardinal">42</say-as>"#), "42");
+        assert_eq!(
+            strip_markup(r#"<say-as interpret-as="cardinal">42</say-as>"#),
+            "42"
+        );
     }
 
     #[test]
@@ -894,12 +927,19 @@ mod tests {
     fn say_as_ordinal_tags_segment() {
         let segs = process_markup(r#"the <say-as interpret-as="ordinal">3</say-as> item"#);
         // The number is its own segment, tagged Ordinal.
-        let ordinal: Vec<_> = segs.iter().filter(|s| s.interpret == SayAs::Ordinal).collect();
+        let ordinal: Vec<_> = segs
+            .iter()
+            .filter(|s| s.interpret == SayAs::Ordinal)
+            .collect();
         assert_eq!(ordinal.len(), 1, "{segs:?}");
         assert_eq!(ordinal[0].text.trim(), "3");
         // Surrounding text stays Normal.
-        assert!(segs.iter().any(|s| s.interpret == SayAs::Normal && s.text.contains("the")));
-        assert!(segs.iter().any(|s| s.interpret == SayAs::Normal && s.text.contains("item")));
+        assert!(segs
+            .iter()
+            .any(|s| s.interpret == SayAs::Normal && s.text.contains("the")));
+        assert!(segs
+            .iter()
+            .any(|s| s.interpret == SayAs::Normal && s.text.contains("item")));
     }
 
     #[test]
@@ -921,10 +961,10 @@ mod tests {
         assert!(document_prosody(r#"plain <prosody rate="50%">x</prosody>"#).is_none());
         assert!(document_prosody(r#"<prosody rate="50%">x</prosody> plain"#).is_none());
         // Multiple prosody spans → None.
-        assert!(
-            document_prosody(r#"<prosody rate="50%">a</prosody><prosody rate="200%">b</prosody>"#)
-                .is_none()
-        );
+        assert!(document_prosody(
+            r#"<prosody rate="50%">a</prosody><prosody rate="200%">b</prosody>"#
+        )
+        .is_none());
         // No prosody, or no mappable attribute → None.
         assert!(document_prosody("hello").is_none());
         assert!(document_prosody(r#"<prosody pitch="200Hz">x</prosody>"#).is_none());
@@ -933,9 +973,13 @@ mod tests {
     #[test]
     fn say_as_date_time_tag_segments() {
         let segs = process_markup(r#"<say-as interpret-as="date">2024-01-15</say-as>"#);
-        assert!(segs.iter().any(|s| s.interpret == SayAs::Date && s.text.contains("2024")));
+        assert!(segs
+            .iter()
+            .any(|s| s.interpret == SayAs::Date && s.text.contains("2024")));
         let segs = process_markup(r#"<say-as interpret-as="time">14:30</say-as>"#);
-        assert!(segs.iter().any(|s| s.interpret == SayAs::Time && s.text.contains("14:30")));
+        assert!(segs
+            .iter()
+            .any(|s| s.interpret == SayAs::Time && s.text.contains("14:30")));
     }
 
     #[test]
@@ -985,10 +1029,16 @@ mod tests {
     #[test]
     fn break_inserts_boundary() {
         // `time` is wall-clock exact (`+`); a bare break is C's 210 ms.
-        assert_eq!(show(&strip_markup("one<break time=\"500ms\"/>two")), "one{+500}|two");
+        assert_eq!(
+            show(&strip_markup("one<break time=\"500ms\"/>two")),
+            "one{+500}|two"
+        );
         assert_eq!(show(&strip_markup("a<break/>b")), "a{210}|b");
         assert_eq!(show(&strip_markup("a<break time=\"2s\"/>b")), "a{+2000}|b");
-        assert_eq!(show(&strip_markup("a<break time=\"1.5s\"/>b")), "a{+1500}|b");
+        assert_eq!(
+            show(&strip_markup("a<break time=\"1.5s\"/>b")),
+            "a{+1500}|b"
+        );
     }
 
     /// `strength` picks one of C's six pause lengths; below `medium` it is a
@@ -997,14 +1047,32 @@ mod tests {
     /// apart.
     #[test]
     fn break_strength_sets_the_pause() {
-        assert_eq!(show(&strip_markup("a<break strength=\"x-strong\"/>b")), "a{800}|b");
-        assert_eq!(show(&strip_markup("a<break strength=\"strong\"/>b")), "a{400}|b");
-        assert_eq!(show(&strip_markup("a<break strength=\"medium\"/>b")), "a{210}|b");
-        assert_eq!(show(&strip_markup("a<break strength=\"weak\"/>b")), "a{140}b");
-        assert_eq!(show(&strip_markup("a<break strength=\"x-weak\"/>b")), "a{70}b");
+        assert_eq!(
+            show(&strip_markup("a<break strength=\"x-strong\"/>b")),
+            "a{800}|b"
+        );
+        assert_eq!(
+            show(&strip_markup("a<break strength=\"strong\"/>b")),
+            "a{400}|b"
+        );
+        assert_eq!(
+            show(&strip_markup("a<break strength=\"medium\"/>b")),
+            "a{210}|b"
+        );
+        assert_eq!(
+            show(&strip_markup("a<break strength=\"weak\"/>b")),
+            "a{140}b"
+        );
+        assert_eq!(
+            show(&strip_markup("a<break strength=\"x-weak\"/>b")),
+            "a{70}b"
+        );
         assert_eq!(show(&strip_markup("a<break strength=\"none\"/>b")), "a{0}b");
         // An unknown strength is C's `weak`, and `time` wins over `strength`.
-        assert_eq!(show(&strip_markup("a<break strength=\"huh\"/>b")), "a{140}b");
+        assert_eq!(
+            show(&strip_markup("a<break strength=\"huh\"/>b")),
+            "a{140}b"
+        );
         assert_eq!(
             show(&strip_markup("a<break strength=\"weak\" time=\"300ms\"/>b")),
             "a{+300}|b"
@@ -1015,14 +1083,28 @@ mod tests {
     /// `espeakSSML_BREAK_MUL` where it reads the attribute.
     #[test]
     fn ssml_break_percentage_scales_time() {
-        let text = |mul| show(&process_markup_opts("a<break time=\"400ms\"/>b", mul).0
-            .into_iter().map(|s| s.text).collect::<String>());
+        let text = |mul| {
+            show(
+                &process_markup_opts("a<break time=\"400ms\"/>b", mul)
+                    .0
+                    .into_iter()
+                    .map(|s| s.text)
+                    .collect::<String>(),
+            )
+        };
         assert_eq!(text(100), "a{+400}|b");
         assert_eq!(text(50), "a{+200}|b");
         assert_eq!(text(250), "a{+1000}|b");
         assert_eq!(text(0), "a{+0}|b");
-        let strength = |mul| show(&process_markup_opts("a<break strength=\"strong\"/>b", mul).0
-            .into_iter().map(|s| s.text).collect::<String>());
+        let strength = |mul| {
+            show(
+                &process_markup_opts("a<break strength=\"strong\"/>b", mul)
+                    .0
+                    .into_iter()
+                    .map(|s| s.text)
+                    .collect::<String>(),
+            )
+        };
         assert_eq!(strength(50), "a{400}|b", "strength is not scaled");
     }
 
@@ -1036,7 +1118,10 @@ mod tests {
     #[test]
     fn nested_say_as_and_sub_are_balanced() {
         let out = strip_markup(r#"say <sub alias="one">1</sub> then <sub alias="two">2</sub>"#);
-        assert_eq!(out.split_whitespace().collect::<Vec<_>>(), ["say", "one", "then", "two"]);
+        assert_eq!(
+            out.split_whitespace().collect::<Vec<_>>(),
+            ["say", "one", "then", "two"]
+        );
     }
 
     #[test]
@@ -1047,7 +1132,10 @@ mod tests {
     #[test]
     fn voice_produces_language_tagged_segments() {
         let segs = process_markup(r#"hello <voice xml:lang="fr">bonjour</voice> bye"#);
-        let non_empty: Vec<_> = segs.into_iter().filter(|s| !s.text.trim().is_empty()).collect();
+        let non_empty: Vec<_> = segs
+            .into_iter()
+            .filter(|s| !s.text.trim().is_empty())
+            .collect();
         assert_eq!(non_empty.len(), 3);
         assert_eq!(non_empty[0].lang, None);
         assert_eq!(non_empty[1].lang.as_deref(), Some("fr"));
@@ -1058,11 +1146,15 @@ mod tests {
     #[test]
     fn voice_name_and_lang_attrs() {
         assert_eq!(
-            process_markup(r#"<voice name="de">x</voice>"#)[0].lang.as_deref(),
+            process_markup(r#"<voice name="de">x</voice>"#)[0]
+                .lang
+                .as_deref(),
             Some("de")
         );
         assert_eq!(
-            process_markup(r#"<voice lang="es">x</voice>"#)[0].lang.as_deref(),
+            process_markup(r#"<voice lang="es">x</voice>"#)[0]
+                .lang
+                .as_deref(),
             Some("es")
         );
     }

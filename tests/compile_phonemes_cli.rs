@@ -43,7 +43,11 @@ fn compile_phonemes_then_parse() {
         .arg(&dir)
         .output()
         .expect("run --compile-phonemes");
-    assert!(out.status.success(), "compile failed: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "compile failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
     let phontab = dir.join("phontab");
     assert!(phontab.exists(), "phontab was not written");
@@ -53,9 +57,16 @@ fn compile_phonemes_then_parse() {
     let tables = parse_phontab(&bytes).expect("parse compiled phontab");
     assert_eq!(tables.len(), 1);
     assert_eq!(tables[0].name, "base");
-    let mnemonics: Vec<String> = tables[0].phonemes.iter().map(|p| p.mnemonic_str()).collect();
+    let mnemonics: Vec<String> = tables[0]
+        .phonemes
+        .iter()
+        .map(|p| p.mnemonic_str())
+        .collect();
     assert_eq!(mnemonics, vec!["_", "p", "a"]);
-    assert_eq!(tables[0].phonemes[2].std_length, 180, "'a' length preserved");
+    assert_eq!(
+        tables[0].phonemes[2].std_length, 180,
+        "'a' length preserved"
+    );
 }
 
 #[test]
@@ -70,5 +81,8 @@ fn compile_phonemes_missing_source_errors() {
     assert!(!out.status.success(), "missing source should fail");
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(err.contains("not found"), "clear error expected: {err}");
-    assert!(!dir.join("phontab").exists(), "no phontab written on failure");
+    assert!(
+        !dir.join("phontab").exists(),
+        "no phontab written on failure"
+    );
 }

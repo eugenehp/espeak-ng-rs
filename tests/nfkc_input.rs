@@ -7,7 +7,9 @@
 use espeak_ng::Translator;
 
 fn x(text: &str) -> Option<String> {
-    Translator::new("en", None).ok().map(|t| t.text_to_ipa(text).unwrap())
+    Translator::new("en", None)
+        .ok()
+        .map(|t| t.text_to_ipa(text).unwrap())
 }
 
 #[test]
@@ -18,7 +20,11 @@ fn squared_units_are_no_longer_dropped() {
     };
     // `㎏` U+338F used to produce nothing at all.
     assert!(!x("㎏").unwrap().trim().is_empty(), "㎏ was dropped");
-    assert!(x("5㎏").unwrap().contains("kˈɪləɡɹ"), "5㎏ should read as kilograms: {:?}", x("5㎏"));
+    assert!(
+        x("5㎏").unwrap().contains("kˈɪləɡɹ"),
+        "5㎏ should read as kilograms: {:?}",
+        x("5㎏")
+    );
     assert!(!x("㎐").unwrap().trim().is_empty(), "㎐ was dropped");
     assert!(!x("㎞").unwrap().trim().is_empty(), "㎞ was dropped");
 }
@@ -33,11 +39,19 @@ fn squared_units_are_no_longer_dropped() {
 fn better_readings_are_preserved() {
     let Some(_) = x("a") else { return };
     assert!(x("™").unwrap().contains("tɹˈeɪd mˈɑːk"), "{:?}", x("™"));
-    assert!(!x("™").unwrap().contains("ˈɛm"), "folded to T M: {:?}", x("™"));
+    assert!(
+        !x("™").unwrap().contains("ˈɛm"),
+        "folded to T M: {:?}",
+        x("™")
+    );
     assert!(x("№5").unwrap().contains("njˈuːm"), "{:?}", x("№5"));
     assert_eq!(x("①②③").unwrap(), "wˈɒn tˈuː θɹˈiː");
     assert!(x("x²").unwrap().contains("skwˈeəd"), "{:?}", x("x²"));
-    assert_eq!(x("ｈｅｌｌｏ").unwrap(), x("hello").unwrap(), "full-width already folds");
+    assert_eq!(
+        x("ｈｅｌｌｏ").unwrap(),
+        x("hello").unwrap(),
+        "full-width already folds"
+    );
 }
 
 /// Folding must not change ordinary text.

@@ -31,7 +31,10 @@ fn dotless_i_casing() {
         assert_eq!(t.text_to_ipa("Işık").unwrap(), "ɯʃˈɯk");
         // `İ` must not leave a combining dot behind: that lost the `s`.
         assert_eq!(t.text_to_ipa("İstanbul").unwrap(), "ɪstˈanbʊɫ");
-        assert_eq!(t.text_to_ipa("TÜRKİYE").unwrap(), t.text_to_ipa("türkiye").unwrap());
+        assert_eq!(
+            t.text_to_ipa("TÜRKİYE").unwrap(),
+            t.text_to_ipa("türkiye").unwrap()
+        );
     }
     if let Some(t) = tr("az") {
         assert_eq!(t.text_to_ipa("I").unwrap(), "ˈɯ");

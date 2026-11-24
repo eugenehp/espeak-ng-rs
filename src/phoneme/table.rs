@@ -26,19 +26,19 @@ use super::N_PHONEME_TAB_NAME;
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PhonemeTab {
     /// Up to 4 ASCII chars packed little-endian: first char in the LSByte.
-    pub mnemonic:   u32,
+    pub mnemonic: u32,
     /// Flag bits; bits 16-19 encode place of articulation.
-    pub phflags:    u32,
+    pub phflags: u32,
     /// Byte offset into `phondata` for this phoneme's synthesis program.
-    pub program:    u16,
+    pub program: u16,
     /// Index of this phoneme within the active table (0-255).
-    pub code:       u8,
+    pub code: u8,
     /// Phoneme type: `PH_VOWEL`, `PH_STOP`, `PH_PAUSE`, etc.
-    pub typ:        u8,
+    pub typ: u8,
     /// Start type (consonant cluster context).
     pub start_type: u8,
     /// End type / voicing-switch info.
-    pub end_type:   u8,
+    pub end_type: u8,
     /// Standard length in ms/2 (vowels) or stress type (stress phonemes).
     pub std_length: u8,
     /// Length-modifier group number.
@@ -51,7 +51,9 @@ impl PhonemeTab {
         let mut s = String::with_capacity(4);
         for shift in 0..4u32 {
             let c = ((self.mnemonic >> (shift * 8)) & 0xff) as u8;
-            if c == 0 { break; }
+            if c == 0 {
+                break;
+            }
             s.push(c as char);
         }
         s
@@ -82,16 +84,26 @@ impl PhonemeTab {
 
     /// Parse a single `PhonemeTab` from 16 raw bytes (little-endian).
     pub fn from_bytes(bytes: &[u8; 16]) -> Self {
-        let mnemonic   = u32::from_le_bytes(bytes[0..4].try_into().unwrap());
-        let phflags    = u32::from_le_bytes(bytes[4..8].try_into().unwrap());
-        let program    = u16::from_le_bytes(bytes[8..10].try_into().unwrap());
-        let code       = bytes[10];
-        let typ        = bytes[11];
+        let mnemonic = u32::from_le_bytes(bytes[0..4].try_into().unwrap());
+        let phflags = u32::from_le_bytes(bytes[4..8].try_into().unwrap());
+        let program = u16::from_le_bytes(bytes[8..10].try_into().unwrap());
+        let code = bytes[10];
+        let typ = bytes[11];
         let start_type = bytes[12];
-        let end_type   = bytes[13];
+        let end_type = bytes[13];
         let std_length = bytes[14];
         let length_mod = bytes[15];
-        Self { mnemonic, phflags, program, code, typ, start_type, end_type, std_length, length_mod }
+        Self {
+            mnemonic,
+            phflags,
+            program,
+            code,
+            typ,
+            start_type,
+            end_type,
+            std_length,
+            length_mod,
+        }
     }
 
     /// Serialize back to 16 bytes (for round-trip testing).
@@ -161,7 +173,10 @@ pub struct PhonemeTabList {
 impl PhonemeTabList {
     /// Parse the table name from a 32-byte null-padded buffer.
     pub fn parse_name(buf: &[u8; N_PHONEME_TAB_NAME]) -> String {
-        let end = buf.iter().position(|&b| b == 0).unwrap_or(N_PHONEME_TAB_NAME);
+        let end = buf
+            .iter()
+            .position(|&b| b == 0)
+            .unwrap_or(N_PHONEME_TAB_NAME);
         String::from_utf8_lossy(&buf[..end]).into_owned()
     }
 }
@@ -209,13 +224,13 @@ mod tests {
         let raw: [u8; 16] = [
             0x5f, 0x3a, 0x00, 0x00, // mnemonic "_:"
             0x00, 0x00, 0x00, 0x00, // phflags
-            0x00, 0x00,             // program
-            0x09,                   // code = 9
-            0x00,                   // type = phPAUSE
-            0x00,                   // start_type
-            0x00,                   // end_type
-            0x25,                   // std_length = 37
-            0x00,                   // length_mod
+            0x00, 0x00, // program
+            0x09, // code = 9
+            0x00, // type = phPAUSE
+            0x00, // start_type
+            0x00, // end_type
+            0x25, // std_length = 37
+            0x00, // length_mod
         ];
         let ph = PhonemeTab::from_bytes(&raw);
         assert_eq!(ph.mnemonic_str(), "_:");

@@ -19,10 +19,10 @@ fn hindi_words_read_with_conjuncts_and_schwa_deletion() {
     };
     let ipa = |s: &str| t.text_to_ipa(s).unwrap();
     let cases: &[(&str, &str)] = &[
-        ("नमस्ते", "nəmˈʌsteː"),  // conjunct स्त works; first vowel reduces (== upstream)
-        ("भारत", "bʰˈaːɾət"),     // word-final schwa deleted (not "…rʌtʌ")
-        ("किताब", "kɪtˈaːb"),     // ditto
-        ("स्कूल", "skˈuːl"),      // leading conjunct स्क + final schwa deleted
+        ("नमस्ते", "nəmˈʌsteː"), // conjunct स्त works; first vowel reduces (== upstream)
+        ("भारत", "bʰˈaːɾət"),  // word-final schwa deleted (not "…rʌtʌ")
+        ("किताब", "kɪtˈaːb"),  // ditto
+        ("स्कूल", "skˈuːl"),     // leading conjunct स्क + final schwa deleted
         ("पानी", "pˈaːni"),
     ];
     for (word, want) in cases {
@@ -32,13 +32,20 @@ fn hindi_words_read_with_conjuncts_and_schwa_deletion() {
     // हिंदी → "hindi" (nasalised i may render precomposed or with a combining
     // tilde, so check the stable parts and that no trailing schwa was left).
     let hindi = ipa("हिंदी");
-    assert!(hindi.starts_with('h') && hindi.ends_with("di"), "हिंदी → hindi: {hindi}");
+    assert!(
+        hindi.starts_with('h') && hindi.ends_with("di"),
+        "हिंदी → hindi: {hindi}"
+    );
     // CVC words: keep the first inherent vowel, delete the word-final one.
     for (word, want) in [("घर", "ɡʰˈʌɾ"), ("कर", "kˈʌɾ"), ("मन", "mˈʌn")] {
         assert_eq!(ipa(word), want, "hi {word:?}");
     }
     // A single consonant keeps its inherent vowel (deletion needs another vowel).
-    assert!(ipa("क").contains('ə') || ipa("क").contains('ʌ'), "क keeps schwa: {}", ipa("क"));
+    assert!(
+        ipa("क").contains('ə') || ipa("क").contains('ʌ'),
+        "क keeps schwa: {}",
+        ipa("क")
+    );
     // A full sentence reads.
     assert!(!ipa("मेरा नाम राहुल है").trim().is_empty(), "hi sentence");
 }
@@ -51,7 +58,10 @@ fn marathi_and_nepali_use_the_same_devanagari_path() {
             continue;
         };
         let out = t.text_to_ipa("धन्यवाद").unwrap();
-        assert!(out.contains("aːd") && !out.trim().is_empty(), "{lang} धन्यवाद: {out}");
+        assert!(
+            out.contains("aːd") && !out.trim().is_empty(),
+            "{lang} धन्यवाद: {out}"
+        );
     }
 }
 
@@ -61,13 +71,13 @@ fn other_indic_scripts_read_words() {
     // combining-mark fix, so a "hello"/"thank you"-type word now reads (a
     // conjunct in each collapses correctly) instead of producing empty output.
     let cases: &[(&str, &str, &str)] = &[
-        ("bn", "নমস্কার", "ʃk"),   // Bengali — স্ক conjunct
-        ("ta", "வணக்கம்", "kk"),    // Tamil — க்க
-        ("te", "నమస్తే", "st"),     // Telugu — స్త
-        ("kn", "ನಮಸ್ಕಾರ", "sk"),   // Kannada — ಸ್ಕ
-        ("ml", "നമസ്കാരം", "s"),    // Malayalam
-        ("gu", "નમસ્તે", "st"),     // Gujarati — સ્ત
-        ("or", "ନମସ୍କାର", "sk"),    // Oriya
+        ("bn", "নমস্কার", "ʃk"),  // Bengali — স্ক conjunct
+        ("ta", "வணக்கம்", "kk"),  // Tamil — க்க
+        ("te", "నమస్తే", "st"),   // Telugu — స్త
+        ("kn", "ನಮಸ್ಕಾರ", "sk"), // Kannada — ಸ್ಕ
+        ("ml", "നമസ്കാരം", "s"),  // Malayalam
+        ("gu", "નમસ્તે", "st"),   // Gujarati — સ્ત
+        ("or", "ନମସ୍କାର", "sk"),  // Oriya
     ];
     for (lang, word, want) in cases {
         let Some(t) = Translator::new(lang, None).ok() else {
@@ -75,7 +85,13 @@ fn other_indic_scripts_read_words() {
             continue;
         };
         let got = t.text_to_ipa(word).unwrap();
-        assert!(!got.trim().is_empty(), "{lang} {word:?} produced no phonemes");
-        assert!(got.contains(want), "{lang} {word:?}: want a {want:?} conjunct, got {got:?}");
+        assert!(
+            !got.trim().is_empty(),
+            "{lang} {word:?} produced no phonemes"
+        );
+        assert!(
+            got.contains(want),
+            "{lang} {word:?}: want a {want:?} conjunct, got {got:?}"
+        );
     }
 }

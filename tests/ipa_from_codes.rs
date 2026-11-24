@@ -58,7 +58,10 @@ fn ipa_names_come_from_the_phoneme_program() {
     // A mnemonic with no program `ipa` falls back character by character, `-`
     // included: French's reducible schwa `@-` is `ə-`.
     if let Some(t) = tr("fr") {
-        assert_eq!(t.text_to_ipa("bonjour le monde").unwrap(), "bɔ̃ʒˈuʁ lə- mˈɔ̃d");
+        assert_eq!(
+            t.text_to_ipa("bonjour le monde").unwrap(),
+            "bɔ̃ʒˈuʁ lə- mˈɔ̃d"
+        );
     }
 }
 

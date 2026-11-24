@@ -50,8 +50,14 @@ fn a_trailing_apostrophe_is_not_part_of_the_word() {
     assert_eq!(en.text_to_ipa("hello'").unwrap(), hello);
     assert_eq!(en.text_to_ipa("hello’").unwrap(), hello);
     // The possessive of a plural reads as the plural.
-    assert_eq!(en.text_to_ipa("dogs'").unwrap(), en.text_to_ipa("dogs").unwrap());
-    assert_eq!(en.text_to_ipa("James'").unwrap(), en.text_to_ipa("James").unwrap());
+    assert_eq!(
+        en.text_to_ipa("dogs'").unwrap(),
+        en.text_to_ipa("dogs").unwrap()
+    );
+    assert_eq!(
+        en.text_to_ipa("James'").unwrap(),
+        en.text_to_ipa("James").unwrap()
+    );
 }
 
 /// A clause-initial apostrophe has no pause; a bracket does.
@@ -66,8 +72,14 @@ fn a_clause_initial_apostrophe_has_no_pause() {
     assert_eq!(en.text_to_ipa("'hello'").unwrap(), hello);
     // Mid-clause it pauses, like any quote.  (The pause itself is not rendered
     // in IPA, so this compares the two spellings rather than the pause.)
-    assert_eq!(en.text_to_ipa("say 'hello").unwrap(), en.text_to_ipa("say ‘hello").unwrap());
-    assert_eq!(en.text_to_ipa("(hello)").unwrap(), en.text_to_ipa("‘hello").unwrap());
+    assert_eq!(
+        en.text_to_ipa("say 'hello").unwrap(),
+        en.text_to_ipa("say ‘hello").unwrap()
+    );
+    assert_eq!(
+        en.text_to_ipa("(hello)").unwrap(),
+        en.text_to_ipa("‘hello").unwrap()
+    );
 }
 
 /// bs/hr/sr all read the Cyrillic pangram as Serbo-Croatian.
@@ -94,16 +106,28 @@ fn a_textmode_replacement_keeps_its_own_apostrophe() {
 #[test]
 fn a_transliterating_language_reads_its_second_script() {
     if let Some(mk) = tr("mk") {
-        assert_eq!(mk.text_to_ipa("abc").unwrap(), mk.text_to_ipa("абц").unwrap());
-        assert_eq!(mk.text_to_ipa("Dzidarski").unwrap(), mk.text_to_ipa("Ѕидарски").unwrap());
+        assert_eq!(
+            mk.text_to_ipa("abc").unwrap(),
+            mk.text_to_ipa("абц").unwrap()
+        );
+        assert_eq!(
+            mk.text_to_ipa("Dzidarski").unwrap(),
+            mk.text_to_ipa("Ѕидарски").unwrap()
+        );
         // …and the Cyrillic it is written in is unaffected.
         assert_eq!(mk.text_to_ipa("Скопје").unwrap(), "skˈopje");
     }
     if let Some(lfn) = tr("lfn") {
-        assert_eq!(lfn.text_to_ipa("Тота").unwrap(), lfn.text_to_ipa("tota").unwrap());
+        assert_eq!(
+            lfn.text_to_ipa("Тота").unwrap(),
+            lfn.text_to_ipa("tota").unwrap()
+        );
     }
     if let Some(uz) = tr("uz") {
-        assert_eq!(uz.text_to_ipa("Ўзбекча").unwrap(), uz.text_to_ipa("ózbekça").unwrap());
+        assert_eq!(
+            uz.text_to_ipa("Ўзбекча").unwrap(),
+            uz.text_to_ipa("ózbekça").unwrap()
+        );
         assert_eq!(uz.text_to_ipa("oʻzbekcha").unwrap(), "ozb\u{2c8}ektS\u{e6}");
     }
     // A word in a script the language does *not* transliterate still goes
@@ -126,7 +150,11 @@ fn serbo_croatian_reads_both_scripts() {
         // letter and switch to Russian partway.  (The three voices differ in
         // how their own phoneme tables render the result, so only `sr` is
         // pinned to an exact string.)
-        assert_eq!(t.text_to_ipa(latin).unwrap(), t.text_to_ipa(cyrillic).unwrap(), "{lang}");
+        assert_eq!(
+            t.text_to_ipa(latin).unwrap(),
+            t.text_to_ipa(cyrillic).unwrap(),
+            "{lang}"
+        );
         assert!(
             t.text_to_ipa(cyrillic).unwrap().starts_with('\u{28e}'),
             "{lang} reads it as Serbo-Croatian: {:?}",

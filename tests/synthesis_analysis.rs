@@ -28,16 +28,27 @@ fn klatt_cascade_produces_formant_peaks() {
     let pcm = Pcm::from_samples(samples, 22_050);
 
     // The voicing source sets F0 to ~120 Hz.
-    let f0 = pcm.mean_pitch(PitchOptions::default()).expect("voiced output");
-    assert!((f0 - 120.0).abs() / 120.0 < 0.1, "expected ~120 Hz F0, got {f0}");
+    let f0 = pcm
+        .mean_pitch(PitchOptions::default())
+        .expect("voiced output");
+    assert!(
+        (f0 - 120.0).abs() / 120.0 < 0.1,
+        "expected ~120 Hz F0, got {f0}"
+    );
 
     // Energy is concentrated at the formants, not in the spectrum above them —
     // the defining behaviour of a formant synthesizer.
     let e_f1 = pcm.band_energy(2048, 1024, 650.0, 810.0);
     let e_f2 = pcm.band_energy(2048, 1024, 1010.0, 1170.0);
     let e_gap = pcm.band_energy(2048, 1024, 4000.0, 6000.0); // above all formants
-    assert!(e_f1 > e_gap * 2.0, "F1 is not a peak: {e_f1} vs above-formant {e_gap}");
-    assert!(e_f2 > e_gap * 2.0, "F2 is not a peak: {e_f2} vs above-formant {e_gap}");
+    assert!(
+        e_f1 > e_gap * 2.0,
+        "F1 is not a peak: {e_f1} vs above-formant {e_gap}"
+    );
+    assert!(
+        e_f2 > e_gap * 2.0,
+        "F2 is not a peak: {e_f2} vs above-formant {e_gap}"
+    );
 }
 
 #[test]
@@ -101,7 +112,10 @@ fn intonation_produces_a_non_flat_pitch_contour() {
     }
     let mean = track.iter().sum::<f32>() / track.len() as f32;
     let std = (track.iter().map(|&f| (f - mean).powi(2)).sum::<f32>() / track.len() as f32).sqrt();
-    assert!(std > 15.0, "pitch contour is nearly flat (std {std:.0} Hz); intonation not applied");
+    assert!(
+        std > 15.0,
+        "pitch contour is nearly flat (std {std:.0} Hz); intonation not applied"
+    );
 }
 
 #[test]

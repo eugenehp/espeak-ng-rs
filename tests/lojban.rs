@@ -37,7 +37,11 @@ fn capital_marks_stress_and_keeps_word_whole() {
         assert!(!got.contains(' '), "jbo {w:?} must stay one word: {got:?}");
         // Exactly one PRIMARY stress — the explicit mark suppresses the default
         // penultimate rule (previously this double-stressed, e.g. "spˈaɡˈeti").
-        assert_eq!(primary_marks(&got), 1, "jbo {w:?} one primary stress: {got:?}");
+        assert_eq!(
+            primary_marks(&got),
+            1,
+            "jbo {w:?} one primary stress: {got:?}"
+        );
     }
 }
 
@@ -50,6 +54,14 @@ fn capital_moves_stress_off_the_default_position() {
     let ipa = |s: &str| t.text_to_ipa(s).unwrap();
     // Default (no caps) is penultimate; a non-penultimate capital must change it.
     let default = ipa("spageti");
-    assert_ne!(ipa("spAgeti"), default, "1st-syllable capital should move stress");
-    assert_ne!(ipa("spagetI"), default, "final-syllable capital should move stress");
+    assert_ne!(
+        ipa("spAgeti"),
+        default,
+        "1st-syllable capital should move stress"
+    );
+    assert_ne!(
+        ipa("spagetI"),
+        default,
+        "final-syllable capital should move stress"
+    );
 }

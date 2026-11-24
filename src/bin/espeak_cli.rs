@@ -7,38 +7,38 @@ use std::path::{Path, PathBuf};
 use espeak_ng::engine::{EspeakNg, Parameter};
 use espeak_ng::phoneme::PhonemeData;
 use espeak_ng::translate::ipa_table::{
-    PHON_LENGTHEN, PHON_STRESS_2, PHON_STRESS_3, PHON_STRESS_P, PHON_STRESS_P2,
-    PHON_STRESS_PREV, PHON_STRESS_TONIC, PHON_STRESS_U,
+    PHON_LENGTHEN, PHON_STRESS_2, PHON_STRESS_3, PHON_STRESS_P, PHON_STRESS_P2, PHON_STRESS_PREV,
+    PHON_STRESS_TONIC, PHON_STRESS_U,
 };
 use espeak_ng::translate::{default_data_dir, normalize_voice_tag, PhonemeCode, Translator};
 
 #[derive(Debug, Default)]
 struct Cli {
-    voice:         String,
-    quiet:         bool,
-    ipa:           bool,
-    x_mnem:        bool,
-    markup:        bool,
+    voice: String,
+    quiet: bool,
+    ipa: bool,
+    x_mnem: bool,
+    markup: bool,
     path_override: Option<PathBuf>,
-    phonout:       Option<PathBuf>,
-    sep:           Option<char>,
-    tie:           Option<char>,
-    stdout_wav:    bool,
-    wave_out:      Option<PathBuf>,
-    print_help:    bool,
+    phonout: Option<PathBuf>,
+    sep: Option<char>,
+    tie: Option<char>,
+    stdout_wav: bool,
+    wave_out: Option<PathBuf>,
+    print_help: bool,
     print_version: bool,
-    rate:          Option<u32>,
-    pitch:         Option<u32>,
-    range:         Option<u32>,
-    amplitude:     Option<u32>,
-    capitals:      Option<u32>,
-    word_gap:      Option<u32>,
-    file_input:    Option<PathBuf>,
-    stdin_all:     bool,
-    list_voices:   bool,
+    rate: Option<u32>,
+    pitch: Option<u32>,
+    range: Option<u32>,
+    amplitude: Option<u32>,
+    capitals: Option<u32>,
+    word_gap: Option<u32>,
+    file_input: Option<PathBuf>,
+    stdin_all: bool,
+    list_voices: bool,
     voices_filter: Option<String>,
     /// `--punct` (announce all punctuation) / `--punct="chars"` (only those).
-    punct:         Option<Vec<char>>,
+    punct: Option<Vec<char>>,
     /// `-z`: no final sentence pause (suppress end-of-utterance silence).
     no_final_pause: bool,
     /// `-D`: deterministic random mode — pin the noise seed to upstream's value.
@@ -69,14 +69,14 @@ struct Cli {
     /// The `-v` value exactly as given.  `voice` is normalized as a language
     /// tag (lower-cased, `_` → `-`), which would corrupt the file path
     /// `--load` expects.
-    voice_raw:     Option<String>,
+    voice_raw: Option<String>,
     /// `--ssml-break=<percentage>`: scale every SSML `<break time=…>`.
     ssml_break: Option<u32>,
     /// `-d <device>`: audio output device.  Accepted for parity; this port has
     /// no playback, so it is never used.
     device: Option<String>,
-    positionals:   Vec<OsString>,
-    had_unknown:   Option<String>,
+    positionals: Vec<OsString>,
+    had_unknown: Option<String>,
 }
 
 fn argv0_display() -> String {
@@ -140,8 +140,7 @@ fn run() -> std::io::Result<()> {
                 loaded_pitch = v.pitch;
                 let data = resolved_data_dir(cli.path_override.as_deref());
                 let want = v.dictionary.clone().unwrap_or_else(|| v.language.clone());
-                cli.voice = espeak_ng::translate::resolve_dict_stem(&data, &want)
-                    .unwrap_or(want);
+                cli.voice = espeak_ng::translate::resolve_dict_stem(&data, &want).unwrap_or(want);
             }
             None => {
                 eprintln!(
@@ -163,7 +162,10 @@ fn run() -> std::io::Result<()> {
     if let (_, Some(var)) = espeak_ng::translate::split_voice_variant(&cli.voice) {
         let data = resolved_data_dir(cli.path_override.as_deref());
         if espeak_ng::voices::load_variant(&data, var).is_none() {
-            eprintln!("{}: voice variant '{var}' not found in voices/!v/", argv0_display());
+            eprintln!(
+                "{}: voice variant '{var}' not found in voices/!v/",
+                argv0_display()
+            );
         }
     }
 
@@ -226,9 +228,9 @@ fn run() -> std::io::Result<()> {
     if let Some(pr) = cli.range {
         b = b.range(pr);
     }
-    let mut engine = b.build().map_err(|e| {
-        std::io::Error::new(std::io::ErrorKind::Other, format!("{e}"))
-    })?;
+    let mut engine = b
+        .build()
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{e}")))?;
     apply_runtime_params(&mut engine, &cli);
     if let Some(p) = loaded_pitch {
         engine.set_voice_pitch(Some(p));
@@ -248,22 +250,21 @@ fn run() -> std::io::Result<()> {
         (cli.split_minutes.filter(|&m| m > 0), cli.wave_out.clone())
     {
         if !cli.stdout_wav {
-            let (pcm, rate, events) = engine.synth_with_events(&text).map_err(|e| {
-                std::io::Error::new(std::io::ErrorKind::Other, format!("{e}"))
-            })?;
+            let (pcm, rate, events) = engine
+                .synth_with_events(&text)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{e}")))?;
             return write_split_wavs(&path, &pcm, rate, &events, minutes);
         }
     }
 
-    let (pcm, rate) = engine.synth(&text).map_err(|e| {
-        std::io::Error::new(std::io::ErrorKind::Other, format!("{e}"))
-    })?;
+    let (pcm, rate) = engine
+        .synth(&text)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{e}")))?;
 
     if cli.stdout_wav || cli.wave_out.is_some() {
         let mut buf = Vec::new();
-        write_wav_16_mono(&mut buf, &pcm, rate).map_err(|e| {
-            std::io::Error::new(std::io::ErrorKind::Other, format!("{e}"))
-        })?;
+        write_wav_16_mono(&mut buf, &pcm, rate)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{e}")))?;
         if cli.stdout_wav {
             std::io::stdout().write_all(&buf)?;
         } else if let Some(ref p) = cli.wave_out {
@@ -320,11 +321,9 @@ fn speak_mbrola(
         .pitch
         .or_else(|| espeak_ng::voices::voice_pitch(data_dir, &mb.language))
     {
-        voice.pitch_hz = espeak_ng::synthesize::intonation::base_pitch_hz(
-            p1 as f64,
-            cli.pitch.unwrap_or(50),
-        )
-        .round() as u32;
+        voice.pitch_hz =
+            espeak_ng::synthesize::intonation::base_pitch_hz(p1 as f64, cli.pitch.unwrap_or(50))
+                .round() as u32;
         voice.pitch_range_units = (p2 - p1) as f64 * 108.0;
     }
     let rate = voice.sample_rate;
@@ -360,7 +359,10 @@ fn resolve_voice(value: &str, data_dir: &Path) -> String {
         return value.to_string();
     }
     let voices = espeak_ng::voices::list_voices(data_dir);
-    let query = espeak_ng::voices::VoiceQuery { name: Some(value.to_string()), ..Default::default() };
+    let query = espeak_ng::voices::VoiceQuery {
+        name: Some(value.to_string()),
+        ..Default::default()
+    };
     match espeak_ng::voices::find_voice(&voices, &query) {
         // Resolve to the language that actually has data — the voice's primary
         // code may be a locale (`fr-fr`) whose phoneme table is the base (`fr`).
@@ -402,15 +404,16 @@ fn run_compile(lang_arg: &str, cli: &Cli) -> std::io::Result<()> {
     }
 
     let mut phdata = PhonemeData::load(&data_dir).map_err(|e| {
-        std::io::Error::new(std::io::ErrorKind::Other, format!("cannot load phoneme data: {e}"))
+        std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("cannot load phoneme data: {e}"),
+        )
     })?;
     // Resolve mnemonics against the voice's phoneme table — honour a `phonemes
     // <name>` voice directive (e.g. bs→hr, nb→no) so a shared-table language
     // doesn't silently fall back to en and mis-resolve every mnemonic (`U:`→ts).
     let table = espeak_ng::translate::resolve_phoneme_table(&data_dir, &lang);
-    if phdata.select_table_by_name(&table).is_err()
-        && phdata.select_table_by_name(&lang).is_err()
-    {
+    if phdata.select_table_by_name(&table).is_err() && phdata.select_table_by_name(&lang).is_err() {
         phdata.select_table_by_name("en").map_err(|e| {
             std::io::Error::new(
                 std::io::ErrorKind::Other,
@@ -421,12 +424,20 @@ fn run_compile(lang_arg: &str, cli: &Cli) -> std::io::Result<()> {
 
     let transpose = TransposeConfig::for_lang(&lang);
     let bytes = compile_dictionary(&data_dir, &lang, &phdata, &transpose).map_err(|e| {
-        std::io::Error::new(std::io::ErrorKind::Other, format!("compiling {lang}_dict: {e}"))
+        std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("compiling {lang}_dict: {e}"),
+        )
     })?;
 
     let out = data_dir.join(format!("{lang}_dict"));
     std::fs::write(&out, &bytes)?;
-    eprintln!("Compiled {} → {} ({} bytes)", lang, out.display(), bytes.len());
+    eprintln!(
+        "Compiled {} → {} ({} bytes)",
+        lang,
+        out.display(),
+        bytes.len()
+    );
     Ok(())
 }
 
@@ -468,7 +479,10 @@ fn run_compile_phonemes(src_arg: &str, cli: &Cli) -> std::io::Result<()> {
     let n_ph: usize = tables.iter().map(|t| t.phonemes.len()).sum();
     eprintln!(
         "Compiled {} phoneme table(s), {} phonemes → {} ({} bytes)",
-        tables.len(), n_ph, out.display(), bytes.len()
+        tables.len(),
+        n_ph,
+        out.display(),
+        bytes.len()
     );
     eprintln!("Note: phoneme table only — phonindex/phondata are not regenerated.");
     Ok(())
@@ -528,7 +542,11 @@ fn print_voices(cli: &Cli) {
                 continue;
             }
         }
-        let age = if v.age == 0 { "--".to_string() } else { format!("{:>2}", v.age) };
+        let age = if v.age == 0 {
+            "--".to_string()
+        } else {
+            format!("{:>2}", v.age)
+        };
         println!(
             "{:>2}  {:<15}{}/{}       {:<20} {}",
             v.priority, v.language, age, v.gender, v.name, v.file
@@ -679,7 +697,14 @@ fn trace_output(cli: &Cli, text: &str) -> std::io::Result<()> {
     if rules_ran {
         out.push('\n');
     }
-    out.push_str(&format_x(&codes, &phdata, cli.sep, cli.tie, &data_dir, translator.options.lang.as_str()));
+    out.push_str(&format_x(
+        &codes,
+        &phdata,
+        cli.sep,
+        cli.tie,
+        &data_dir,
+        translator.options.lang.as_str(),
+    ));
     out.push('\n');
 
     if let Some(ref path) = cli.phonout {
@@ -710,7 +735,10 @@ fn pho_output(cli: &Cli, text: &str) -> std::io::Result<()> {
     let (lang, table) = match &mb {
         Some(v) => {
             let bytes = std::fs::read(data_dir.join("mbrola_ph").join(&v.phtrans))?;
-            (v.language.clone(), MbrolaTable::parse(&bytes).map_err(ioerr)?)
+            (
+                v.language.clone(),
+                MbrolaTable::parse(&bytes).map_err(ioerr)?,
+            )
         }
         None => (cli.voice.clone(), MbrolaTable::default()),
     };
@@ -759,9 +787,8 @@ fn pho_output(cli: &Cli, text: &str) -> std::io::Result<()> {
 
 fn phoneme_output(cli: &Cli, text: &str) -> std::io::Result<()> {
     let data_dir = resolved_data_dir(cli.path_override.as_deref());
-    let mut translator = Translator::new(&cli.voice, Some(&data_dir)).map_err(|e| {
-        std::io::Error::new(std::io::ErrorKind::Other, format!("{e}"))
-    })?;
+    let mut translator = Translator::new(&cli.voice, Some(&data_dir))
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{e}")))?;
     if let Some(k) = cli.capitals {
         translator.options.capitals = k as u8;
     }
@@ -782,9 +809,7 @@ fn phoneme_output(cli: &Cli, text: &str) -> std::io::Result<()> {
         } else {
             translator.text_to_ipa(text)
         }
-        .map_err(|e| {
-            std::io::Error::new(std::io::ErrorKind::Other, format!("{e}"))
-        })?;
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{e}")))?;
         ipa
     } else {
         // `-x` with `-m`: the codes path takes plain text, so process SSML first
@@ -799,12 +824,11 @@ fn phoneme_output(cli: &Cli, text: &str) -> std::io::Result<()> {
         } else {
             text.to_string()
         };
-        let codes = translator.translate_to_codes(&src).map_err(|e| {
-            std::io::Error::new(std::io::ErrorKind::Other, format!("{e}"))
-        })?;
-        let mut phdata = PhonemeData::load(&data_dir).map_err(|e| {
-            std::io::Error::new(std::io::ErrorKind::Other, format!("{e}"))
-        })?;
+        let codes = translator
+            .translate_to_codes(&src)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{e}")))?;
+        let mut phdata = PhonemeData::load(&data_dir)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{e}")))?;
         // Same resolution as the library path (voice `phonemes` directive, then
         // the primary subtag) so a regional locale without its own table — pt-br,
         // fr-ca, en-gb — doesn't fail here after working in `--ipa`.
@@ -814,7 +838,14 @@ fn phoneme_output(cli: &Cli, text: &str) -> std::io::Result<()> {
             translator.options.lang.as_str(),
         )
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{e}")))?;
-        format_x(&codes, &phdata, cli.sep, cli.tie, &data_dir, translator.options.lang.as_str())
+        format_x(
+            &codes,
+            &phdata,
+            cli.sep,
+            cli.tie,
+            &data_dir,
+            translator.options.lang.as_str(),
+        )
     };
 
     let line_with_nl = format!("{line}\n");
@@ -825,7 +856,6 @@ fn phoneme_output(cli: &Cli, text: &str) -> std::io::Result<()> {
     }
     Ok(())
 }
-
 
 /// Render phoneme codes as eSpeak mnemonics (`-x`).
 ///
@@ -979,7 +1009,11 @@ fn format_x(
     }
     // Word boundaries either side of a clause break leave stray spaces at the
     // ends of lines (`'eI \n b'i:` where upstream writes `'eI\nb'i:`).
-    let out: String = out.split('\n').map(str::trim).collect::<Vec<_>>().join("\n");
+    let out: String = out
+        .split('\n')
+        .map(str::trim)
+        .collect::<Vec<_>>()
+        .join("\n");
     out.trim_end().to_string()
 }
 
@@ -1177,8 +1211,14 @@ fn parse_args(args: Vec<OsString>) -> Cli {
                 cli.ipa = true;
                 match rest.parse::<u32>().unwrap_or(0) {
                     1 => cli.sep = Some('_'),
-                    2 => { cli.sep = Some('\u{361}'); tie_mode = true; }
-                    3 => { cli.sep = Some('\u{200d}'); tie_mode = true; }
+                    2 => {
+                        cli.sep = Some('\u{361}');
+                        tie_mode = true;
+                    }
+                    3 => {
+                        cli.sep = Some('\u{200d}');
+                        tie_mode = true;
+                    }
                     _ => {}
                 }
             } else if s == "--split" {

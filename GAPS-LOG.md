@@ -23,6 +23,38 @@ rescale. Suite: **696 tests green**. Items below carry ✅ where that is now don
 what remains is listed under "Still open after this pass" at the end of §3b.
 
 
+- **2026-11-11 — ✅ French `à`/`î` and `y` (36 → 13 differences from C on the 3 000 most frequent French words).**
+  Audited `text_to_ipa("fr", …)` against `espeak-ng -v fr -q --ipa` (1.52) on
+  Lexique's 3 000 most frequent forms.  Two causes covered 23 of 36:
+  (1) French has no rules for `à` or `î`; C's `TranslateRules` then replaces a
+  rule-less letter in `remove_accent`'s range with its base and translates the
+  word again (unless the letter is the whole word), which the port skipped —
+  "là" read `l`, "île" `l`, "boîte" `bɔt`, every "aî" word [a] for [ɛ].  Ported
+  in `translate_rules_ext` (`src/dictionary/rules.rs`).  (2) C's French
+  `SetLetterVowel(tr, 'y')` was missing from `build_letter_bits`, so `A) s (A z`
+  missed "analyse"/"physique" and "moyen" ended in [ɑ̃].  Tests:
+  `tests/french_accents_and_y.rs` (C's own outputs).  Still different: hyphen /
+  multi-word joins (`est-ce que`, `parce que`, `celle-là`, `celle-ci`,
+  `demi-heure`, `week-end`), `km`, the stress of `joues`, and `rythme` (C switches
+  to English).  Other languages that call `SetLetterVowel` in C are not yet
+  covered.
+- **2026-11-11 — ✅ French: 0 differences from C on the 3 000 most frequent words**
+  (C run with the bundled data, `espeak-ng --path=.`; `rythme` was a data-version
+  difference, brew's 1.52 data switches it to English).  Fixed:
+  multi-word dictionary entries — `lookup_dict2` always failed them; it now
+  compares C's `word2` (the following words, each followed by a space) and the
+  clause skips the words taken in (`(parce que)`, `(celle là)`, `(qu'est ce que)`,
+  and Mandarin's multi-character entries); `FLAG_HYPHEN`/`FLAG_HYPHEN_AFTER` reach
+  the rules (`-c) e (` silences "est-ce"); a stress mark whose vowel became a
+  glide is dropped (`demi-heure` `dəmjˈœʁ`, `joues` `ʒw`); a clause with no primary
+  stress gets one on its last strongest syllable, as C's intonation pass writes
+  back (`est-ce` `ˈɛs`); a `$text` entry is not spelled as an abbreviation (`km`);
+  a word switched to another language counts as stressed and as a word of the
+  clause (`le week-end`), and a hyphen joins switched words (`(en)wˈiːkˈɛnd(fr)`).
+  The accent fallback now runs only at a two-byte character's lead byte (inside
+  `№` the bytes decoded as Ė).  Mandarin tone sandhi inside one entry no longer
+  indexes past the stress it removes.  Tests in `tests/french_accents_and_y.rs`.
+
 - **2026-09-05 — 📦 Publish script, stale data crates fixed, whole workspace to 0.2.0 (user: "create a publish shell script that will honor rate limits and delays" / "address data crates issue" / "change all of them to 0.2.0").**
   `scripts/publish.sh` publishes the workspace paced against both crates.io
   rate-limit buckets (new crate: burst 10, 1 per 10 min; new version: burst 30,

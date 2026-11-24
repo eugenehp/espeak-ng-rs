@@ -54,9 +54,18 @@ fn stress_lengths_change_duration() {
     let base = len("en");
     let scotland = len("en-GB-scotland");
     let lancashire = len("en-GB-x-gbclan");
-    assert!(base > 0 && scotland > 0 && lancashire > 0, "a voice failed to speak");
-    assert!(scotland < base, "Scotland's stressLength is shorter: {scotland} vs {base}");
-    assert!(lancashire > base, "Lancashire's is longer: {lancashire} vs {base}");
+    assert!(
+        base > 0 && scotland > 0 && lancashire > 0,
+        "a voice failed to speak"
+    );
+    assert!(
+        scotland < base,
+        "Scotland's stressLength is shorter: {scotland} vs {base}"
+    );
+    assert!(
+        lancashire > base,
+        "Lancashire's is longer: {lancashire} vs {base}"
+    );
 }
 
 /// A regional voice with no phoneme table of its own falls back to the base

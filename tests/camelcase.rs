@@ -43,10 +43,17 @@ fn uppercase_runs_and_plain_words_stay_whole() {
     // whole: the lowercase `s` has no further letter after it (needs next2 alpha).
     for w in ["hello", "HTML", "USA", "IDs"] {
         let got = ipa(w);
-        assert!(!got.contains(' '), "{w:?} should stay one word, got {got:?}");
+        assert!(
+            !got.contains(' '),
+            "{w:?} should stay one word, got {got:?}"
+        );
     }
     // An apostrophe isn't a lowercase letter, so it never triggers a split.
-    assert!(!ipa("I'm").contains(' '), "I'm stays one word: {}", ipa("I'm"));
+    assert!(
+        !ipa("I'm").contains(' '),
+        "I'm stays one word: {}",
+        ipa("I'm")
+    );
     // A capital at a genuine word start (after a space) is not a split point.
     assert_eq!(ipa("Hello World"), "həlˈəʊ wˈɜːld");
 }
@@ -94,5 +101,8 @@ fn irish_keeps_lenition_prefixes_whole() {
     };
     let got = t.text_to_ipa("nGael").unwrap();
     assert!(!got.trim().is_empty(), "ga nGael produced nothing");
-    assert!(!got.contains(' '), "ga nGael should stay one word, got {got:?}");
+    assert!(
+        !got.contains(' '),
+        "ga nGael should stay one word, got {got:?}"
+    );
 }

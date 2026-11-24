@@ -27,15 +27,12 @@ fn main() {
     for rel in &entries {
         // Use concat!(env!("CARGO_MANIFEST_DIR"), "/data/<rel>") so the
         // path is absolute and correct even when included from OUT_DIR.
-        let abs_expr = format!(
-            r#"concat!(env!("CARGO_MANIFEST_DIR"), "/data/{rel}")"#
-        );
+        let abs_expr = format!(r#"concat!(env!("CARGO_MANIFEST_DIR"), "/data/{rel}")"#);
         code.push_str(&format!("    ({rel:?}, include_bytes!({abs_expr})),\n"));
     }
     code.push_str("];\n");
 
-    fs::write(format!("{out_dir}/files.rs"), code)
-        .expect("could not write generated files.rs");
+    fs::write(format!("{out_dir}/files.rs"), code).expect("could not write generated files.rs");
 
     // Re-run if any data file changes
     println!("cargo:rerun-if-changed=data");

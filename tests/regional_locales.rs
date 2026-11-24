@@ -22,7 +22,10 @@ fn regional_locales_fall_back_to_base_phoneme_table() {
             continue;
         };
         let got = t.text_to_ipa(word).unwrap();
-        assert!(!got.trim().is_empty(), "{locale} {word:?} produced no phonemes");
+        assert!(
+            !got.trim().is_empty(),
+            "{locale} {word:?} produced no phonemes"
+        );
     }
 }
 
@@ -38,8 +41,15 @@ fn brazilian_portuguese_differs_from_european_via_dictrules() {
         return;
     };
     let bd = br.text_to_ipa("dente").unwrap();
-    assert!(bd.contains("tʃ"), "pt-br 'dente' should affricate (tʃ): {bd}");
-    assert_ne!(bd, pt.text_to_ipa("dente").unwrap(), "pt-br must differ from pt");
+    assert!(
+        bd.contains("tʃ"),
+        "pt-br 'dente' should affricate (tʃ): {bd}"
+    );
+    assert_ne!(
+        bd,
+        pt.text_to_ipa("dente").unwrap(),
+        "pt-br must differ from pt"
+    );
 }
 
 #[test]
@@ -53,8 +63,17 @@ fn latin_american_spanish_yeismo_via_dictrules() {
         eprintln!("[SKIP] no es data");
         return;
     };
-    let (llave_la, llave_es) = (la.text_to_ipa("llave").unwrap(), es.text_to_ipa("llave").unwrap());
-    assert!(!llave_la.contains('ʎ'), "es-419 'llave' should not keep the palatal ʎ: {llave_la}");
-    assert!(llave_es.contains('ʎ'), "es (Castilian) 'llave' keeps ʎ: {llave_es}");
+    let (llave_la, llave_es) = (
+        la.text_to_ipa("llave").unwrap(),
+        es.text_to_ipa("llave").unwrap(),
+    );
+    assert!(
+        !llave_la.contains('ʎ'),
+        "es-419 'llave' should not keep the palatal ʎ: {llave_la}"
+    );
+    assert!(
+        llave_es.contains('ʎ'),
+        "es (Castilian) 'llave' keeps ʎ: {llave_es}"
+    );
     assert_ne!(llave_la, llave_es, "es-419 must differ from es");
 }

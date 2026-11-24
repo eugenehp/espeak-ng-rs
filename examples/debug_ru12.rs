@@ -12,24 +12,34 @@ fn main() {
     for code in 0u8..=255 {
         let Some(ph) = phdata.get(code) else { continue };
         let mnem_bytes = ph.mnemonic.to_le_bytes();
-        let mnem_str: String = mnem_bytes.iter().take_while(|&&b| b != 0).map(|&b| b as char).collect();
+        let mnem_str: String = mnem_bytes
+            .iter()
+            .take_while(|&&b| b != 0)
+            .map(|&b| b as char)
+            .collect();
         if mnem_str == "A" || mnem_str == "a" || mnem_str == "V" {
-            println!("code={code} mnemonic={mnem_str:?} type={} program=0x{:04x}",
-                ph.typ, ph.program);
-            
+            println!(
+                "code={code} mnemonic={mnem_str:?} type={} program=0x{:04x}",
+                ph.typ, ph.program
+            );
+
             let prog = ph.program as usize;
             let phonindex = &phdata.phonindex;
             println!("  phonindex words:");
             for i in 0..12usize {
                 let off = (prog + i) * 2;
-                if off + 2 > phonindex.len() { break; }
-                let w = u16::from_le_bytes([phonindex[off], phonindex[off+1]]);
+                if off + 2 > phonindex.len() {
+                    break;
+                }
+                let w = u16::from_le_bytes([phonindex[off], phonindex[off + 1]]);
                 let instn_type = w >> 12;
                 let instn2 = (w >> 8) & 0xf;
                 let data = w & 0xff;
-                println!("    [{i:2}] 0x{w:04x}  type={instn_type} instn2=0x{instn2:x} data={data}");
+                println!(
+                    "    [{i:2}] 0x{w:04x}  type={instn_type} instn2=0x{instn2:x} data={data}"
+                );
             }
-            
+
             let ipa = phdata.phoneme_ipa_string(ph.program);
             println!("  ipa_from_bytecode={ipa:?}");
             println!();

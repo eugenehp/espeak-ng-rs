@@ -47,7 +47,10 @@ fn space_less_scripts_get_their_sentence_breaks() {
         assert_eq!(hi.text_to_ipa("क । ख").unwrap(), "kˈə\nkʰˈə");
     }
     if let Some(cmn) = tr("cmn") {
-        assert_eq!(cmn.text_to_ipa("你好。再见").unwrap(), "niɜχˈɑu2\ntsˈai5 tɕˈiɛ5n");
+        assert_eq!(
+            cmn.text_to_ipa("你好。再见").unwrap(),
+            "niɜχˈɑu2\ntsˈai5 tɕˈiɛ5n"
+        );
     }
     if let Some(ja) = tr("ja") {
         assert_eq!(ja.text_to_ipa("これ。あれ").unwrap(), "kˈo̞ɽe̞\nˈäɽe̞");
@@ -75,7 +78,10 @@ fn brackets_pause_without_speaking() {
     // with nothing after it in the clause adds none.
     assert_eq!(pauses("(hello)"), pauses("hello") + 2);
     // Nothing is spoken for the bracket itself.
-    assert_eq!(en.text_to_ipa("a (b) c").unwrap(), en.text_to_ipa("a b c").unwrap());
+    assert_eq!(
+        en.text_to_ipa("a (b) c").unwrap(),
+        en.text_to_ipa("a b c").unwrap()
+    );
 }
 
 #[test]
@@ -89,13 +95,20 @@ fn a_voice_can_turn_the_bracket_pause_off() {
             .filter(|c| c.code == espeak_ng::phoneme::PHON_PAUSE)
             .count()
     };
-    assert_eq!(pauses("a ( b"), pauses("a b"), "hu asks for no bracket pause");
+    assert_eq!(
+        pauses("a ( b"),
+        pauses("a b"),
+        "hu asks for no bracket pause"
+    );
 }
 
 #[test]
 fn a_bracket_closes_an_open_language_switch() {
     // The pause belongs to the base language, so C closes the switch before it
     // and opens a new one after: `(en)ˈeɪ(ru) (en)bˈiː(ru)`.
-    let Some(ru) = tr("ru") else { eprintln!("[SKIP] no ru data"); return };
+    let Some(ru) = tr("ru") else {
+        eprintln!("[SKIP] no ru data");
+        return;
+    };
     assert_eq!(ru.text_to_ipa("a ( b").unwrap(), "(en)ˈeɪ(ru) (en)bˈiː(ru)");
 }

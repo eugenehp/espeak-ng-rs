@@ -28,12 +28,23 @@ fn features(name: &str, p: &Pcm) {
         .map(|f| format!("{f:.0} Hz"))
         .unwrap_or_else(|| "unvoiced".into());
     println!("{name}");
-    println!("  duration        {:.3} s ({} samples @ {} Hz)", p.duration_secs(), p.samples.len(), p.sample_rate);
+    println!(
+        "  duration        {:.3} s ({} samples @ {} Hz)",
+        p.duration_secs(),
+        p.samples.len(),
+        p.sample_rate
+    );
     println!("  rms             {:.4}", p.rms());
     println!("  mean pitch      {pitch}");
     println!("  centroid        {:.0} Hz", p.spectral_centroid(FFT, HOP));
-    println!("  flatness        {:.3}  (0 tonal … 1 noise)", p.spectral_flatness(FFT, HOP));
-    println!("  rolloff(85%)    {:.0} Hz", p.spectral_rolloff(FFT, HOP, 0.85));
+    println!(
+        "  flatness        {:.3}  (0 tonal … 1 noise)",
+        p.spectral_flatness(FFT, HOP)
+    );
+    println!(
+        "  rolloff(85%)    {:.0} Hz",
+        p.spectral_rolloff(FFT, HOP, 0.85)
+    );
     println!(
         "  band energy     0–1k={:.2}  1–3k={:.2}  3–6k={:.2}  6k+={:.2}",
         p.band_energy(FFT, HOP, 0.0, 1000.0),
@@ -66,9 +77,18 @@ fn main() {
         features(&args[1], &b);
 
         let sim = compare(&a, &b);
-        println!("\ncomparison ({} = reference, {} = candidate)", args[0], args[1]);
-        println!("  spectral shape corr   {:.3}  (1.0 = identical timbre)", sim.spectral_corr);
-        println!("  centroid              {:.0} → {:.0} Hz", sim.centroid_a, sim.centroid_b);
+        println!(
+            "\ncomparison ({} = reference, {} = candidate)",
+            args[0], args[1]
+        );
+        println!(
+            "  spectral shape corr   {:.3}  (1.0 = identical timbre)",
+            sim.spectral_corr
+        );
+        println!(
+            "  centroid              {:.0} → {:.0} Hz",
+            sim.centroid_a, sim.centroid_b
+        );
         println!("  duration ratio        {:.3}", sim.dur_ratio);
         println!("  rms ratio             {:.3}", sim.rms_ratio);
         println!("  energy-envelope corr  {:.3}", sim.energy_corr);

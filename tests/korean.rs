@@ -33,8 +33,15 @@ fn hangul_syllables_are_read() {
         let got = ipa(word);
         assert!(!got.trim().is_empty(), "ko {word:?} produced no phonemes");
         // No stray "ng"-cluster from a mishandled leading ㅇ.
-        assert!(!got.starts_with('ŋ'), "ko {word:?} should not start with ŋ: {got}");
+        assert!(
+            !got.starts_with('ŋ'),
+            "ko {word:?} should not start with ŋ: {got}"
+        );
     }
     // "감사합니다" (thank you) begins with a voiced word-initial ㄱ.
-    assert!(ipa("감사합니다").starts_with('ɡ'), "감… should start voiced: {}", ipa("감사합니다"));
+    assert!(
+        ipa("감사합니다").starts_with('ɡ'),
+        "감… should start voiced: {}",
+        ipa("감사합니다")
+    );
 }

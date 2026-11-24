@@ -5,8 +5,8 @@
 
 use super::file::Dictionary;
 use super::flags::{DictFlags1, DictFlags2};
-use super::N_WORD_BYTES;
 use super::transpose::transpose_alphabet;
+use super::N_WORD_BYTES;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Hash function (must be bit-identical to C)
@@ -27,7 +27,9 @@ pub fn hash_word(word: &[u8]) -> usize {
     let mut hash: u32 = 0;
     let mut chars: u32 = 0;
     for &c in word {
-        if c == 0 { break; }
+        if c == 0 {
+            break;
+        }
         hash = hash.wrapping_mul(8).wrapping_add(c as u32);
         hash = (hash & 0x3ff) ^ (hash >> 8);
         chars += 1;
@@ -88,6 +90,10 @@ pub struct LookupCtx {
     pub at_clause_end: bool,
     /// True if first word of clause (for FLAG_ATSTART)
     pub is_first_word: bool,
+    /// The text after the word — the following words, each followed by a
+    /// space, NUL-padded (C's `word2`).  All NUL when unknown, which fails
+    /// every multi-word entry.
+    pub word2: [u8; 32],
 }
 
 pub const CLAUSE_TYPE_SENTENCE: u32 = 0x8000;
@@ -100,10 +106,9 @@ pub const CLAUSE_TYPE_SENTENCE: u32 = 0x8000;
 /// Corresponds to `LookupDict2` in dictionary.c.
 pub fn lookup_dict2(
     dict: &Dictionary,
-    word: &[u8],  // word bytes (no null terminator expected)
+    word: &[u8], // word bytes (no null terminator expected)
     ctx: &LookupCtx,
 ) -> Option<LookupResult> {
-
     // Apply TransposeAlphabet compression if configured (all Latin-script langs).
     let word_str = std::str::from_utf8(word).unwrap_or("");
     let transposed = transpose_alphabet(word_str, &dict.transpose);
@@ -133,12 +138,18 @@ pub fn lookup_dict2(
     let mut pos = bucket_start;
 
     loop {
-        if pos >= data.len() { break; }
+        if pos >= data.len() {
+            break;
+        }
         let entry_len = data[pos] as usize;
-        if entry_len == 0 { break; } // end of bucket
+        if entry_len == 0 {
+            break;
+        } // end of bucket
 
         let entry_end = pos + entry_len;
-        if entry_end > data.len() { break; }
+        if entry_end > data.len() {
+            break;
+        }
 
         // byte 1: word length info
         //   bits 0-5: word byte count
@@ -168,9 +179,13 @@ pub fn lookup_dict2(
             phonemes = Vec::new();
         } else {
             let ph_start = p;
-            while p < entry_end && data[p] != 0 { p += 1; }
+            while p < entry_end && data[p] != 0 {
+                p += 1;
+            }
             phonemes = data[ph_start..p].to_vec();
-            if p < entry_end { p += 1; } // skip null
+            if p < entry_end {
+                p += 1;
+            } // skip null
         }
 
         // ── Decode flag bytes ───────────────────────────────────────────────
@@ -198,12 +213,15 @@ pub fn lookup_dict2(
                 }
             } else if flag > 80 {
                 // Multi-word match: flag = 81..90 means skip (flag-80) words.
-                // The remaining bytes in this entry are the following word's text.
-                // C code: if (strncmp(word2, p, n_chars) != 0) condition_failed = true;
-                // Since LookupCtx has no word2 (standalone single-word lookup),
-                // we always fail multi-word entries here.
+                // The remaining bytes in this entry are the following words'
+                // text, each word followed by a space as in C's clause buffer,
+                // which must begin `word2` (C: `memcmp(word2, p, n_chars)`;
+                // the trailing space keeps "parce quelque" from "parce que").
                 skipwords = (flag - 80) as usize;
-                condition_failed = true;
+                let rest = &data[p..entry_end];
+                if rest.is_empty() || ctx.word2.get(..rest.len()) != Some(rest) {
+                    condition_failed = true;
+                }
                 p = entry_end;
             } else if flag > 64 {
                 // Stressed syllable: put in bits 0-3 of flags1
@@ -323,15 +341,9 @@ pub fn lookup_dict2(
 /// Strips a trailing nul/space boundary, hashes the word, returns phonemes
 /// and flags.  Does NOT handle abbreviation expansion (a.b.c.) or the
 /// double-letter removal suffix logic — those are part of `TranslateWord`.
-pub fn lookup(
-    dict: &Dictionary,
-    word: &str,
-    ctx: &LookupCtx,
-) -> Option<LookupResult> {
+pub fn lookup(dict: &Dictionary, word: &str, ctx: &LookupCtx) -> Option<LookupResult> {
     // Extract the word bytes up to any space or nul
-    let word_bytes: Vec<u8> = word.bytes()
-        .take_while(|&b| b != 0 && b != b' ')
-        .collect();
+    let word_bytes: Vec<u8> = word.bytes().take_while(|&b| b != 0 && b != b' ').collect();
 
     if word_bytes.is_empty() || word_bytes.len() >= N_WORD_BYTES {
         return None;
@@ -347,7 +359,9 @@ mod tests {
 
     fn en_dict() -> Option<Dictionary> {
         let dir = PathBuf::from("/usr/share/espeak-ng-data");
-        if !dir.join("en_dict").exists() { return None; }
+        if !dir.join("en_dict").exists() {
+            return None;
+        }
         Some(Dictionary::load("en", &dir).unwrap())
     }
 
@@ -381,8 +395,14 @@ mod tests {
 
     #[test]
     fn lookup_the() {
-        let dict = match en_dict() { Some(d) => d, None => return };
-        let ctx = LookupCtx { lookup_symbol: true, ..Default::default() };
+        let dict = match en_dict() {
+            Some(d) => d,
+            None => return,
+        };
+        let ctx = LookupCtx {
+            lookup_symbol: true,
+            ..Default::default()
+        };
         let result = lookup(&dict, "the", &ctx);
         assert!(result.is_some(), "'the' should be in en_dict");
         let r = result.unwrap();
@@ -393,7 +413,10 @@ mod tests {
 
     #[test]
     fn lookup_notaword() {
-        let dict = match en_dict() { Some(d) => d, None => return };
+        let dict = match en_dict() {
+            Some(d) => d,
+            None => return,
+        };
         let ctx = LookupCtx::default();
         let result = lookup(&dict, "xzqfgh", &ctx);
         assert!(result.is_none(), "non-word should not be found");
@@ -401,24 +424,42 @@ mod tests {
 
     #[test]
     fn lookup_a() {
-        let dict = match en_dict() { Some(d) => d, None => return };
-        let ctx = LookupCtx { lookup_symbol: true, ..Default::default() };
+        let dict = match en_dict() {
+            Some(d) => d,
+            None => return,
+        };
+        let ctx = LookupCtx {
+            lookup_symbol: true,
+            ..Default::default()
+        };
         let result = lookup(&dict, "a", &ctx);
         assert!(result.is_some(), "'a' should be in en_dict");
     }
 
     #[test]
     fn lookup_and() {
-        let dict = match en_dict() { Some(d) => d, None => return };
-        let ctx = LookupCtx { lookup_symbol: true, ..Default::default() };
+        let dict = match en_dict() {
+            Some(d) => d,
+            None => return,
+        };
+        let ctx = LookupCtx {
+            lookup_symbol: true,
+            ..Default::default()
+        };
         let result = lookup(&dict, "and", &ctx);
         assert!(result.is_some(), "'and' should be in en_dict");
     }
 
     #[test]
     fn lookup_is() {
-        let dict = match en_dict() { Some(d) => d, None => return };
-        let ctx = LookupCtx { lookup_symbol: true, ..Default::default() };
+        let dict = match en_dict() {
+            Some(d) => d,
+            None => return,
+        };
+        let ctx = LookupCtx {
+            lookup_symbol: true,
+            ..Default::default()
+        };
         let result = lookup(&dict, "is", &ctx);
         assert!(result.is_some(), "'is' should be in en_dict");
     }
