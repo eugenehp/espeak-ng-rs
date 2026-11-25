@@ -7,6 +7,89 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+
+This release changes the public API and needs to be 0.3.0. `MIGRATION.md` lists
+every break that `cargo semver-checks` reports against 0.2.0, with the
+replacements. In short:
+
+- `VoiceParams::formant_freq_pct`, `formant_height_pct` and `formant_width_pct`
+  are replaced by `formants: FormantScale`, in C's units;
+  `formant_scaling_active()` is gone.
+- `wavegen::SynthSegment`, `wavegen_segment()` and
+  `setlengths::length_mod_to_samples()` are removed.
+- `synthesize_frames_klatt`, `calc_vowel_length_mod` and `get_vowel_stress`
+  take more parameters.
+- Several public structs have new fields, and `NumberGrammar` has a private
+  one, so it can no longer be built with a struct literal.
+- `Token` has a new variant, `Operator`.
+
+The high-level API (`EspeakNg`, `Translator`, `VoiceSpec`, the CLI) is unchanged.
+
+### Changed
+
+- **Bundled data** refreshed from espeak-ng master `f0fb11a8` (1.53.0) (#46).
+- **Audio timing and loudness follow C.** The wave generator is a port of
+  `Wavegen()` as one continuous state machine, and vowel lengths follow
+  `CalcLengths`/`LookupSpect` instead of fitted constants. All speech sounds
+  different.
+- **Currency and titles read as in C** (#27): `$5` is "dollar five", `5€` in
+  Spanish "cinco euro"; `Dr. Smith` ends a clause. A minus before a currency
+  amount is still spoken, which C drops.
+- Numbers longer than the language's `max_digits` are read digit by digit (#37),
+  and leading-zero strings are one word (#38).
+- Invalid UTF-8 input is replaced instead of rejected (#33).
+- Clippy's `unwrap_used` and `indexing_slicing` are denied, `unsafe` is forbidden
+  outside `c-oracle`, and CI has clippy and fuzz jobs (#29); truncating
+  casts are denied in the file parsers.
+
+- A `Translator` reads its data once instead of on every call.
+- **Timing follows `CalcLengths` throughout:** each language's own stress lengths
+  and amplitudes, length tables and tonic lengthening; consonant lengths and
+  the pauses before consonants; a voiced stop's murmur after a vowel; the
+  shortest sequence; clause pauses by punctuation (400 ms for a full stop,
+  200 for a comma, 300 for `;` and `:`, 450 for `!`, all scaled by the rate);
+  and words run together without a gap.
+- **Lexical tones are sung.** Mandarin, Cantonese, Vietnamese and the other
+  tone languages take each syllable's pitch from its tone.
+
+### Fixed
+
+- Pronunciation: #7-#23, #25, #26, #44, #47; `©` in Portuguese (#48) reads the
+  English word rather than C's `(base)` marker.
+- Numbers of 20 or more digits (#30); every digit of a very long one is spoken
+  and stressed, where C cuts off at about forty (#39).
+- Quadratic time on long words, nested SSML and runs of dots (#31, #32).
+- Panics on malformed dictionaries, phoneme tables and WAV files (#28), on an
+  unclosed SSML tag at the end of the text, and on words of 100 or more vowels.
+- `+klatt` ... `+klatt5` and the other variants that use them select the Klatt
+  synthesizer; the line was never read. `+klatt6`, `+adam`, `+Reed` and others
+  use a port of the SpeechPlayer engine.
+- A variant's `stressLength` and `stressAdd` lines are applied.
+- Voice and variant lines that were ignored or approximated: `voicing`, `breath`,
+  `breathw`, `consonants`, `roughness`, `flutter`, `speed`, and `formant` heights
+  and widths, which replace the defaults rather than scale them. They apply to
+  language files as well as variants (Swedish was 1.5x too long).
+- A voice file that lists a language second (`pt-pt`) is found.
+- Languages without number grammar in C (Thai, Burmese, Quechua, ...) read
+  numbers digit by digit.
+- Cardinal numbers are a port of C's `LookupNum2`/`LookupNum3`/`LookupThousands`
+  driven by each language's own options, so Hindi counts in lakhs and Georgian
+  in twenties.
+- Wrapped integer casts in the word, dictionary and phoneme-table code.
+- A variant's echo is capped as in C, so `+robosoft` no longer clips.
+- Phoneme programs: `nextPh(isWordEnd)`, `prev2PhW` and `next3PhW` are evaluated,
+  and the pass that inserts and appends phonemes sees the stress, so Tamil
+  `ஆயிரம்` in numbers, Macedonian `i;` and Croatian `mili;` match C.
+- Croatian and Bosnian voice their consonant clusters (`devedeset devet`).
+- Aragonese and Catalan stress a final consonant other than `n` or `s`;
+  Faroese uses the default stress rule.
+- A tone language doesn't promote a stress in an unstressed clause; a tone
+  belongs to the vowel before it, and a later one replaces an earlier one.
+- A whole number the dictionary lists is read as that word (Marathi 100).
+- A `<break>` clause has no tonic syllable, and `weak`/`x-weak` are a short pause
+  phoneme, as in C.
+
 ## [0.2.0] - 2026-09-05
 
 ### Added

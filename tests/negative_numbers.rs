@@ -43,19 +43,19 @@ fn leading_minus_before_currency_reads_minus() {
     };
     let ipa = |s: &str| t.text_to_ipa(s).unwrap();
 
-    // A minus before a currency amount is a negative amount ("-$5" = minus five
-    // dollars).  Previously the sign was dropped ("-$5" → "five dollars").
-    assert_eq!(ipa("-$5"), "mˈaɪnəs fˈaɪv dˈɒləz");
+    // A minus before a currency amount is a negative amount ("-$5" = minus
+    // dollar five).  Previously the sign was dropped ("-$5" → "five dollars").
+    assert_eq!(ipa("-$5"), "mˈaɪnəs dˈɒlə fˈaɪv");
     assert!(ipa("-€10").starts_with("mˈaɪnəs"), "{}", ipa("-€10"));
     assert!(ipa("-£5").starts_with("mˈaɪnəs"), "{}", ipa("-£5"));
     assert!(
-        ipa("was -$5").contains("mˈaɪnəs fˈaɪv dˈɒləz"),
+        ipa("was -$5").contains("mˈaɪnəs dˈɒlə fˈaɪv"),
         "{}",
         ipa("was -$5")
     );
     // The `+`/`$` positive form is unchanged.
-    assert_eq!(ipa("+$5"), "plˈʌs fˈaɪv dˈɒləz");
-    assert_eq!(ipa("$5"), "fˈaɪv dˈɒləz");
+    assert_eq!(ipa("+$5"), "plˈʌs dˈɒlə fˈaɪv");
+    assert_eq!(ipa("$5"), "dˈɒlə fˈaɪv");
     // A hyphen after a word/number before a currency symbol is NOT a minus.
     for s in ["US-$5", "5-$3", "price-$5"] {
         assert!(
@@ -117,7 +117,7 @@ fn leading_minus_reads_the_sign_across_languages() {
     // Finnish's `__) - (_D  mi:nus` or a list entry like Greek's `- m'ion`.
     // A language whose data has neither drops it — C does too, so these lists
     // are the oracle's own split.
-    for lang in ["cs", "ro", "sv", "nb", "uk", "pt"] {
+    for lang in ["cs", "pl", "ro", "sv", "nb", "uk", "pt"] {
         let Some(t) = Translator::new(lang, None).ok() else {
             eprintln!("[SKIP] no {lang} data");
             continue;
@@ -129,7 +129,7 @@ fn leading_minus_reads_the_sign_across_languages() {
             "{lang} '-5' dropped the sign: {minus5:?} (5={five:?})"
         );
     }
-    for lang in ["pl", "ru", "da", "tr", "bg"] {
+    for lang in ["ru", "da", "tr", "bg"] {
         let Some(t) = Translator::new(lang, None).ok() else {
             eprintln!("[SKIP] no {lang} data");
             continue;

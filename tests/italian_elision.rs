@@ -51,7 +51,7 @@ fn other_languages_unaffected() {
     }
     if let Some(t) = Translator::new("es", None).ok() {
         assert!(
-            t.text_to_ipa("31").unwrap().contains("tɾˈeɪnta"),
+            t.text_to_ipa("31").unwrap().contains("tɾˌeɪnta"),
             "{}",
             t.text_to_ipa("31").unwrap()
         );

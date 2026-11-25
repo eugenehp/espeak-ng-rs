@@ -20,6 +20,8 @@
 //! and enable SSML `<audio>` with
 //! [`EspeakNg::set_markup`](crate::EspeakNg::set_markup).
 
+use crate::bytes::Bounded;
+use crate::bytes::{u16_at, u32_at};
 use std::path::{Path, PathBuf};
 
 use crate::{Error, Result};
@@ -82,6 +84,7 @@ impl SoundIconTable {
     /// `soundicon <char> <file>` voice directive; returns the icon index.
     ///
     /// `base_dir` resolves relative paths (typically `<data>/soundicons`).
+    #[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
     pub fn register_punct(
         &mut self,
         ch: char,
@@ -111,6 +114,7 @@ impl SoundIconTable {
     /// Look up (lazily loading if needed) the icon for a punctuation character.
     /// Mirrors `LookupSoundicon`; returns `None` if there is no mapping or the
     /// file can't be loaded.
+    #[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
     pub fn lookup_punct(&mut self, ch: char, base_dir: &Path) -> Option<usize> {
         let idx = self.icons.iter().position(|i| i.name == Some(ch))?;
         if self.icons[idx].samples.is_empty() && self.load(idx, base_dir).is_err() {
@@ -121,6 +125,7 @@ impl SoundIconTable {
 
     /// Load an arbitrary WAV file (SSML `<audio src>`), de-duplicating by path.
     /// Mirrors `LoadSoundFile2`; returns the icon index.
+    #[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
     pub fn load_file(&mut self, path: impl Into<PathBuf>, base_dir: &Path) -> Result<usize> {
         let path = path.into();
         if let Some(idx) = self
@@ -147,6 +152,7 @@ impl SoundIconTable {
     }
 
     /// Decode the WAV file for icon `idx` into mono 16-bit PCM at the table rate.
+    #[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
     fn load(&mut self, idx: usize, base_dir: &Path) -> Result<()> {
         let fname = self.icons[idx]
             .filename
@@ -239,7 +245,7 @@ pub fn split_pieces(
 
     while i < chars.len() {
         // ---- SSML <audio src="..."> ------------------------------------
-        if markup && chars[i] == '<' && starts_with_ci(&chars, i + 1, "audio") {
+        if markup && chars.at(i) == '<' && starts_with_ci(&chars, i + 1, "audio") {
             if let Some((src, after_open, self_closing)) = parse_audio_open(&chars, i) {
                 match table.load_file(&src, base_dir) {
                     Ok(idx) => {
@@ -262,20 +268,20 @@ pub fn split_pieces(
             }
         }
         // ---- closing </audio> (e.g. after a failed load) ---------------
-        if markup && chars[i] == '<' && starts_with_ci(&chars, i + 1, "/audio") {
+        if markup && chars.at(i) == '<' && starts_with_ci(&chars, i + 1, "/audio") {
             if let Some(close) = find_char(&chars, i, '>') {
                 i = close + 1;
                 continue;
             }
         }
         // ---- punctuation sound icon ------------------------------------
-        if let Some(idx) = table.lookup_punct(chars[i], base_dir) {
+        if let Some(idx) = table.lookup_punct(chars.at(i), base_dir) {
             flush!();
             pieces.push(Piece::Icon(idx));
             i += 1;
             continue;
         }
-        cur.push(chars[i]);
+        cur.push(chars.at(i));
         i += 1;
     }
     flush!();
@@ -286,7 +292,7 @@ pub fn split_pieces(
 /// `(src, index_after_tag, self_closing)` or `None` if malformed / no `src`.
 fn parse_audio_open(chars: &[char], start: usize) -> Option<(String, usize, bool)> {
     let close = find_char(chars, start, '>')?;
-    let tag: String = chars[start..=close].iter().collect();
+    let tag: String = chars.get(start..=close).unwrap_or_default().iter().collect();
     let inner = tag.trim_start_matches('<').trim_end_matches('>');
     let self_closing = inner.trim_end().ends_with('/');
     let src = get_attr(inner, "src")?;
@@ -301,7 +307,7 @@ fn parse_audio_open(chars: &[char], start: usize) -> Option<(String, usize, bool
 fn skip_to_close(chars: &[char], from: usize, tag: &str) -> usize {
     let mut i = from;
     while i < chars.len() {
-        if chars[i] == '<' && starts_with_ci(chars, i + 1, &format!("/{tag}")) {
+        if chars.at(i) == '<' && starts_with_ci(chars, i + 1, &format!("/{tag}")) {
             if let Some(close) = find_char(chars, i, '>') {
                 return close + 1;
             }
@@ -317,14 +323,14 @@ fn starts_with_ci(chars: &[char], at: usize, pat: &str) -> bool {
     if at + p.len() > chars.len() {
         return false;
     }
-    chars[at..at + p.len()]
+    chars.get(at..at + p.len()).unwrap_or_default()
         .iter()
         .zip(&p)
         .all(|(a, b)| a.eq_ignore_ascii_case(b))
 }
 
 fn find_char(chars: &[char], from: usize, target: char) -> Option<usize> {
-    (from..chars.len()).find(|&i| chars[i] == target)
+    (from..chars.len()).find(|&i| chars.at(i) == target)
 }
 
 /// Extract `key="value"` / `key='value'` from a tag's inner text.
@@ -334,22 +340,22 @@ fn get_attr(inner: &str, key: &str) -> Option<String> {
     let mut i = 0;
     while i + key_l.len() < bytes.len() {
         // Match `key` as a whole word followed by optional space then `=`.
-        if starts_with_ci(&bytes, i, &key_l) && (i == 0 || bytes[i - 1].is_whitespace()) {
+        if starts_with_ci(&bytes, i, &key_l) && (i == 0 || bytes.at(i - 1).is_whitespace()) {
             let mut j = i + key_l.len();
-            while j < bytes.len() && bytes[j].is_whitespace() {
+            while j < bytes.len() && bytes.at(j).is_whitespace() {
                 j += 1;
             }
-            if j < bytes.len() && bytes[j] == '=' {
+            if j < bytes.len() && bytes.at(j) == '=' {
                 j += 1;
-                while j < bytes.len() && bytes[j].is_whitespace() {
+                while j < bytes.len() && bytes.at(j).is_whitespace() {
                     j += 1;
                 }
-                if j < bytes.len() && (bytes[j] == '"' || bytes[j] == '\'') {
-                    let quote = bytes[j];
+                if j < bytes.len() && (bytes.at(j) == '"' || bytes.at(j) == '\'') {
+                    let quote = bytes.at(j);
                     j += 1;
                     let mut val = String::new();
-                    while j < bytes.len() && bytes[j] != quote {
-                        val.push(bytes[j]);
+                    while j < bytes.len() && bytes.at(j) != quote {
+                        val.push(bytes.at(j));
                         j += 1;
                     }
                     return Some(val);
@@ -371,7 +377,7 @@ fn get_attr(inner: &str, key: &str) -> Option<String> {
 /// (down-mixed to mono), and any source rate (linearly resampled).
 pub fn decode_wav_mono16(bytes: &[u8], target_rate: u32) -> Result<Vec<i16>> {
     let err = |m: &str| Error::InvalidData(format!("soundicon WAV: {m}"));
-    if bytes.len() < 12 || &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
+    if bytes.len() < 12 || bytes.get(0..4).unwrap_or_default() != b"RIFF" || bytes.get(8..12).unwrap_or_default() != b"WAVE" {
         return Err(err("not a RIFF/WAVE file"));
     }
 
@@ -380,24 +386,25 @@ pub fn decode_wav_mono16(bytes: &[u8], target_rate: u32) -> Result<Vec<i16>> {
 
     let mut pos = 12;
     while pos + 8 <= bytes.len() {
-        let id = &bytes[pos..pos + 4];
-        let size = u32::from_le_bytes(bytes[pos + 4..pos + 8].try_into().unwrap()) as usize;
+        let id = bytes.get(pos..pos + 4).unwrap_or_default();
+        let size = u32_at(bytes, pos + 4).unwrap_or(0) as usize;
         let bs = pos + 8;
         let be = (bs + size).min(bytes.len());
         match id {
-            b"fmt " if size >= 16 => {
-                let mut af = u16::from_le_bytes(bytes[bs..bs + 2].try_into().unwrap());
-                let ch = u16::from_le_bytes(bytes[bs + 2..bs + 4].try_into().unwrap());
-                let rate = u32::from_le_bytes(bytes[bs + 4..bs + 8].try_into().unwrap());
-                let bits = u16::from_le_bytes(bytes[bs + 14..bs + 16].try_into().unwrap());
+            b"fmt " if size >= 16 && be - bs >= 16 => {
+                let field = |o: usize| u16_at(bytes, bs + o).unwrap_or(0);
+                let mut af = field(0);
+                let ch = field(2);
+                let rate = u32_at(bytes, bs + 4).unwrap_or(0);
+                let bits = field(14);
                 // WAVE_FORMAT_EXTENSIBLE: real format tag is the first 2 bytes of
                 // the SubFormat GUID at offset 24 of the fmt body.
                 if af == 0xFFFE && size >= 26 {
-                    af = u16::from_le_bytes(bytes[bs + 24..bs + 26].try_into().unwrap());
+                    af = field(24);
                 }
                 fmt = Some((af, ch, rate, bits));
             }
-            b"data" => data = Some(&bytes[bs..be]),
+            b"data" => data = Some(bytes.get(bs..be).unwrap_or_default()),
             _ => {}
         }
         pos = bs + size + (size & 1); // chunks are word-aligned
@@ -413,27 +420,27 @@ pub fn decode_wav_mono16(bytes: &[u8], target_rate: u32) -> Result<Vec<i16>> {
         (1, 8) => data.iter().map(|&b| (b as f32 - 128.0) / 128.0).collect(),
         (1, 16) => data
             .chunks_exact(2)
-            .map(|c| i16::from_le_bytes([c[0], c[1]]) as f32 / 32768.0)
+            .map(|c| i16::from_le_bytes([c.at(0), c.at(1)]) as f32 / 32768.0)
             .collect(),
         (1, 24) => data
             .chunks_exact(3)
             .map(|c| {
                 // little-endian signed 24-bit → sign-extend into i32
-                let v = ((c[0] as i32) | ((c[1] as i32) << 8) | ((c[2] as i32) << 16)) << 8 >> 8;
+                let v = ((c.at(0) as i32) | ((c.at(1) as i32) << 8) | ((c.at(2) as i32) << 16)) << 8 >> 8;
                 v as f32 / 8_388_608.0
             })
             .collect(),
         (1, 32) => data
             .chunks_exact(4)
-            .map(|c| i32::from_le_bytes([c[0], c[1], c[2], c[3]]) as f32 / 2_147_483_648.0)
+            .map(|c| i32::from_le_bytes([c.at(0), c.at(1), c.at(2), c.at(3)]) as f32 / 2_147_483_648.0)
             .collect(),
         (3, 32) => data
             .chunks_exact(4)
-            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .map(|c| f32::from_le_bytes([c.at(0), c.at(1), c.at(2), c.at(3)]))
             .collect(),
         (3, 64) => data
             .chunks_exact(8)
-            .map(|c| f64::from_le_bytes([c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7]]) as f32)
+            .map(|c| f64::from_le_bytes([c.at(0), c.at(1), c.at(2), c.at(3), c.at(4), c.at(5), c.at(6), c.at(7)]) as f32)
             .collect(),
         _ => return Err(err(&format!("unsupported format tag {af} / {bits}-bit"))),
     };

@@ -10,6 +10,10 @@
 //! bytes  rules_offset..   : translation rule groups
 //! ```
 
+#![deny(clippy::cast_possible_truncation)]
+
+use crate::bytes::Bounded;
+use crate::bytes::u32_at;
 use std::path::Path;
 
 use super::transpose::TransposeConfig;
@@ -212,8 +216,8 @@ impl Dictionary {
             )));
         }
 
-        let pw0 = u32::from_le_bytes(data[0..4].try_into().unwrap()) as usize;
-        let pw1 = u32::from_le_bytes(data[4..8].try_into().unwrap()) as usize;
+        let pw0 = u32_at(&data, 0).unwrap_or(0) as usize;
+        let pw1 = u32_at(&data, 4).unwrap_or(0) as usize;
 
         if pw0 != N_HASH_DICT {
             return Err(Error::InvalidData(format!(
@@ -234,17 +238,17 @@ impl Dictionary {
         let mut hashtab = [0usize; N_HASH_DICT];
         {
             let mut pos = 8usize;
-            for hash in 0..N_HASH_DICT {
-                hashtab[hash] = pos;
+            for (hash, bucket) in hashtab.iter_mut().enumerate() {
+                *bucket = pos;
                 // Skip entries in this bucket (each starts with its total length).
                 loop {
-                    if pos >= data.len() {
+                    let Some(&entry_len) = data.get(pos) else {
                         return Err(Error::InvalidData(format!(
                             "dict '{}': hash table overran file at bucket {}",
                             lang, hash
                         )));
-                    }
-                    let entry_len = data[pos] as usize;
+                    };
+                    let entry_len = usize::from(entry_len);
                     if entry_len == 0 {
                         break;
                     }
@@ -311,7 +315,7 @@ impl Dictionary {
                 if from.len() > chars.len() - i {
                     continue;
                 }
-                let here = &chars[i..i + from.len()];
+                let here = chars.get(i..i + from.len()).unwrap_or_default();
                 // C's `SubstituteChar` folds the character before the lookup and
                 // re-applies the case to the replacement, so a capitalised word
                 // transliterates like a lower-case one (`mk "Dzidarski"` →
@@ -322,7 +326,7 @@ impl Dictionary {
                 // Icelandic has such keys, and matching them both ways inserted
                 // a stray phoneme in `öxi`.
                 let folded = !exact
-                    && here[0].is_uppercase()
+                    && here.at(0).is_uppercase()
                     && here
                         .iter()
                         .zip(from.iter())
@@ -345,7 +349,7 @@ impl Dictionary {
                 break;
             }
             if !matched {
-                out.push(chars[i]);
+                out.push(chars.at(i));
                 i += 1;
             }
         }
@@ -355,7 +359,7 @@ impl Dictionary {
     /// Return the slice containing all translation rules.
     #[inline]
     pub fn rules(&self) -> &[u8] {
-        &self.data[self.rules_offset..]
+        self.data.get(self.rules_offset..).unwrap_or_default()
     }
 
     #[cfg(test)]
@@ -367,46 +371,36 @@ impl Dictionary {
     /// as a slice starting at the first rule.
     #[inline]
     pub fn group1(&self, c: u8) -> Option<&[u8]> {
-        self.groups.groups1[c as usize].map(|off| &self.data[off..])
+        self.data.get((*self.groups.groups1.get(c as usize)?)?..)
     }
 
     /// Same for the two-byte chain.
     /// Returns `(matching_slice, advance_bytes)` for the best-matching group2 entry.
     #[inline]
     pub fn group2_entries_for(&self, c: u8) -> impl Iterator<Item = &Group2Entry> {
-        let start = self.groups.groups2_start[c as usize] as usize;
-        let count = self.groups.groups2_count[c as usize] as usize;
-        if start >= self.groups.groups2.len() || count == 0 {
-            self.groups.groups2[0..0].iter()
-        } else {
-            let end = (start + count).min(self.groups.groups2.len());
-            self.groups.groups2[start..end].iter()
-        }
+        let g = &self.groups;
+        let start = g.groups2_start.get(c as usize).map_or(0, |&n| n as usize);
+        let count = g.groups2_count.get(c as usize).map_or(0, |&n| n as usize);
+        g.groups2.iter().skip(start).take(count)
     }
 
     /// Rule slice for a groups2 entry.
     #[inline]
     pub fn group2_rules(&self, e: &Group2Entry) -> &[u8] {
-        &self.data[e.offset..]
+        self.data.get(e.offset..).unwrap_or_default()
     }
 
     /// Rule slice for a groups3 entry.
     #[inline]
     pub fn group3(&self, c2: u8) -> Option<&[u8]> {
         let idx = c2.wrapping_sub(1) as usize;
-        if idx >= 128 {
-            return None;
-        }
-        self.groups.groups3[idx].map(|off| &self.data[off..])
+        self.data.get((*self.groups.groups3.get(idx)?)?..)
     }
 
     /// Letter-group string list for `letterGroups[ix]`.
     #[inline]
     pub fn letter_group(&self, ix: usize) -> Option<&[u8]> {
-        if ix >= N_LETTER_GROUPS {
-            return None;
-        }
-        self.groups.letter_groups[ix].map(|off| &self.data[off..])
+        self.data.get((*self.groups.letter_groups.get(ix)?)?..)
     }
 }
 
@@ -419,10 +413,10 @@ impl Dictionary {
 fn decode_replace_table(data: &[u8], offset: usize) -> Vec<(Vec<char>, String)> {
     let read_cstr = |pos: &mut usize| -> &[u8] {
         let start = *pos;
-        while *pos < data.len() && data[*pos] != 0 {
+        while data.get(*pos).is_some_and(|&b| b != 0) {
             *pos += 1;
         }
-        let s = &data[start..*pos];
+        let s = data.get(start..*pos).unwrap_or_default();
         if *pos < data.len() {
             *pos += 1; // skip the terminating NUL
         }
@@ -431,7 +425,7 @@ fn decode_replace_table(data: &[u8], offset: usize) -> Vec<(Vec<char>, String)> 
 
     let mut pairs = Vec::new();
     let mut pos = offset;
-    while pos + 4 <= data.len() && data[pos..pos + 4].iter().any(|&b| b != 0) {
+    while data.get(pos..pos + 4).is_some_and(|b| b.iter().any(|&b| b != 0)) {
         let from = String::from_utf8_lossy(read_cstr(&mut pos)).into_owned();
         let to = String::from_utf8_lossy(read_cstr(&mut pos)).into_owned();
         if from.is_empty() {
@@ -446,29 +440,35 @@ fn decode_replace_table(data: &[u8], offset: usize) -> Vec<(Vec<char>, String)> 
 // InitGroups — build the rule-group index
 // ─────────────────────────────────────────────────────────────────────────────
 
+#[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
 fn build_groups(data: &[u8], rules_offset: usize) -> Result<Groups, Error> {
     let mut g = Groups::default();
     let mut n_groups2 = 0usize;
 
-    let rules = &data[rules_offset..];
+    let rules = data.get(rules_offset..).unwrap_or_default();
+    let at = |pos: usize| rules.get(pos).copied();
     let mut pos = 0usize; // offset into `rules` (relative to rules_offset)
+    let truncated = || Error::InvalidData("bad rules data: truncated rule group".to_string());
 
     // If there are no rules at all, the file just starts with RULE_GROUP_END.
-    if rules.is_empty() || rules[pos] == RULE_GROUP_END {
+    if at(pos).is_none_or(|b| b == RULE_GROUP_END) {
         return Ok(g);
     }
 
-    while pos < rules.len() && rules[pos] != 0 {
-        if rules[pos] != RULE_GROUP_START {
+    while let Some(b) = at(pos).filter(|&b| b != 0) {
+        if b != RULE_GROUP_START {
             return Err(Error::InvalidData(format!(
                 "bad rules data: expected RULE_GROUP_START at offset {}",
                 rules_offset + pos
             )));
         }
         pos += 1; // skip RULE_GROUP_START
+        if pos >= rules.len() {
+            return Err(truncated());
+        }
 
         // Check for special group types
-        if rules[pos] == RULE_REPLACEMENTS {
+        if at(pos) == Some(RULE_REPLACEMENTS) {
             // The table starts at `(&RULE_REPLACEMENTS + 4) & ~3` — C rounds the
             // (memory) address *down* to a 4-byte boundary (`((intptr_t)p+4) &
             // ~3` in dictionary.c); `data` is itself 4-aligned, so the same
@@ -479,16 +479,16 @@ fn build_groups(data: &[u8], rules_offset: usize) -> Result<Groups, Error> {
             g.replace_chars = Some(aligned);
             // skip forward until RULE_GROUP_END
             pos = aligned - rules_offset;
-            while pos < rules.len() && rules[pos] != RULE_GROUP_END {
+            while at(pos).is_some_and(|b| b != RULE_GROUP_END) {
                 pos += 1;
             }
             pos += 1; // skip RULE_GROUP_END
             continue;
         }
 
-        if rules[pos] == RULE_LETTERGP2 {
+        if at(pos) == Some(RULE_LETTERGP2) {
             // p[0] = RULE_LETTERGP2, p[1] = group-index byte
-            let idx_byte = rules[pos + 1];
+            let idx_byte = at(pos + 1).ok_or_else(truncated)?;
             let ix = if idx_byte < b'A' {
                 // negative wrap-around: (idx_byte - 'A') mod 256 as signed
                 (idx_byte as i16 - b'A' as i16 + 256) as usize
@@ -496,23 +496,22 @@ fn build_groups(data: &[u8], rules_offset: usize) -> Result<Groups, Error> {
                 (idx_byte - b'A') as usize
             };
             pos += 2;
-            if ix < N_LETTER_GROUPS {
-                g.letter_groups[ix] = Some(rules_offset + pos);
+            if let Some(group) = g.letter_groups.get_mut(ix) {
+                *group = Some(rules_offset + pos);
             }
         } else {
             // Regular group: name string followed by \0
             let name_start = pos;
-            while pos < rules.len() && rules[pos] != 0 {
+            while at(pos).is_some_and(|b| b != 0) {
                 pos += 1;
             }
             let name_len = pos - name_start;
-            let c = rules[name_start]; // first byte of group name
-            let c2 = if name_len >= 2 {
-                rules[name_start + 1]
-            } else {
-                0
-            };
+            let c = at(name_start).unwrap_or(0); // first byte of group name
+            let c2 = if name_len >= 2 { at(name_start + 1).unwrap_or(0) } else { 0 };
             pos += 1; // skip the \0
+            if pos > rules.len() {
+                return Err(truncated());
+            }
 
             // abs offset of first rule for this group
             let rule_abs = rules_offset + pos;
@@ -522,21 +521,21 @@ fn build_groups(data: &[u8], rules_offset: usize) -> Result<Groups, Error> {
                     g.groups1[0] = Some(rule_abs);
                 }
                 1 => {
-                    g.groups1[c as usize] = Some(rule_abs);
+                    g.groups1.put(c as usize, Some(rule_abs));
                 }
                 _ if c == 1 => {
                     // groups3 indexed by c2-1
                     let idx = c2.wrapping_sub(1) as usize;
                     if idx < 128 {
-                        g.groups3[idx] = Some(rule_abs);
+                        g.groups3.put(idx, Some(rule_abs));
                     }
                 }
                 _ => {
                     // Two-letter group
-                    if g.groups2_start[c as usize] == 255 {
-                        g.groups2_start[c as usize] = n_groups2 as u8;
+                    if g.groups2_start.at(c as usize) == 255 {
+                        g.groups2_start.put(c as usize, u8::try_from(n_groups2).unwrap_or(u8::MAX));
                     }
-                    g.groups2_count[c as usize] = g.groups2_count[c as usize].saturating_add(1);
+                    g.groups2_count[c as usize] = g.groups2_count.at(c as usize).saturating_add(1);
                     let key = (c as u16) | ((c2 as u16) << 8);
                     if n_groups2 < N_RULE_GROUP2 {
                         g.groups2.push(Group2Entry {
@@ -551,8 +550,8 @@ fn build_groups(data: &[u8], rules_offset: usize) -> Result<Groups, Error> {
 
         // Skip over all rules in this group until RULE_GROUP_END
         // Each rule is a null-terminated string.
-        while pos < rules.len() && rules[pos] != RULE_GROUP_END {
-            while pos < rules.len() && rules[pos] != 0 {
+        while at(pos).is_some_and(|b| b != RULE_GROUP_END) {
+            while at(pos).is_some_and(|b| b != 0) {
                 pos += 1;
             }
             pos += 1; // skip the \0 terminator of this rule
@@ -576,6 +575,7 @@ fn build_groups(data: &[u8], rules_offset: usize) -> Result<Groups, Error> {
 ///
 /// Letter group data mirrors `SetCyrillicLetters()` / `SetLetterBits()` in
 /// `tr_languages.c`.
+#[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
 fn build_letter_bits(lang: &str) -> Box<[u8; 256]> {
     let mut bits = Box::new([0u8; 256]);
 
@@ -614,6 +614,7 @@ fn build_letter_bits(lang: &str) -> Box<[u8; 256]> {
             //   (`zdr'av;ej` for `zdr'avej`).
             const RU_EXTRA_IVOWELS: &[usize] = &[0x15, 0x18, 0x34, 0x37];
 
+            #[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
             fn set_bits(bits: &mut [u8; 256], indices: &[usize], group: u8) {
                 for &idx in indices {
                     if idx < 256 {
@@ -643,6 +644,7 @@ fn build_letter_bits(lang: &str) -> Box<[u8; 256]> {
             // `LETTERGP_Y` — the front vowels — is what `el_rules`' `κ (Y  c`
             // needs: Greek palatalises /k/ to /c/ before them, so without the
             // group "κόκκινη" read `k'okin,i` instead of `k'ocin,i`.
+            #[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
             fn set(bits: &mut [u8; 256], offsets: &[usize], group: u8) {
                 for &idx in offsets {
                     bits[idx] |= 1 << group;
@@ -719,13 +721,26 @@ fn build_letter_bits(lang: &str) -> Box<[u8; 256]> {
             // Latin/default: use the English letter bits
             let en = crate::translate::english_letter_bits();
             bits.copy_from_slice(en.as_slice());
-            if lang == "fr" {
-                // `tr_languages.c` French: `SetLetterVowel(tr, 'y')` — y is a
-                // vowel (groups A and VOWEL2), keeping only its front-vowel
-                // bit: `letter_bits[c] = (letter_bits[c] & 0x40) | 0x81`.
-                // Without it `A) s (A z` missed "analyse" and "physique",
-                // which read [s] for C's [z].
-                bits[b'y' as usize] = (bits[b'y' as usize] & 0x40) | 0x81;
+            if lang == "en" {
+                // `tr_languages.c` English: `SetLetterBits(tr, 6, "aeiouy")` —
+                // group Y is every vowel, not just the front ones, which is what
+                // `_) x (Y` needs to read "xa" with [z].
+                for c in b"aeiouyAEIOUY" {
+                    bits[*c as usize] |= 1 << 6;
+                }
+            }
+            // `SetLetterVowel`: the letter becomes a vowel (groups A and
+            // VOWEL2), keeping only its front-vowel bit.  Without it `A) s (A z`
+            // missed French "analyse" and `A) ł (_` the end of Polish "był".
+            let vowels: &[u8] = match lang {
+                "af" | "da" | "de" | "et" | "fi" | "fr" | "hu" | "is" | "it" | "jbo" | "nl"
+                | "no" | "nb" | "pl" | "pt" | "smj" | "sq" | "sv" => b"y",
+                "bs" | "cs" | "hr" | "sk" | "sr" => b"yr",
+                "cy" => b"wy",
+                _ => b"",
+            };
+            for &c in vowels {
+                bits[c as usize] = (bits.at(c as usize) & 0x40) | 0x81;
             }
         }
     }

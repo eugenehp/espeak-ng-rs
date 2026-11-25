@@ -12,6 +12,7 @@
 //! first audio of a long utterance is available after its first clause rather
 //! than after its last.  Cancellation is checked between chunks, so it takes
 //! effect part-way through as well.
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::indexing_slicing))]
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
@@ -95,7 +96,7 @@ impl AsyncSynth {
     }
 
     fn enqueue(&self, cmd: Command) {
-        self.shared.state.lock().unwrap().queue.push_back(cmd);
+        lock(&self.shared).queue.push_back(cmd);
         self.shared.work_available.notify_one();
     }
 
@@ -116,7 +117,7 @@ impl AsyncSynth {
 
     /// Clear the queue and stop the in-flight utterance's delivery (`espeak_Cancel`).
     pub fn cancel(&self) {
-        let mut st = self.shared.state.lock().unwrap();
+        let mut st = lock(&self.shared);
         st.queue.clear();
         st.cancel = true;
         drop(st);
@@ -125,15 +126,15 @@ impl AsyncSynth {
 
     /// Block until the queue drains and the worker is idle (`espeak_Synchronize`).
     pub fn synchronize(&self) {
-        let mut st = self.shared.state.lock().unwrap();
+        let mut st = lock(&self.shared);
         while !st.queue.is_empty() || st.busy {
-            st = self.shared.became_idle.wait(st).unwrap();
+            st = recover(self.shared.became_idle.wait(st));
         }
     }
 
     /// True if the worker is busy or has queued work.
     pub fn is_speaking(&self) -> bool {
-        let st = self.shared.state.lock().unwrap();
+        let st = lock(&self.shared);
         !st.queue.is_empty() || st.busy
     }
 }
@@ -141,7 +142,7 @@ impl AsyncSynth {
 impl Drop for AsyncSynth {
     fn drop(&mut self) {
         {
-            let mut st = self.shared.state.lock().unwrap();
+            let mut st = lock(&self.shared);
             st.stop = true;
             st.queue.clear();
         }
@@ -152,6 +153,15 @@ impl Drop for AsyncSynth {
     }
 }
 
+/// A lock poisoned by a panicking callback still guards consistent state.
+fn recover<T>(result: std::sync::LockResult<T>) -> T {
+    result.unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+fn lock(shared: &Shared) -> std::sync::MutexGuard<'_, State> {
+    recover(shared.state.lock())
+}
+
 fn worker_loop(
     mut engine: EspeakNg,
     shared: Arc<Shared>,
@@ -159,18 +169,19 @@ fn worker_loop(
 ) {
     loop {
         let cmd = {
-            let mut st = shared.state.lock().unwrap();
+            let mut st = lock(&shared);
             while st.queue.is_empty() && !st.stop {
                 shared.became_idle.notify_all();
-                st = shared.work_available.wait(st).unwrap();
+                st = recover(shared.work_available.wait(st));
             }
             if st.stop {
                 return;
             }
             st.cancel = false;
             st.busy = true;
-            st.queue.pop_front().unwrap()
+            st.queue.pop_front()
         };
+        let Some(cmd) = cmd else { continue };
 
         match cmd {
             Command::SetParameter(p, v) => engine.set_parameter(p, v),
@@ -188,7 +199,7 @@ fn worker_loop(
                     // callback (upstream #2288 makes the same guarantee for the
                     // audio device).  Checking only between the `CHUNK_SAMPLES`
                     // pieces below let a whole clause through.
-                    if shared.state.lock().unwrap().cancel {
+                    if lock(&shared).cancel {
                         pending = None;
                         return true;
                     }
@@ -210,7 +221,7 @@ fn worker_loop(
             }
         }
 
-        let mut st = shared.state.lock().unwrap();
+        let mut st = lock(&shared);
         st.busy = false;
         if st.queue.is_empty() {
             shared.became_idle.notify_all();
@@ -248,14 +259,14 @@ fn stream_chunk(
     }
     let mut off = 0;
     while off < n {
-        if shared.state.lock().unwrap().cancel {
+        if lock(&shared).cancel {
             return true;
         }
         let end = (off + CHUNK_SAMPLES).min(n);
         let is_final = last && end == n;
         let stop = callback(AsyncChunk {
             text,
-            samples: &samples[off..end],
+            samples: samples.get(off..end).unwrap_or_default(),
             sample_rate,
             is_final,
             events: if is_final { events } else { &[] },
@@ -263,7 +274,7 @@ fn stream_chunk(
         off = end;
         if stop {
             // Callback asked to stop: drop the rest of the queue too.
-            shared.state.lock().unwrap().queue.clear();
+            lock(&shared).queue.clear();
             return true;
         }
     }

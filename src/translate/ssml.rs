@@ -32,6 +32,7 @@
 //! - `<phoneme alphabet="ipa">` — the `ph` attribute is passed through as
 //!   eSpeak phoneme mnemonics (the default `alphabet="espeak"`); IPA input is
 //!   not yet transliterated.
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::indexing_slicing))]
 
 /// Sentinel character emitted at SSML clause boundaries (`<break/>`, `</p>`,
 /// `</s>`).  Chosen from the Unicode Private Use Area so it never collides with
@@ -223,7 +224,7 @@ pub fn process_markup_opts(input: &str, break_mul: u32) -> (Vec<Segment>, Vec<Ma
     let mut i = 0;
 
     while i < n {
-        let c = chars[i];
+        let Some(&c) = chars.get(i) else { break };
 
         // ---- markup tag ------------------------------------------------
         if c == '<' {
@@ -235,8 +236,8 @@ pub fn process_markup_opts(input: &str, break_mul: u32) -> (Vec<Segment>, Vec<Ma
                 i = find_char(&chars, i + 1, '>').map(|p| p + 1).unwrap_or(n);
                 continue;
             }
-            let close = find_char(&chars, i + 1, '>').unwrap_or(n - 1);
-            let inner: String = chars[i + 1..close.min(n)].iter().collect();
+            let close = find_char(&chars, i + 1, '>').unwrap_or(n);
+            let inner: String = chars.iter().take(close).skip(i + 1).collect();
             i = (close + 1).min(n);
             w.apply_tag(&inner);
             continue;
@@ -244,7 +245,7 @@ pub fn process_markup_opts(input: &str, break_mul: u32) -> (Vec<Segment>, Vec<Ma
 
         // ---- entity ----------------------------------------------------
         if c == '&' {
-            if let Some((decoded, len)) = decode_entity(&chars[i..]) {
+            if let Some((decoded, len)) = decode_entity(chars.get(i..).unwrap_or_default()) {
                 for dc in decoded.chars() {
                     w.emit_char(dc);
                 }
@@ -467,7 +468,7 @@ impl Walker {
                 "x-strong" => 5,
                 _ => 2, // C's `if (value < 0) value = 2`
             };
-            ms = BREAK_VALUE[level];
+            ms = BREAK_VALUE.get(level).copied().unwrap_or_default();
             weak = level < 3;
         }
         if let Some(t) = get_attr(attrs, "time")
@@ -674,52 +675,51 @@ impl Walker {
 /// tolerated.  Namespaced names (`xml:lang`) match on the local part too.
 fn get_attr(attrs: &str, key: &str) -> Option<String> {
     let bytes: Vec<char> = attrs.chars().collect();
+    let at = |i: usize| bytes.get(i).copied();
+    let span = |from: usize, to: usize| bytes.iter().take(to).skip(from).collect::<String>();
     let mut i = 0;
-    while i < bytes.len() {
-        if !is_name_start(bytes[i]) {
+    while let Some(c) = at(i) {
+        if !is_name_start(c) {
             i += 1;
             continue;
         }
         let start = i;
-        while i < bytes.len() && is_name_char(bytes[i]) {
+        while at(i).is_some_and(is_name_char) {
             i += 1;
         }
-        let raw: String = bytes[start..i].iter().collect();
+        let raw = span(start, i);
         let local = raw.rsplit(':').next().unwrap_or(&raw);
         let matches = raw.eq_ignore_ascii_case(key) || local.eq_ignore_ascii_case(key);
 
-        while i < bytes.len() && bytes[i].is_whitespace() {
+        while at(i).is_some_and(char::is_whitespace) {
             i += 1;
         }
-        if i >= bytes.len() || bytes[i] != '=' {
+        if at(i) != Some('=') {
             continue;
         }
         i += 1;
-        while i < bytes.len() && bytes[i].is_whitespace() {
+        while at(i).is_some_and(char::is_whitespace) {
             i += 1;
         }
-        if i >= bytes.len() {
-            return None;
-        }
-        let quote = bytes[i];
+        let quote = at(i)?;
         if quote == '"' || quote == '\'' {
             i += 1;
             let vstart = i;
-            while i < bytes.len() && bytes[i] != quote {
+            while at(i).is_some_and(|c| c != quote) {
                 i += 1;
             }
-            let value: String = bytes[vstart..i.min(bytes.len())].iter().collect();
+            let value = span(vstart, i);
             if matches {
                 return Some(value);
             }
             i += 1;
         } else {
             let vstart = i;
-            while i < bytes.len() && !bytes[i].is_whitespace() {
+            while at(i).is_some_and(|c| !c.is_whitespace()) {
                 i += 1;
             }
             if matches {
-                return Some(bytes[vstart..i].iter().collect());
+                return Some(span(vstart, i));
             }
         }
     }
@@ -731,12 +731,12 @@ fn get_attr(attrs: &str, key: &str) -> Option<String> {
 /// Returns `(decoded, chars_consumed)` including the trailing `;`, or `None`
 /// if the text is not a recognised entity.
 fn decode_entity(s: &[char]) -> Option<(String, usize)> {
-    debug_assert_eq!(s[0], '&');
+    debug_assert_eq!(s.first(), Some(&'&'));
     let semi = s.iter().take(12).position(|&c| c == ';')?;
     if semi < 2 {
         return None;
     }
-    let body: String = s[1..semi].iter().collect();
+    let body: String = s.iter().take(semi).skip(1).collect();
     let decoded = if let Some(num) = body.strip_prefix('#') {
         let cp = if let Some(hex) = num.strip_prefix(['x', 'X']) {
             u32::from_str_radix(hex, 16).ok()?
@@ -777,7 +777,7 @@ fn starts_with(chars: &[char], at: usize, pat: &str) -> bool {
 }
 
 fn find_char(chars: &[char], from: usize, target: char) -> Option<usize> {
-    (from..chars.len()).find(|&k| chars[k] == target)
+    (from..chars.len()).find(|&k| chars.get(k) == Some(&target))
 }
 
 fn find_seq(chars: &[char], from: usize, pat: &str) -> Option<usize> {
@@ -786,7 +786,7 @@ fn find_seq(chars: &[char], from: usize, pat: &str) -> Option<usize> {
         return None;
     }
     (from..=chars.len().saturating_sub(pc.len()))
-        .find(|&k| pc.iter().enumerate().all(|(j, &p)| chars[k + j] == p))
+        .find(|&k| pc.iter().enumerate().all(|(j, p)| chars.get(k + j) == Some(p)))
 }
 
 // ===========================================================================

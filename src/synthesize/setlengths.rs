@@ -1,4 +1,5 @@
 //! Phoneme duration calculation — simplified port of `setlengths.c`.
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::indexing_slicing))]
 
 // src/synthesize/setlengths.rs
 //
@@ -18,6 +19,8 @@
 /// `speed_lookup` — words-per-minute (80–359) to eSpeak's internal speed
 /// factor, transcribed from `setlengths.c`.  A *larger* value means *longer*
 /// phonemes; 175 wpm (the default) maps to 87.
+use super::lang_prosody::LangProsody;
+use crate::bytes::Bounded;
 pub const SPEED_LOOKUP: [u8; 280] = [
     255, 255, 255, 255, 255, 253, 249, 245, 242, 238, // 80
     235, 232, 228, 225, 222, 218, 216, 213, 210, 207, // 90
@@ -54,7 +57,7 @@ pub fn speed_multiplier(wpm: u32) -> u32 {
     const MIN: u32 = 80;
     let wpm = wpm.min(450);
     let ix = wpm.clamp(MIN, 359) - MIN;
-    let mut x = SPEED_LOOKUP[ix as usize] as u32;
+    let mut x = SPEED_LOOKUP.get(ix as usize).copied().unwrap_or_default() as u32;
     if wpm >= 380 {
         x = 7;
     }
@@ -97,6 +100,55 @@ pub fn speed_duration_factor(wpm: u32) -> f64 {
 /// Indexed 0..7.  After the CalcLengths swap (stress 0↔1), stress=0 means
 /// "diminished" and stress=1 means "unstressed".
 pub const STRESS_LENGTHS_EN: [u32; 8] = [182, 140, 220, 220, 220, 240, 260, 280];
+
+/// The language's `stress_lengths`, transcribed from `tr_languages.c`; a zero
+/// stands for the primary-stress entry (index 6).
+pub fn stress_lengths_for(lang: &str) -> Option<[u32; 8]> {
+    let primary = lang.split('-').next().unwrap_or(lang);
+    Some(match primary {
+        "af" => [170, 140, 220, 220, 0, 0, 250, 270],
+        "am" | "fr" | "tt" => [190, 170, 190, 200, 0, 0, 190, 240],
+        "ro" | "rup" => [170, 170, 180, 180, 0, 0, 240, 260],
+        "be" => [160, 140, 200, 140, 0, 0, 240, 160],
+        "as" | "bn" | "bpy" => [180, 180, 210, 210, 0, 0, 230, 240],
+        "cy" => [170, 220, 180, 180, 0, 0, 250, 270],
+        "da" | "fo" | "nb" | "no" => [160, 140, 200, 200, 0, 0, 220, 230],
+        "de" => [150, 130, 200, 200, 0, 0, 270, 270],
+        "en" => [182, 140, 220, 220, 0, 0, 248, 275],
+        "el" | "grc" => [155, 180, 210, 210, 0, 0, 270, 300],
+        "eo" | "io" => [150, 140, 180, 180, 0, 0, 200, 200],
+        "an" | "ca" | "es" | "ia" | "pap" => [160, 145, 155, 150, 0, 0, 200, 245],
+        "eu" => [200, 200, 200, 200, 0, 0, 210, 230],
+        "gu" | "hi" | "mr" | "ne" | "or" | "pa" => [190, 190, 210, 210, 0, 0, 230, 250],
+        "bs" | "hr" | "sr" => [160, 150, 200, 200, 0, 0, 250, 260],
+        "hu" => [185, 195, 195, 190, 0, 0, 210, 220],
+        "hy" => [250, 200, 250, 250, 0, 0, 250, 250],
+        "id" | "ms" => [160, 200, 180, 180, 0, 0, 220, 240],
+        "is" => [180, 160, 200, 200, 0, 0, 240, 250],
+        "it" => [160, 140, 150, 165, 0, 0, 218, 305],
+        "jbo" => [145, 145, 170, 160, 0, 0, 330, 350],
+        "ka" | "si" => [200, 200, 210, 210, 0, 0, 230, 230],
+        "kk" => [190, 180, 230, 230, 0, 0, 250, 250],
+        "kl" => [230, 230, 230, 230, 0, 0, 230, 230],
+        "ku" => [180, 180, 190, 180, 0, 0, 230, 240],
+        "ltg" | "lv" => [180, 180, 180, 160, 0, 0, 230, 180],
+        "mk" => [180, 160, 200, 200, 0, 0, 220, 230],
+        "mn" => [190, 180, 220, 220, 0, 0, 260, 240],
+        "om" => [200, 200, 200, 200, 0, 0, 200, 200],
+        "pl" => [160, 190, 175, 175, 0, 0, 200, 210],
+        "pt" => [170, 115, 210, 240, 0, 0, 260, 280],
+        "cs" | "sk" => [190, 190, 210, 210, 0, 0, 210, 210],
+        "smj" => [150, 180, 200, 200, 0, 0, 210, 250],
+        "sq" => [150, 150, 180, 180, 0, 0, 300, 300],
+        "sv" => [160, 135, 220, 220, 0, 0, 250, 280],
+        "sw" | "tn" => [160, 170, 200, 200, 0, 0, 320, 340],
+        "kn" | "ml" | "ta" | "te" => [230, 230, 240, 240, 0, 0, 260, 260],
+        "az" | "tr" => [190, 180, 200, 230, 0, 0, 240, 250],
+        "vi" => [150, 150, 180, 180, 210, 230, 230, 240],
+        "cmn" | "yue" | "zh" => [230, 150, 230, 230, 230, 0, 240, 250],
+        _ => return None,
+    })
+}
 
 /// stress_amps2[stress] — amplitude weight (arbitrary units, 0–25).
 pub const STRESS_AMPS_EN: [u8; 8] = [18, 18, 20, 20, 20, 22, 22, 20];
@@ -160,6 +212,8 @@ pub const LENGTH_MODS_EN0: [u8; 100] = [
 
 /// Compute the length-modification factor for one vowel phoneme (English).
 ///
+/// [`vowel_length_mod`] does it for any language.
+///
 /// This mirrors the `phVOWEL` case in `CalcLengths()` from setlengths.c.
 ///
 /// # Parameters
@@ -167,7 +221,7 @@ pub const LENGTH_MODS_EN0: [u8; 100] = [
 ///                     0↔1 swap** that CalcLengths applies.
 /// * `next_lm`       — `ph->length_mod` of the **next** phoneme (0-9).
 /// * `next2_lm`      — `ph->length_mod` of the phoneme after that (0-9).
-/// * `more_syllables`— `false` if this is the **last syllable** of its word.
+/// * `more_syllables`— how many more syllables its word has.
 /// * `end_of_clause` — `true` if this is the last syllable before the
 ///                     clause boundary.
 /// * `std_length`    — `ph->std_length` of this vowel (in mS/2 units).
@@ -177,68 +231,169 @@ pub fn calc_vowel_length_mod(
     stress: u8,
     next_lm: u8,
     next2_lm: u8,
-    more_syllables: bool,
+    more_syllables: u8,
     end_of_clause: bool,
     std_length: u8,
     // The language's own `stressLength` table, when its voice file declares one
     // (upstream #1466 — twenty shipped languages do).  `None` = the built-in
     // English defaults.
     stress_lengths: Option<&[u32; 8]>,
+    // `len_speeds`: the speaking rate, 128 = 100% (see [`len_speeds`]).
+    speeds: [u32; 3],
 ) -> u32 {
-    let stress = (stress as usize).min(7);
+    let prosody = LangProsody {
+        stress_lengths: stress_lengths.copied().unwrap_or(STRESS_LENGTHS_EN),
+        ..LangProsody::default()
+    };
+    vowel_length_mod(
+        &VowelContext {
+            stress,
+            next_lm,
+            next2_lm,
+            more_syllables,
+            end_of_clause,
+            std_length,
+            next_newword: false,
+            tone_percent: 0,
+        },
+        &prosody,
+        speeds,
+    )
+}
 
-    // Choose table based on syllable position
-    let table = if more_syllables {
+/// What a vowel's length depends on (see [`calc_vowel_length_mod`]).
+#[derive(Debug, Clone, Copy)]
+pub struct VowelContext {
+    pub stress: u8,
+    pub next_lm: u8,
+    pub next2_lm: u8,
+    pub more_syllables: u8,
+    pub end_of_clause: bool,
+    pub std_length: u8,
+    /// The next phoneme starts a word.
+    pub next_newword: bool,
+    /// What its tone makes of the length, in percent; 0 = nothing.
+    pub tone_percent: u32,
+}
+
+/// The length modifier of a vowel: the `phVOWEL` case of `CalcLengths`.
+pub fn vowel_length_mod(vowel: &VowelContext, prosody: &LangProsody, speeds: [u32; 3]) -> u32 {
+    let stress = usize::from(vowel.stress.min(7));
+    let table = if vowel.more_syllables > 0 || prosody.same_length_mods {
         &LENGTH_MODS_EN
     } else {
         &LENGTH_MODS_EN0
     };
-    let n2 = (next2_lm as usize).min(9);
-    let n1 = (next_lm as usize).min(9);
-    let base_mod = table[n2 * 10 + n1] as u32;
+    let lookup = |next2: u8, next: u8| {
+        let ix = usize::from(next2.min(9)) * 10 + usize::from(next.min(9));
+        u32::from(table.get(ix).copied().unwrap_or(100))
+    };
+    let mut length_mod = lookup(vowel.next2_lm, vowel.next_lm);
+    if vowel.more_syllables == 0 && vowel.next_newword && prosody.word_gap & 0x20 != 0 {
+        // Treated as a pause followed by the next word.
+        length_mod = (length_mod + lookup(vowel.next_lm, 1)) / 2;
+    }
+    let speed = match vowel.more_syllables {
+        0 => speeds[0],
+        1 => speeds[1],
+        _ => speeds[2],
+    };
+    let mut length_mod = (length_mod * speed / 128).max(8);
 
-    // Apply stress-length factor
-    let stress_len = stress_lengths.unwrap_or(&STRESS_LENGTHS_EN)[stress];
-    let mut length_mod = base_mod * stress_len / 128;
-
-    // Tonic syllable: add constant component (lengthen_tonic)
+    // Tonic syllable: a constant part, which doesn't shrink with the rate.
     if stress >= 7 {
-        length_mod += LENGTHEN_TONIC_EN;
+        length_mod += prosody.lengthen_tonic;
     }
-
-    // End-of-clause lengthening
-    if end_of_clause {
-        let len = (std_length as u32) * 2; // std_length is in mS/2 units
-        let eoc_num = 280u32.saturating_sub(len);
-        length_mod = length_mod * (256 + eoc_num / 3) / 256;
+    // A zero stands for the primary-stress entry.
+    length_mod *= match prosody.stress_lengths.at(stress) {
+        0 => prosody.stress_lengths[6],
+        n => n,
+    };
+    if vowel.tone_percent > 0 {
+        length_mod = length_mod * vowel.tone_percent / 100;
     }
-
-    // Clamp: minimum 8, maximum 500 × speed_factor (at default speed = 1.0)
-    length_mod.clamp(8, 500)
+    if vowel.end_of_clause && !prosody.no_eoc_lengthen {
+        // (Negative for a vowel longer than 280 ms, as in C.)
+        let len = if prosody.eoc_lengthen_evenly {
+            200
+        } else {
+            i32::from(vowel.std_length) * 2
+        };
+        let eoc = 256 + (280 - len) / 3;
+        length_mod = length_mod * u32::try_from(eoc).unwrap_or(0) / 256;
+    }
+    length_mod.min(prosody.max_length_mod * speeds[0]) / 128
 }
 
-/// Convert a vowel length_mod to total PCM samples.
+/// The length in ms of the main part of a vowel, before its length modifier.
 ///
-/// This mirrors the formula in `LookupSpect()` + `DoSpect2()`:
-///   `total_samples = (length_mod - 45) * samplerate/1000 * length_mod/256`
-///
-/// The result is then scaled by `speed_factor` (100/speed_percent).
-pub fn length_mod_to_samples(length_mod: u32, samplerate: u32, speed_factor: f64) -> usize {
-    if length_mod <= 45 {
-        return 0;
-    }
-    let length_std = length_mod - 45;
-    // total = length_std_ms * samplerate/1000 * length_mod/256
-    let total = (length_std as f64 / 1000.0)
-        * samplerate as f64
-        * (length_mod as f64 / 256.0)
-        * speed_factor;
-    total.round() as usize
+/// Mirrors `LookupSpect()`: the standard length less the 45 ms its front part
+/// accounts for.  `std_ms` is C's `fmt_params->std_length`, twice the phoneme's
+/// `std_length`; `extra_ms` is added by a following `:`.
+pub fn vowel_body_ms(std_ms: u32, extra_ms: u32) -> u32 {
+    std_ms.saturating_sub(45).max(10) + extra_ms
 }
 
 // ---------------------------------------------------------------------------
 // stress_to_espeak_level — map our code-stream stress codes → espeak level
 // ---------------------------------------------------------------------------
+
+/// C's `len_speeds`: the rate factors for a word's last, second-last and
+/// earlier syllables (`SetSpeedFactors`, with the default voice's 256/238/232).
+pub fn len_speeds(wpm: u32) -> [u32; 3] {
+    let x = speed_multiplier(wpm);
+    if x <= 7 {
+        return [x, x - 1, x - 1];
+    }
+    [x, x * 238 / 256, x * 232 / 256]
+}
+
+/// `speed.wav_factor` / 256, for recorded sounds and the pauses before consonants.
+pub fn wav_factor(wpm: u32) -> f64 {
+    let x = speed_multiplier(wpm);
+    let factor = if wpm >= 170 {
+        110 + 150 * x / 128
+    } else {
+        128 + 128 * x / 130
+    };
+    f64::from(factor) / 256.0
+}
+
+/// `speed.pause_factor` / 256, for pause phonemes.
+pub fn pause_factor(wpm: u32) -> f64 {
+    f64::from((256 * speed_multiplier(wpm) / 115).max(12)) / 256.0
+}
+
+/// `speed.clause_pause_factor` / 256: as [`pause_factor`], but no less than 16.
+pub fn clause_pause_factor(wpm: u32) -> f64 {
+    pause_factor(wpm).max(16.0 / 256.0)
+}
+
+/// The speaking rate whose [`speed_duration_factor`] is closest to `factor`.
+pub fn wpm_for_duration_factor(factor: f64) -> u32 {
+    (80..=450)
+        .min_by(|&a, &b| {
+            let miss = |wpm| (speed_duration_factor(wpm) - factor).abs();
+            miss(a).total_cmp(&miss(b))
+        })
+        .unwrap_or(175)
+}
+
+/// The `stress_lengths` index for a stress-marker code, with `CalcLengths`'
+/// swap of diminished (1) and unstressed (0).  Primary stress is 6 here, as the
+/// pitch pass has raised it (`PRIMARY_STRESSED`) by then.
+pub fn stress_code_to_length_level(code: u8) -> u8 {
+    use crate::phoneme::{
+        PHON_STRESS_2, PHON_STRESS_3, PHON_STRESS_D, PHON_STRESS_P, PHON_STRESS_P2,
+    };
+    match code {
+        PHON_STRESS_D => 1,
+        PHON_STRESS_2 => 2,
+        PHON_STRESS_3 => 3,
+        PHON_STRESS_P | PHON_STRESS_P2 => 6,
+        _ => 0,
+    }
+}
 
 /// Map the stress-marker phoneme code (2–7) to the espeak-ng stress level (0–7).
 ///
@@ -287,21 +442,20 @@ mod tests {
     #[test]
     fn primary_stress_eoc_gives_long_vowel() {
         // oU at end of clause, stress=7 (tonic), std_length=110
-        let length_mod = calc_vowel_length_mod(7, 1, 1, false, true, 110, None);
-        // Expected: >= 300 (several hundred ms)
+        let length_mod = calc_vowel_length_mod(7, 1, 1, 0, true, 110, None, len_speeds(175));
+        // C's own value for the last vowel of "hello" is 280.
         assert!(
-            length_mod >= 300,
+            (270..=290).contains(&length_mod),
             "tonic EOC vowel should be long: {length_mod}"
         );
-        let samp = length_mod_to_samples(length_mod, 22050, 1.0);
-        assert!(samp > 5000, "tonic EOC vowel > 200ms: {samp}");
+        assert_eq!(vowel_body_ms(220, 0), 175);
     }
 
     #[test]
     fn unstressed_vowel_is_short() {
         // @ schwa, stress=1 (after swap = 0), not last syllable, not EOC
-        let length_mod = calc_vowel_length_mod(1, 7, 0, true, false, 60, None);
-        let samp = length_mod_to_samples(length_mod, 22050, 1.0);
+        let length_mod = calc_vowel_length_mod(1, 7, 0, 1, false, 60, None, len_speeds(175));
+        let samp = vowel_body_ms(120, 0) * 22050 / 1000 * length_mod / 256;
         // Should be < 100ms
         assert!(samp < 2205, "unstressed schwa should be short: {samp}");
     }

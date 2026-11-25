@@ -31,7 +31,22 @@ exclude = [
     "espeak-ng-data/**",
     "benches/results/**",
     "scripts/__pycache__/**",
+    "fuzz/**",
 ]
+
+# ---------------------------------------------------------------------------
+# Lints
+# ---------------------------------------------------------------------------
+# Denied: the library must not panic on any input.  Use `get`, or
+# `bytes::Bounded::{at, put}` for an index already bounded.  The few functions
+# that walk lists of structs by index carry an `#[expect]` with the reason.
+[lints.clippy]
+unwrap_used = "deny"
+indexing_slicing = "deny"
+
+# Arithmetic overflow must fail a test, whatever the dev profile says.
+[profile.test]
+overflow-checks = true
 
 # ---------------------------------------------------------------------------
 # Library

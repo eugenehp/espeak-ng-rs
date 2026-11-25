@@ -35,6 +35,7 @@
 //! engine.set_parameter(espeak_ng::Parameter::Pitch, 60);
 //! # Ok::<(), espeak_ng::Error>(())
 //! ```
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::indexing_slicing))]
 
 use std::path::{Path, PathBuf};
 
@@ -1060,12 +1061,21 @@ impl EspeakNg {
     }
 
     fn make_voice_params_levels(&self, rate: u32, pitch: u32, volume: u32) -> VoiceParams {
+        let variant = self
+            .voice_spec
+            .variant
+            .as_ref()
+            .and_then(|name| crate::voices::load_variant(&self.data_dir, name));
+        let language = crate::voices::voice_acoustics(&self.data_dir, self.voice_spec.effective_lang());
         // Map rate (wpm) to `speed_percent` through upstream's `speed_lookup`
         // curve rather than linearly: `175 / wpm` over-stretched below ~100 wpm,
         // where upstream's curve flattens towards its 80 wpm floor.  A larger
         // duration factor means a *smaller* `speed_percent`.
+        // The voice's own `speed <percent>` scales the rate.
+        let speed = variant.as_ref().or(language.as_ref()).and_then(|vp| vp.speed);
+        let rate_spoken = rate.saturating_mul(speed.filter(|&s| s > 0).unwrap_or(100)) / 100;
         let speed_percent = {
-            let f = crate::synthesize::setlengths::speed_duration_factor(rate);
+            let f = crate::synthesize::setlengths::speed_duration_factor(rate_spoken);
             ((100.0 / f).round() as u32).clamp(20, 800)
         };
         // `speed_duration_factor` already carries the calibration, so the
@@ -1105,47 +1115,109 @@ impl EspeakNg {
         // Apply a `+variant` voice's acoustic modifiers (pitch + per-formant
         // frequency/height/width scaling), if one is selected and its file
         // parses.  The no-variant path is unchanged.
-        let mut formant_freq_pct = [100i32; 7];
-        let mut formant_height_pct = [100i32; 7];
-        let mut formant_width_pct = [100i32; 7];
+        let mut formants = crate::synthesize::wavegen::FormantScale::default();
+        let defaults = VoiceParams::default();
+        let (mut roughness, mut flutter_amp) = (defaults.roughness, defaults.flutter_amp);
+        let (mut breath, mut breathw) = (defaults.breath, defaults.breathw);
+        let mut consonant_amp = defaults.consonant_amp;
         let (mut echo_delay_samples, mut echo_amp) = (0usize, 0i32);
-        let mut flutter = 0i32;
+        let mut klatt = None;
+        let mut voicing = 64;
+        let mut stress_length = Vec::new();
+        let mut stress_add = [0i32; 8];
         let mut stress_amps = [0i32; 8];
         let mut tone_adjust = crate::synthesize::wavegen::set_tone_adjust(
             &crate::synthesize::wavegen::DEFAULT_TONE_POINTS,
         );
-        if let Some(var) = &self.voice_spec.variant {
-            if let Some(vp) = crate::voices::load_variant(&self.data_dir, var) {
-                pitch_hz = variant_scaled_pitch(pitch_hz, &vp);
-                if let Some((p1, _)) = vp.pitch {
-                    let factor = (p1 as f64 - DEFAULT_PITCH1) / DEFAULT_PITCH1;
-                    formant_factor = ((1.0 + factor / 4.0) * 256.0).round() as i32;
+        if let Some(vp) = &variant {
+            pitch_hz = variant_scaled_pitch(pitch_hz, vp);
+            if let Some((p1, _)) = vp.pitch {
+                let factor = (p1 as f64 - DEFAULT_PITCH1) / DEFAULT_PITCH1;
+                formant_factor = ((1.0 + factor / 4.0) * 256.0).round() as i32;
+            }
+        }
+        // The stress settings add up; a variant resets the rest (`VoiceReset`).
+        for vp in language.iter().chain(&variant) {
+            for (amp, &a) in stress_amps.iter_mut().zip(&vp.stress_amp) {
+                *amp = a.max(0);
+            }
+            for (to, &x) in stress_add.iter_mut().zip(&vp.stress_add) {
+                *to += x.clamp(-1000, 1000);
+            }
+        }
+        if let Some(vp) = &variant {
+            stress_length.clone_from(&vp.stress_length);
+        }
+        if let Some(vp) = variant.or(language) {
+            for f in &vp.formants {
+                formants.set(f.index.into(), f.freq, f.height, f.width, f.freq_add);
+            }
+            if let Some((delay_ms, amp)) = vp.echo {
+                if delay_ms > 0 && amp > 0 {
+                    echo_delay_samples =
+                        (self.sample_rate() as i64 * delay_ms as i64 / 1000).max(0) as usize;
+                    // `WavegenSetEcho`: at most 100/256 of the sound.
+                    echo_amp = amp.min(100);
                 }
-                variant_formant_pct(
-                    &mut formant_freq_pct,
-                    &mut formant_height_pct,
-                    &mut formant_width_pct,
-                    &vp,
-                );
-                if let Some((delay_ms, amp)) = vp.echo {
-                    if delay_ms > 0 && amp > 0 {
-                        echo_delay_samples =
-                            (self.sample_rate() as i64 * delay_ms as i64 / 1000).max(0) as usize;
-                        echo_amp = amp;
-                    }
-                }
-                flutter = vp.flutter.unwrap_or(0).max(0);
-                for (i, &a) in vp.stress_amp.iter().take(8).enumerate() {
-                    stress_amps[i] = a.max(0);
-                }
-                if let Some(points) = vp.tone {
-                    tone_adjust = crate::synthesize::wavegen::set_tone_adjust(&points);
-                }
+            }
+            klatt = vp.klatt.filter(|source| (1..=6).contains(source));
+            voicing = vp.voicing.map_or(64, |percent| percent.clamp(0, 1000) * 64 / 100);
+            if let Some(flutter) = vp.flutter {
+                flutter_amp = flutter.clamp(0, 1000) * 32;
+            }
+            if let Some(value) = vp.roughness {
+                roughness = usize::try_from(value).unwrap_or(0).min(7);
+            }
+            consonant_amp = vp.consonants.unwrap_or(consonant_amp).clamp(0, 400);
+            for (i, (to, &value)) in breath.iter_mut().skip(1).zip(&vp.breath).enumerate() {
+                // Alternate formants have opposite signs.
+                let value = value.clamp(-1000, 1000);
+                *to = if i % 2 == 0 { -value } else { value };
+            }
+            for (to, &value) in breathw.iter_mut().skip(1).zip(&vp.breathw) {
+                *to = value.clamp(0, 10_000);
+            }
+            if let Some(points) = vp.tone {
+                tone_adjust = crate::synthesize::wavegen::set_tone_adjust(&points);
             }
         }
 
         // Map volume (0–200) to amplitude (0–100)
         let amplitude = (volume / 2).clamp(0, 100);
+
+        let stress_lengths = crate::voices::voice_stress_length(
+                &self.data_dir,
+                self.voice_spec.effective_lang(),
+            )
+            .and_then(|v| {
+                let mut out = [0u32; 8];
+                // C reads eight values; a short list leaves the rest at the
+                // English default rather than at zero.
+                out.copy_from_slice(&crate::synthesize::setlengths::STRESS_LENGTHS_EN);
+                for (to, &x) in out.iter_mut().zip(&v) {
+                    *to = x.max(0) as u32;
+                }
+                (v.len() >= 8).then_some(out)
+            })
+            .or_else(|| {
+                crate::synthesize::setlengths::stress_lengths_for(
+                    self.voice_spec.effective_lang(),
+                )
+            });
+        // A variant's `stressLength` replaces entries, `stressAdd` adds to them.
+        let stress_lengths = if stress_length.is_empty() && stress_add == [0; 8] {
+            stress_lengths
+        } else {
+            let mut table =
+                stress_lengths.unwrap_or(crate::synthesize::setlengths::STRESS_LENGTHS_EN);
+            for (to, &x) in table.iter_mut().zip(&stress_length) {
+                *to = u32::try_from(x).unwrap_or(0);
+            }
+            for (to, &x) in table.iter_mut().zip(&stress_add) {
+                *to = to.saturating_add_signed(x);
+            }
+            Some(table)
+        };
 
         VoiceParams {
             speed_percent,
@@ -1160,20 +1232,10 @@ impl EspeakNg {
             formant_factor,
             // `stressLength <l0…l7>` from the language's voice file, when it
             // declares one (the built-in table is English's).
-            stress_lengths: crate::voices::voice_stress_length(
-                &self.data_dir,
+            stress_lengths,
+            prosody: crate::synthesize::lang_prosody::LangProsody::for_lang(
                 self.voice_spec.effective_lang(),
-            )
-            .and_then(|v| {
-                let mut out = [0u32; 8];
-                // C reads eight values; a short list leaves the rest at the
-                // English default rather than at zero.
-                out.copy_from_slice(&crate::synthesize::setlengths::STRESS_LENGTHS_EN);
-                for (i, &x) in v.iter().take(8).enumerate() {
-                    out[i] = x.max(0) as u32;
-                }
-                (v.len() >= 8).then_some(out)
-            }),
+            ),
             // `intonation <n>` from the language's voice file, when it sets one
             // (upstream #1466: read the language configuration from data).
             // `intonation <n>` from the language's voice file, when it sets one
@@ -1185,12 +1247,17 @@ impl EspeakNg {
             .map(usize::from)
             .unwrap_or(1),
             tone_adjust,
-            formant_freq_pct,
-            formant_height_pct,
-            formant_width_pct,
+            formants,
             echo_delay_samples,
             echo_amp,
-            flutter,
+            klatt: klatt.is_some(),
+            klatt_source: klatt.unwrap_or(1),
+            voicing,
+            roughness,
+            flutter_amp,
+            breath,
+            breathw,
+            consonant_amp,
             stress_amps,
             ..VoiceParams::default()
         }
@@ -1276,34 +1343,6 @@ fn word_char_offsets(text: &str) -> Vec<usize> {
         in_word = is_word;
     }
     offsets
-}
-
-/// Copy a `+variant`'s per-formant `formant <i> <freq%> <height%> [width%]`
-/// percentages into the `[i32; 7]` scale arrays read by the harmonic synthesizer
-/// (F0–F6).  This is the `voice.freq/height/width[i]` mapping of `voices.c`;
-/// formants the variant does not mention keep 100 (unity), and each field is
-/// clamped to a sane range (25–400 %).
-fn variant_formant_pct(
-    freq: &mut [i32; 7],
-    height: &mut [i32; 7],
-    width: &mut [i32; 7],
-    variant: &crate::voices::VariantParams,
-) {
-    for f in &variant.formants {
-        let i = f.index as usize;
-        if i >= freq.len() {
-            continue;
-        }
-        if f.freq > 0 {
-            freq[i] = f.freq.clamp(25, 400);
-        }
-        if f.height > 0 {
-            height[i] = f.height.clamp(25, 400);
-        }
-        if f.width > 0 {
-            width[i] = f.width.clamp(25, 400);
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1409,52 +1448,6 @@ mod tests {
         assert_eq!(b.rate, 175);
         assert_eq!(b.pitch, 50);
         assert_eq!(b.volume, 100);
-    }
-
-    #[test]
-    fn variant_formant_pct_maps_variant_formants() {
-        use crate::voices::{VariantFormant, VariantParams};
-        let (mut freq, mut height, mut width) = ([100i32; 7], [100i32; 7], [100i32; 7]);
-        let vp = VariantParams {
-            formants: vec![
-                VariantFormant {
-                    index: 1,
-                    freq: 120,
-                    height: 75,
-                    width: 150,
-                },
-                VariantFormant {
-                    index: 2,
-                    freq: 135,
-                    height: 70,
-                    width: 160,
-                },
-                VariantFormant {
-                    index: 9,
-                    freq: 110,
-                    height: 70,
-                    width: 150,
-                }, // out of range
-                VariantFormant {
-                    index: 3,
-                    freq: 0,
-                    height: 80,
-                    width: 0,
-                }, // freq/width 0 → skip those
-            ],
-            ..Default::default()
-        };
-        variant_formant_pct(&mut freq, &mut height, &mut width, &vp);
-        assert_eq!(freq[1], 120);
-        assert_eq!((height[2], width[2]), (70, 160));
-        assert_eq!(freq[0], 100, "untouched formant stays unity");
-        assert_eq!(freq[3], 100, "freq 0 leaves unity");
-        assert_eq!(
-            (height[3], width[3]),
-            (80, 100),
-            "height applies, width 0 skipped"
-        );
-        assert_eq!(freq[6], 100, "out-of-range index ignored (no panic)");
     }
 
     #[test]

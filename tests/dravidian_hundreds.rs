@@ -81,7 +81,7 @@ fn malayalam_bare_one_hundred() {
 
 // The exact-thousands variant `_0M{n}x`: a round N000 uses a distinct scale word
 // vs. one spoken before more digits — Tamil "ஆயிரம்" (āyiram) vs "ஆயிரத்தி"
-// (āyiratti), Malayalam likewise; and several of these languages also drop the
+// (āyiratti), Malayalam likewise (C reduces the final vowel: `ˈaːjiɹəm`); and several of these languages also drop the
 // "one" before "thousand".  Confirmed against the espeak-ng C binary.
 #[test]
 fn exact_thousand_variant() {
@@ -90,7 +90,7 @@ fn exact_thousand_variant() {
         // Round thousand → bare "āyiram", no leading "onru".
         assert!(
             ipa("1000").contains("aːj")
-                && ipa("1000").ends_with("ʌm")
+                && ipa("1000").ends_with("əm")
                 && !ipa("1000").contains("onrʉ"),
             "ta 1000 = 'āyiram': {}",
             ipa("1000")
@@ -110,7 +110,7 @@ fn exact_thousand_variant() {
     if let Some(t) = tr("ml") {
         let ipa = |s: &str| t.text_to_ipa(s).unwrap();
         assert!(
-            ipa("1000").ends_with("ɐm") && !ipa("1000").starts_with("onn"),
+            ipa("1000").ends_with("əm") && !ipa("1000").starts_with("onn"),
             "ml 1000 = 'āyiram': {}",
             ipa("1000")
         );

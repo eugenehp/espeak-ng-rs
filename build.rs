@@ -1,3 +1,6 @@
+// A build script may panic: that is how it reports an error.
+#![allow(clippy::unwrap_used, clippy::indexing_slicing)]
+
 // build.rs
 //
 // Handles two optional features:

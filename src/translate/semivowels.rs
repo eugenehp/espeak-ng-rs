@@ -16,6 +16,7 @@
 //! stressed syllable: `nyˈi` → `nˈɥi`.
 //!
 //! [`text_to_ipa`]: crate::text_to_ipa
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::indexing_slicing))]
 
 const VOWELS: &[char] = &['i', 'e', 'ɛ', 'a', 'ɑ', 'o', 'ɔ', 'u', 'y', 'ø', 'œ', 'ə'];
 const STRESS: &[char] = &['ˈ', 'ˌ'];
@@ -34,8 +35,8 @@ pub fn french_semivowels(ipa: &str) -> String {
     let chars: Vec<char> = ipa.chars().collect();
     let mut out = String::with_capacity(ipa.len() + 4);
     let mut i = 0;
-    while i < chars.len() {
-        if chars[i] == 'y' {
+    while let Some(&c) = chars.get(i) {
+        if c == 'y' {
             // The next sound in the same word, past a stress mark.
             let mut j = i + 1;
             let stress = chars.get(j).copied().filter(|c| STRESS.contains(c));
@@ -44,7 +45,9 @@ pub fn french_semivowels(ipa: &str) -> String {
             }
             let next = chars.get(j).copied();
             // Two sounds before: an obstruent then a liquid.
-            let cluster = i >= 2 && LIQUIDS.contains(&chars[i - 1]) && OBSTRUENTS.contains(&chars[i - 2]);
+            let before = |n: usize| i.checked_sub(n).and_then(|k| chars.get(k));
+            let cluster = before(1).is_some_and(|c| LIQUIDS.contains(c))
+                && before(2).is_some_and(|c| OBSTRUENTS.contains(c));
             let glide = match next {
                 Some('i') => true,
                 Some(v) if VOWELS.contains(&v) => !cluster,
@@ -59,7 +62,7 @@ pub fn french_semivowels(ipa: &str) -> String {
                 continue;
             }
         }
-        out.push(chars[i]);
+        out.push(c);
         i += 1;
     }
     out

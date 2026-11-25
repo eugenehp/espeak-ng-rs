@@ -212,7 +212,7 @@ impl Pcm {
         let mut out = Vec::new();
         let mut start = 0;
         while start + frame <= self.samples.len() {
-            let win: Vec<f64> = self.samples[start..start + frame]
+            let win: Vec<f64> = self.samples.get(start..start + frame).unwrap_or_default()
                 .iter()
                 .map(|&s| s as f64)
                 .collect();
@@ -461,8 +461,8 @@ pub fn spectral_similarity(a: &Pcm, b: &Pcm, fft_size: usize, hop: usize) -> f32
     }
     // Log-magnitude de-emphasises the dominant low-frequency peaks so the
     // comparison reflects overall spectral shape, not just the loudest band.
-    let la: Vec<f32> = sa[..n].iter().map(|&m| (m + 1e-6).ln()).collect();
-    let lb: Vec<f32> = sb[..n].iter().map(|&m| (m + 1e-6).ln()).collect();
+    let la: Vec<f32> = sa.get(..n).unwrap_or_default().iter().map(|&m| (m + 1e-6).ln()).collect();
+    let lb: Vec<f32> = sb.get(..n).unwrap_or_default().iter().map(|&m| (m + 1e-6).ln()).collect();
     pearson(&la, &lb)
 }
 

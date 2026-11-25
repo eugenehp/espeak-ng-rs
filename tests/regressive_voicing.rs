@@ -20,8 +20,8 @@ fn assimilation_crosses_the_word_boundary() {
     // Polish (0x09) and Czech (0x03): the /s/ of "minus" voices before "b".
     if let Some(pl) = tr("pl") {
         assert_eq!(pl.text_to_ipa("minus b").unwrap(), "mˈinuz bˈɛ");
-        // 0x08: it propagates through a liquid, so "kciuk w górę" ends in /ɡ/.
-        assert_eq!(pl.text_to_ipa("kciuk w górę").unwrap(), "ktɕˈuɡ w ɡˈurɛ");
+        // 0x08: it propagates through, so "kciuk w górę" ends in /ɡ/.
+        assert_eq!(pl.text_to_ipa("kciuk w górę").unwrap(), "ktɕˈuɡ v ɡˈurɛ");
     }
     if let Some(cs) = tr("cs") {
         assert_eq!(cs.text_to_ipa("minus b").unwrap(), "mˈinuz bˈeː");

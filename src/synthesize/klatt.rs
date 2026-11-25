@@ -22,11 +22,12 @@
 //!
 //! Divergences from C are listed on [`synthesize_frames_klatt`] and in GAPS §1.2.
 
+use crate::bytes::Bounded;
 use std::f64::consts::PI;
 
 /// A second-order digital resonator (Klatt `setabc` / `resonator`): a pole pair
 /// at `freq` with the given bandwidth.
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Default)]
 struct Resonator {
     a: f64,
     b: f64,
@@ -451,6 +452,35 @@ const STEPSIZE: usize = 64;
 /// `scale_wav_tab` — output scaling per voicing source.
 const SCALE_WAV_TAB: [f64; 6] = [45.0, 38.0, 45.0, 45.0, 55.0, 45.0];
 
+/// Glottal pulses sampled from real voices (sources 3 and 4).
+static NATURAL_SAMPLES: [i16; 100] = [
+    -310, -400, 530, 356, 224, 89, 23, -10, -58, -16, 461, 599, 536, 701, 770, 605, 497, 461, 560,
+    404, 110, 224, 131, 104, -97, 155, 278, -154, -1165, -598, 737, 125, -592, 41, 11, -247, -10,
+    65, 92, 80, -304, 71, 167, -1, 122, 233, 161, -43, 278, 479, 485, 407, 266, 650, 134, 80, 236,
+    68, 260, 269, 179, 53, 140, 275, 293, 296, 104, 257, 152, 311, 182, 263, 245, 125, 314, 140,
+    44, 203, 230, -235, -286, 23, 107, 92, -91, 38, 464, 443, 176, 98, -784, -2449, -1891, -1045,
+    -1600, -1462, -1384, -1261, -949, -730,
+];
+
+static NATURAL_SAMPLES2: [i16; 256] = [
+    2583, 2516, 2450, 2384, 2319, 2254, 2191, 2127, 2067, 2005, 1946, 1890, 1832, 1779, 1726,
+    1675, 1626, 1579, 1533, 1491, 1449, 1409, 1372, 1336, 1302, 1271, 1239, 1211, 1184, 1158,
+    1134, 1111, 1089, 1069, 1049, 1031, 1013, 996, 980, 965, 950, 936, 921, 909, 895, 881, 869,
+    855, 843, 830, 818, 804, 792, 779, 766, 754, 740, 728, 715, 702, 689, 676, 663, 651, 637, 626,
+    612, 601, 588, 576, 564, 552, 540, 530, 517, 507, 496, 485, 475, 464, 454, 443, 434, 424, 414,
+    404, 394, 385, 375, 366, 355, 347, 336, 328, 317, 308, 299, 288, 280, 269, 260, 250, 240, 231,
+    220, 212, 200, 192, 181, 172, 161, 152, 142, 133, 123, 113, 105, 94, 86, 76, 67, 57, 49, 39,
+    30, 22, 11, 4, -5, -14, -23, -32, -41, -50, -60, -69, -78, -87, -96, -107, -115, -126, -134,
+    -144, -154, -164, -174, -183, -193, -203, -213, -222, -233, -242, -252, -262, -271, -281,
+    -291, -301, -310, -320, -330, -339, -349, -357, -368, -377, -387, -397, -406, -417, -426,
+    -436, -446, -456, -467, -477, -487, -499, -509, -521, -532, -543, -555, -567, -579, -591,
+    -603, -616, -628, -641, -653, -666, -679, -692, -705, -717, -732, -743, -758, -769, -783,
+    -795, -808, -820, -834, -845, -860, -872, -885, -898, -911, -926, -939, -955, -968, -986,
+    -999, -1018, -1034, -1054, -1072, -1094, -1115, -1138, -1162, -1188, -1215, -1244, -1274,
+    -1307, -1340, -1377, -1415, -1453, -1496, -1538, -1584, -1631, -1680, -1732, -1783, -1839,
+    -1894, -1952, -2010, -2072, -2133, -2196, -2260, -2325, -2390, -2456, -2522, -2589,
+];
+
 /// `DBtoLIN` — a dB value in 0..=87 to a linear amplitude.
 fn db_to_lin(db: i32) -> f64 {
     const AMPTABLE: [i32; 88] = [
@@ -463,7 +493,7 @@ fn db_to_lin(db: i32) -> f64 {
     if !(0..88).contains(&db) {
         return 0.0;
     }
-    AMPTABLE[db as usize] as f64 * 0.001
+    AMPTABLE.at(db as usize) as f64 * 0.001
 }
 
 /// espeak's `espeak_rand` (common.c) — a glibc-style LCG, reproduced exactly
@@ -603,7 +633,7 @@ impl Klatt {
     fn new(sample_rate: u32) -> Self {
         let samrate = sample_rate as f64;
         let mut k = Klatt {
-            rsn: [Resonator::default(); N_RSN],
+            rsn: std::array::from_fn(|_| Resonator::default()),
             samrate,
             minus_pi_t: -PI / samrate,
             two_pi_t: 2.0 * PI / samrate,
@@ -650,6 +680,7 @@ impl Klatt {
     }
 
     /// `setabc` at the synthesizer's own sample rate.
+    #[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
     fn set_abc(&mut self, ix: usize, f: i32, bw: i32) {
         let r = (self.minus_pi_t * bw as f64).exp();
         self.rsn[ix].c = -(r * r);
@@ -657,7 +688,13 @@ impl Klatt {
         self.rsn[ix].a = 1.0 - self.rsn[ix].b - self.rsn[ix].c;
     }
 
+    /// Run resonator `ix`, which keeps its own history.
+    fn resonate_at(&mut self, ix: usize, input: f64) -> f64 {
+        self.rsn.get_mut(ix).map_or(input, |r| r.resonate(input))
+    }
+
     /// `setzeroabc` — an ordinary resonator at `-f`, then inverted.
+    #[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
     fn set_zero_abc(&mut self, ix: usize, f: i32, bw: i32) {
         self.set_abc(ix, -f, bw);
         let r = &mut self.rsn[ix];
@@ -671,6 +708,7 @@ impl Klatt {
     }
 
     /// `frame_init` — derive per-block amplitudes and resonator coefficients.
+    #[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
     fn frame_init(&mut self, frame: &mut KtFrame) {
         const AMP_PAR_FACTOR: [f64; 7] = [0.6, 0.4, 0.15, 0.06, 0.04, 0.022, 0.03];
 
@@ -685,7 +723,7 @@ impl Klatt {
 
         let mut amp_par = [0.0f64; 7];
         for ix in 0..7 {
-            amp_par[ix] = db_to_lin(frame.ap[ix]) * AMP_PAR_FACTOR[ix];
+            amp_par.put(ix, db_to_lin(frame.ap.at(ix)) * AMP_PAR_FACTOR.at(ix));
         }
 
         let mut gain0 = frame.gain0 - 3;
@@ -696,14 +734,14 @@ impl Klatt {
 
         // Cascade formants 1..8 plus the nasal pole.
         for ix in R1C..=RNPC {
-            self.set_abc(ix, frame.fhz[ix], frame.bhz[ix]);
+            self.set_abc(ix, frame.fhz.at(ix), frame.bhz.at(ix));
         }
         self.set_zero_abc(RNZ, frame.fhz[F_NZ], frame.bhz[F_NZ]);
 
         // Parallel resonators, with the branch amplitude folded into `a`.
         for ix in 0..7 {
-            self.set_abc(RNPP + ix, frame.fhz[ix], frame.bphz[ix]);
-            self.rsn[RNPP + ix].a *= amp_par[ix];
+            self.set_abc(RNPP + ix, frame.fhz.at(ix), frame.bphz.at(ix));
+            self.rsn[RNPP + ix].a *= amp_par.at(ix);
         }
 
         // Output low-pass.
@@ -754,7 +792,7 @@ impl Klatt {
             }
 
             // Shape of the "natural" glottal waveform.
-            self.pulse_shape_b = B0[(self.nopen - 40).clamp(0, 223) as usize] as f64;
+            self.pulse_shape_b = B0.at((self.nopen - 40).clamp(0, 223) as usize) as f64;
             self.pulse_shape_a = self.pulse_shape_b * self.nopen as f64 * 0.333;
 
             // Width of the "impulsive" glottal pulse.
@@ -800,7 +838,7 @@ impl Klatt {
     fn impulsive_source(&mut self) -> f64 {
         const DOUBLET: [f64; 3] = [0.0, 13_000_000.0, -13_000_000.0];
         self.imp_vwave = if self.nper < 3 {
-            DOUBLET[self.nper as usize]
+            DOUBLET.at(self.nper as usize)
         } else {
             0.0
         };
@@ -818,6 +856,20 @@ impl Klatt {
         }
         self.nat_vwave = 0.0;
         0.0
+    }
+
+    /// `sampled_source` — a recorded glottal pulse, stretched to the period.
+    fn sampled_source(&self, samples: &[i16]) -> f64 {
+        const SAMPLE_FACTOR: f64 = 3.0;
+        if self.t0 == 0 {
+            return 0.0;
+        }
+        let n = samples.len();
+        let position = self.nper as f64 / self.t0 as f64 * n as f64;
+        let ix = position as usize;
+        let current = f64::from(samples.at(ix % n));
+        let next = f64::from(samples.at((ix + 1) % n));
+        (current + (next - current) * position.fract()) * SAMPLE_FACTOR
     }
 
     /// `gen_noise` — a one-pole low-passed random sequence.
@@ -863,6 +915,9 @@ impl Klatt {
             for _ in 0..4 {
                 voice = match self.glsource {
                     2 => self.natural_source(),
+                    3 => self.sampled_source(&NATURAL_SAMPLES),
+                    4 => self.sampled_source(&NATURAL_SAMPLES2),
+                    5 => voice, // a sawtooth, below
                     _ => self.impulsive_source(),
                 };
                 if self.nper >= self.t0 {
@@ -871,6 +926,11 @@ impl Klatt {
                 }
                 voice = self.rsn[RLP].resonate(voice);
                 self.nper += 1;
+            }
+
+            if self.glsource == 5 {
+                let phase = self.nper as f64 / (self.t0 as f64).max(1.0);
+                voice = (phase * 2.0 - 1.0) * 6000.0;
             }
 
             // Tilt the source spectrum down by soft low-pass filtering.
@@ -891,7 +951,7 @@ impl Klatt {
             let mut casc = self.rsn[RNZ].antiresonate(glotout);
             casc = self.rsn[RNPC].resonate(casc);
             for ix in (R1C..=R8C).rev() {
-                casc = self.rsn[ix].resonate(casc);
+                casc = self.resonate_at(ix, casc);
             }
             let mut out_s = casc;
 
@@ -905,7 +965,7 @@ impl Klatt {
             let sourc = frics + par_glotout - self.glotlast;
             self.glotlast = par_glotout;
             for ix in R2P..=R6P {
-                out_s = self.rsn[ix].resonate(sourc) - out_s;
+                out_s = self.resonate_at(ix, sourc) - out_s;
             }
             out_s = self.amp_bypas * sourc - out_s;
 
@@ -957,29 +1017,35 @@ const N_KLATTP: usize = 10;
 /// parallel-branch parameters toward the *next* frame, then advances them once
 /// per `STEPSIZE` block while `parwave` fills the block.
 ///
-/// Two deliberate divergences from C, both documented in GAPS §1.2:
+/// One deliberate divergence from C, documented in GAPS §1.2:
 ///   * a frame **without** `FRFLAG_KLATT` carries no Klatt parameters at all,
 ///     and upstream then synthesizes silence (every `klattp` is zero, so
 ///     `amp_voice == DBtoLIN(-7) == 0`).  Here such a frame falls back to the
 ///     `KlattInit` defaults and the frame's own `rms`, so a Klatt voice with
 ///     non-Klatt phoneme data still speaks.
-///   * the result is peak-normalized rather than scaled by `wdata->amplitude`,
-///     because the caller applies its own AGC.
+#[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
 pub fn synthesize_frames_klatt(
     frames: &[super::phondata::SpectFrame],
     amps: &[f64],
     pitch: &[f64],
     sample_rate: u32,
+    // `klatt <n>` in the voice: the glottal source, 1–5.
+    source: u8,
+    scale: &super::wavegen::FormantScale,
 ) -> Vec<i32> {
     use super::phondata::FRFLAG_KLATT;
 
     let mut kt = Klatt::new(sample_rate);
+    if (1..=5).contains(&source) {
+        kt.glsource = source.into();
+        kt.scale_wav = SCALE_WAV_TAB.at(source.into());
+    }
     let mut kt_frame = KtFrame::default();
     let mut raw: Vec<f64> = Vec::new();
 
     for (fi, fr) in frames.iter().enumerate() {
         let next = frames.get(fi + 1).unwrap_or(fr);
-        let length = fr.length as usize * STEPSIZE;
+        let length = fr.duration();
         if length == 0 {
             continue;
         }
@@ -997,26 +1063,27 @@ pub fn synthesize_frames_klatt(
             // `FricBP`, `Turb` are never fed to the synthesizer), and zeroes
             // the whole set for a non-Klatt frame.
             if ix >= 5 || !klatt_flag {
-                klattp[ix] = 0;
-                klattp1[ix] = 0.0;
-                klattp_inc[ix] = 0.0;
+                klattp.put(ix, 0);
+                klattp1.put(ix, 0.0);
+                klattp_inc.put(ix, 0.0);
             } else {
-                klattp[ix] = fr.klattp[ix] as i32;
-                klattp1[ix] = klattp[ix] as f64;
-                klattp_inc[ix] = (next.klattp[ix] as i32 - klattp[ix]) as f64 * step_over_len;
+                klattp.put(ix, fr.klattp.at(ix) as i32);
+                klattp1.put(ix, klattp.at(ix) as f64);
+                klattp_inc.put(ix, (next.klattp.at(ix) as i32 - klattp.at(ix)) as f64 * step_over_len);
             }
         }
 
         for ix in 1..6 {
-            peaks[ix].freq1 = fr.ffreq[ix] as f64;
-            peaks[ix].freq = peaks[ix].freq1 as i32;
-            peaks[ix].freq_inc = (next.ffreq[ix] as f64 - peaks[ix].freq1) * step_over_len;
+            peaks[ix].freq1 = scale.freq(ix, fr.ffreq.at(ix)) as f64 / 256.0;
+            peaks[ix].freq = peaks.at(ix).freq1 as i32;
+            peaks[ix].freq_inc = (scale.freq(ix, next.ffreq.at(ix)) as f64 / 256.0 - peaks.at(ix).freq1) * step_over_len;
 
             if ix < 4 {
                 // Klatt bandwidth for F1..F3; the rest are fixed.
-                peaks[ix].bw1 = fr.bw[ix] as f64 * 2.0;
-                peaks[ix].bw = peaks[ix].bw1 as i32;
-                peaks[ix].bw_inc = (next.bw[ix] as f64 * 2.0 - peaks[ix].bw1) * step_over_len;
+                let width = f64::from(scale.width.at(ix)) / 256.0;
+                peaks[ix].bw1 = fr.bw.at(ix) as f64 * 2.0 * width;
+                peaks[ix].bw = peaks.at(ix).bw1 as i32;
+                peaks[ix].bw_inc = (next.bw.at(ix) as f64 * 2.0 * width - peaks.at(ix).bw1) * step_over_len;
             }
         }
 
@@ -1038,21 +1105,21 @@ pub fn synthesize_frames_klatt(
         if klatt_flag {
             // The frame carries the extra parallel-resonator parameters.
             for ix in 1..7 {
-                peaks[ix].bp1 = fr.klatt_bp[ix] as f64 * 4.0;
-                peaks[ix].bp = peaks[ix].bp1 as i32;
-                peaks[ix].bp_inc = (next.klatt_bp[ix] as f64 * 4.0 - peaks[ix].bp1) * step_over_len;
+                peaks[ix].bp1 = fr.klatt_bp.at(ix) as f64 * 4.0;
+                peaks[ix].bp = peaks.at(ix).bp1 as i32;
+                peaks[ix].bp_inc = (next.klatt_bp.at(ix) as f64 * 4.0 - peaks.at(ix).bp1) * step_over_len;
 
-                peaks[ix].ap1 = fr.klatt_ap[ix] as f64;
-                peaks[ix].ap = peaks[ix].ap1 as i32;
-                peaks[ix].ap_inc = (next.klatt_ap[ix] as f64 - peaks[ix].ap1) * step_over_len;
+                peaks[ix].ap1 = fr.klatt_ap.at(ix) as f64;
+                peaks[ix].ap = peaks.at(ix).ap1 as i32;
+                peaks[ix].ap_inc = (next.klatt_ap.at(ix) as f64 - peaks.at(ix).ap1) * step_over_len;
             }
         } else {
             // Divergence (see the fn doc): keep the `KlattInit` defaults so a
             // non-Klatt frame is audible instead of silent.
             let dflt = KtFrame::default();
             for ix in 1..7 {
-                peaks[ix].ap1 = dflt.ap[ix] as f64;
-                peaks[ix].ap = dflt.ap[ix];
+                peaks[ix].ap1 = dflt.ap.at(ix) as f64;
+                peaks[ix].ap = dflt.ap.at(ix);
                 klattp[0] = dflt.avdb; // AV
                 klattp1[0] = dflt.avdb as f64;
             }
@@ -1067,7 +1134,7 @@ pub fn synthesize_frames_klatt(
         } else {
             (fr.rms as f64 / 64.0).max(0.05)
         };
-        let amplitude = amps.get(fi).copied().unwrap_or(1.0) * rms_scale * 60.0;
+        let amplitude = amps.get(fi).copied().unwrap_or(1.0) * rms_scale * 75.625;
         let f0_start = pitch.get(fi).copied().unwrap_or(120.0).max(50.0);
         let f0_end = pitch.get(fi + 1).copied().unwrap_or(f0_start).max(50.0);
 
@@ -1078,13 +1145,13 @@ pub fn synthesize_frames_klatt(
             // F6..F8 are fixed cascade values set at init; F0's slot holds the
             // nasal zero.
             for ix in 0..6 {
-                kt_frame.fhz[ix] = peaks[ix].freq;
+                kt_frame.fhz.put(ix, peaks.at(ix).freq);
                 if ix < 4 {
-                    kt_frame.bhz[ix] = peaks[ix].bw;
+                    kt_frame.bhz.put(ix, peaks.at(ix).bw);
                 }
             }
             for ix in 1..7 {
-                kt_frame.ap[ix] = peaks[ix].ap;
+                kt_frame.ap.put(ix, peaks.at(ix).ap);
             }
 
             kt_frame.avdb = klattp[0];
@@ -1109,8 +1176,8 @@ pub fn synthesize_frames_klatt(
                 pk.ap = pk.ap1 as i32;
             }
             for ix in 0..N_KLATTP {
-                klattp1[ix] += klattp_inc[ix];
-                klattp[ix] = klattp1[ix] as i32;
+                klattp1[ix] += klattp_inc.at(ix);
+                klattp.put(ix, klattp1.at(ix) as i32);
             }
 
             let nspfr = (length - sample_count).min(STEPSIZE);
@@ -1120,15 +1187,12 @@ pub fn synthesize_frames_klatt(
         }
     }
 
-    // Fade the tail out over the last 64 samples, then peak-normalize the run
-    // to ~0.5 full-scale so the caller's AGC has a consistent level.
+    // Fade the tail out over the last 64 samples.
     let n = raw.len();
     for (i, v) in raw.iter_mut().enumerate().skip(n.saturating_sub(64)) {
         *v *= (n - i) as f64 / 64.0;
     }
-    let peak = raw.iter().fold(0.0f64, |m, &v| m.max(v.abs())).max(1e-9);
-    let scale = 0.5 * 32767.0 / peak;
-    raw.iter().map(|&v| (v * scale) as i32).collect()
+    raw.iter().map(|&v| v as i32).collect()
 }
 
 #[cfg(test)]
@@ -1165,7 +1229,7 @@ mod tests {
     fn nasal_antiresonator_has_unity_dc_gain() {
         let mut kt = Klatt::new(22_050);
         kt.set_zero_abc(RNZ, 280, 89);
-        let r = kt.rsn[RNZ];
+        let r = kt.rsn[RNZ].clone();
         assert!(
             (r.a + r.b + r.c - 1.0).abs() < 1e-9,
             "DC gain {}",
@@ -1247,7 +1311,7 @@ mod tests {
     fn klatt_frames_pcm(frames: &[crate::synthesize::phondata::SpectFrame]) -> Vec<i32> {
         let amps = vec![1.0; frames.len()];
         let pitch = vec![120.0; frames.len()];
-        synthesize_frames_klatt(frames, &amps, &pitch, 22_050)
+        synthesize_frames_klatt(frames, &amps, &pitch, 22_050, 1, &Default::default())
     }
 
     /// Mean DFT magnitude over a frequency band — a band has to be summed

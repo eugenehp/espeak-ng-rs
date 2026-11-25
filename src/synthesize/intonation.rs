@@ -21,6 +21,7 @@
 //! declination across the whole utterance with a rising tail for questions —
 //! which had no notion of syllables, stress or tunes.
 
+use crate::bytes::Bounded;
 use super::envelopes::ENVELOPE_DATA;
 
 /// Stress levels, as `intonation.c` uses them.
@@ -389,32 +390,32 @@ pub struct Tune {
 pub fn parse_tunes(data: &[u8]) -> Vec<Tune> {
     data.chunks_exact(68)
         .map(|t| Tune {
-            name: t[..12]
+            name: t.get(..12).unwrap_or_default()
                 .iter()
                 .take_while(|&&b| b != 0)
                 .map(|&b| b as char)
                 .collect(),
-            head_extend: std::array::from_fn(|i| t[16 + i] as i8),
-            prehead_start: t[24],
-            prehead_end: t[25],
-            stressed_env: t[26],
-            stressed_drop: t[27] as i32,
-            onset: t[30],
-            head_start: t[31],
-            head_end: t[32],
-            head_last: t[33],
-            head_max_steps: t[34] as i32,
-            n_head_extend: t[35] as usize,
-            unstr_start: std::array::from_fn(|i| t[36 + i] as i8),
-            unstr_end: std::array::from_fn(|i| t[39 + i] as i8),
-            nucleus0_env: t[42],
-            nucleus0_max: t[43] as i32,
-            nucleus0_min: t[44] as i32,
-            nucleus1_env: t[45],
-            nucleus1_max: t[46] as i32,
-            nucleus1_min: t[47] as i32,
-            tail_start: t[48],
-            tail_end: t[49],
+            head_extend: std::array::from_fn(|i| t.at(16 + i) as i8),
+            prehead_start: t.at(24),
+            prehead_end: t.at(25),
+            stressed_env: t.at(26),
+            stressed_drop: t.at(27) as i32,
+            onset: t.at(30),
+            head_start: t.at(31),
+            head_end: t.at(32),
+            head_last: t.at(33),
+            head_max_steps: t.at(34) as i32,
+            n_head_extend: t.at(35) as usize,
+            unstr_start: std::array::from_fn(|i| t.at(36 + i) as i8),
+            unstr_end: std::array::from_fn(|i| t.at(39 + i) as i8),
+            nucleus0_env: t.at(42),
+            nucleus0_max: t.at(43) as i32,
+            nucleus0_min: t.at(44) as i32,
+            nucleus1_env: t.at(45),
+            nucleus1_max: t.at(46) as i32,
+            nucleus1_min: t.at(47) as i32,
+            tail_start: t.at(48),
+            tail_end: t.at(49),
         })
         .collect()
 }
@@ -428,6 +429,8 @@ pub struct Syllable {
     pub pitch1: i32,
     pub pitch2: i32,
     pub flags: u8,
+    /// The pitch envelope of a lexical tone, in place of `env`.
+    pub tone_env: Option<[u8; 128]>,
 }
 
 impl Syllable {
@@ -446,10 +449,14 @@ impl Syllable {
     /// endpoints low-first (`SetPitch2` swaps them) so envelope 0 is the bottom
     /// of the span and 255 the top — `env_fall` therefore starts at 255 and ends
     /// at 0, giving a falling contour.
+    #[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
     pub fn pitch_at(&self, t: f64) -> f64 {
-        let env = ENVELOPE_DATA[(self.env as usize).min(ENVELOPE_DATA.len() - 1)];
+        let env = match &self.tone_env {
+            Some(env) => env,
+            None => &ENVELOPE_DATA[(self.env as usize).min(ENVELOPE_DATA.len() - 1)],
+        };
         let ix = ((t.clamp(0.0, 1.0) * 127.0).round() as usize).min(127);
-        let frac = env[ix] as f64 / 255.0;
+        let frac = env.at(ix) as f64 / 255.0;
         let lo = self.pitch1.min(self.pitch2) as f64;
         let hi = self.pitch1.max(self.pitch2) as f64;
         lo + (hi - lo) * frac
@@ -487,6 +494,7 @@ struct Layout {
 }
 
 /// `count_pitch_vowels()`.
+#[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
 fn count_pitch_vowels(
     syls: &mut [Syllable],
     start: usize,
@@ -501,7 +509,7 @@ fn count_pitch_vowels(
     let mut last_primary: Option<usize> = None;
 
     for ix in start..end {
-        let stress = syls[ix].stress;
+        let stress = syls.at(ix).stress;
         if stress >= max_stress {
             max_stress_posn2 = if stress > max_stress {
                 ix
@@ -544,7 +552,7 @@ fn count_pitch_vowels(
 fn count_increments(syls: &[Syllable], mut ix: usize, end_ix: usize, min_stress: u8) -> i32 {
     let mut count = 0;
     while ix < end_ix {
-        let stress = syls[ix].stress;
+        let stress = syls.at(ix).stress;
         ix += 1;
         if stress >= PRIMARY_LAST {
             break;
@@ -560,7 +568,7 @@ fn count_increments(syls: &[Syllable], mut ix: usize, end_ix: usize, min_stress:
 fn count_unstressed(syls: &[Syllable], start: usize, end: usize, limit: u8) -> i32 {
     let mut ix = start;
     while ix <= end && ix < syls.len() {
-        if syls[ix].stress >= limit {
+        if syls.at(ix).stress >= limit {
             break;
         }
         ix += 1;
@@ -570,6 +578,7 @@ fn count_unstressed(syls: &[Syllable], start: usize, end: usize, limit: u8) -> i
 
 /// `SetPitchGradient()` — a linear pitch change over a run of syllables, used
 /// for the pre-head, the unstressed syllables in the body, and the tail.
+#[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
 fn set_pitch_gradient(
     syls: &mut [Syllable],
     start_ix: usize,
@@ -588,14 +597,14 @@ fn set_pitch_gradient(
     let mut pitch = start_pitch * 256;
 
     for ix in start_ix..end_ix.min(syls.len()) {
-        let stress = syls[ix].stress as usize;
+        let stress = syls.at(ix).stress as usize;
         if increment > 0 {
             set_pitch(&mut syls[ix], pitch / 256, -(increment / 256));
             pitch += increment;
         } else {
             let mut drop = -(increment / 256);
-            if drop < MIN_DROP[stress.min(7)] {
-                drop = MIN_DROP[stress.min(7)];
+            if drop < MIN_DROP.at(stress.min(7)) {
+                drop = MIN_DROP.at(stress.min(7));
             }
             pitch += increment;
             if drop > 18 {
@@ -608,6 +617,7 @@ fn set_pitch_gradient(
 
 /// `SetHeadIntonation()` — the clause body, stepping the pitch once per primary
 /// stress and falling back to the tune's overflow table when the steps run out.
+#[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
 fn set_head_intonation(
     syls: &mut [Syllable],
     tune: &Tune,
@@ -632,7 +642,7 @@ fn set_head_intonation(
     let mut head_final = end_ix;
     if tune.head_last != 255 {
         for ix in (syl_ix..end_ix).rev() {
-            if syls[ix].stress >= 4 {
+            if syls.at(ix).stress >= 4 {
                 head_final = ix;
                 break;
             }
@@ -640,7 +650,7 @@ fn set_head_intonation(
     }
 
     while syl_ix < end_ix && syl_ix < syls.len() {
-        let stress = syls[syl_ix].stress;
+        let stress = syls.at(syl_ix).stress;
 
         if initial || stress >= 4 {
             if initial || stress == 5 {
@@ -673,7 +683,7 @@ fn set_head_intonation(
             } else if n_steps > 0 {
                 pitch += increment;
             } else {
-                let extend = tune.head_extend[overflow_ix.min(7)] as i32;
+                let extend = tune.head_extend.at(overflow_ix.min(7)) as i32;
                 pitch = (tune.head_end as i32 * 256) + (pitch_range_abs * extend) / 64;
                 overflow_ix += 1;
                 if tune.n_head_extend == 0 || overflow_ix >= tune.n_head_extend {
@@ -692,16 +702,16 @@ fn set_head_intonation(
         } else if stress >= secondary {
             n_unstressed = count_unstressed(syls, syl_ix + 1, end_ix, secondary);
             unstressed_ix = 0;
-            set_pitch(&mut syls[syl_ix], pitch / 256, drops[stress as usize]);
+            set_pitch(&mut syls[syl_ix], pitch / 256, drops.at(stress as usize));
         } else {
             let unstressed_inc = if n_unstressed > 1 {
-                (tune.unstr_end[stage] as i32 - tune.unstr_start[stage] as i32) / (n_unstressed - 1)
+                (tune.unstr_end.at(stage) as i32 - tune.unstr_start.at(stage) as i32) / (n_unstressed - 1)
             } else {
                 0
             };
             let base =
-                pitch / 256 + tune.unstr_start[stage] as i32 + unstressed_inc * unstressed_ix;
-            set_pitch(&mut syls[syl_ix], base, drops[stress as usize]);
+                pitch / 256 + tune.unstr_start.at(stage) as i32 + unstressed_inc * unstressed_ix;
+            set_pitch(&mut syls[syl_ix], base, drops.at(stress as usize));
             unstressed_ix += 1;
         }
 
@@ -712,6 +722,7 @@ fn set_head_intonation(
 
 /// `calc_pitch_segment()` — the body when using the built-in tone tables.
 #[allow(clippy::too_many_arguments)]
+#[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
 fn calc_pitch_segment(
     syls: &mut [Syllable],
     mut ix: usize,
@@ -738,7 +749,7 @@ fn calc_pitch_segment(
     };
 
     while ix < end_ix && ix < syls.len() {
-        let stress = syls[ix].stress;
+        let stress = syls.at(ix).stress;
 
         if initial || stress >= min_stress {
             if initial || stress == 5 {
@@ -758,7 +769,7 @@ fn calc_pitch_segment(
                 pitch += increment;
             } else {
                 pitch = (th.body_end as i32 * 256)
-                    + (pitch_range_abs * overflow_tab[overflow.min(4)] as i32) / 64;
+                    + (pitch_range_abs * overflow_tab.at(overflow.min(4)) as i32) / 64;
                 overflow += 1;
                 if overflow >= n_overflow {
                     overflow = 0;
@@ -770,14 +781,14 @@ fn calc_pitch_segment(
 
         if stress >= PRIMARY {
             syls[ix].stress = PRIMARY_STRESSED;
-            set_pitch(&mut syls[ix], pitch / 256, drops[stress as usize]);
+            set_pitch(&mut syls[ix], pitch / 256, drops.at(stress as usize));
         } else if stress >= SECONDARY {
-            set_pitch(&mut syls[ix], pitch / 256, drops[stress as usize]);
+            set_pitch(&mut syls[ix], pitch / 256, drops.at(stress as usize));
         } else {
             // unstressed: drop the pitch if the previous syllable was stressed
-            let prev_stressed = ix > 0 && (syls[ix - 1].stress & 0x3f) >= SECONDARY;
+            let prev_stressed = ix > 0 && (syls.at(ix - 1).stress & 0x3f) >= SECONDARY;
             let base = pitch / 256 - if prev_stressed { th.body_lower_u } else { 0 };
-            set_pitch(&mut syls[ix], base, drops[stress as usize]);
+            set_pitch(&mut syls[ix], base, drops.at(stress as usize));
         }
 
         ix += 1;
@@ -786,6 +797,7 @@ fn calc_pitch_segment(
 }
 
 /// `calc_pitches2()` — assign pitches using a `TUNE` from the data file.
+#[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
 fn calc_pitches_tune(
     syls: &mut [Syllable],
     start: usize,
@@ -826,7 +838,7 @@ fn calc_pitches_tune(
 
     if layout.tone_posn < syls.len() {
         syls[layout.tone_posn].env = tone_pitch_env;
-        if syls[layout.tone_posn].stress == PRIMARY {
+        if syls.at(layout.tone_posn).stress == PRIMARY {
             syls[layout.tone_posn].stress = PRIMARY_STRESSED;
         }
     }
@@ -836,6 +848,7 @@ fn calc_pitches_tune(
 }
 
 /// `calc_pitches()` with `control != 0` — the built-in tone head/nucleus tables.
+#[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
 fn calc_pitches_table(
     syls: &mut [Syllable],
     start: usize,
@@ -882,7 +895,7 @@ fn calc_pitches_table(
 
     if layout.tone_posn < syls.len() {
         syls[layout.tone_posn].env = tone_pitch_env;
-        if syls[layout.tone_posn].stress == PRIMARY {
+        if syls.at(layout.tone_posn).stress == PRIMARY {
             syls[layout.tone_posn].stress = PRIMARY_STRESSED;
         }
     }
@@ -913,6 +926,16 @@ pub fn calc_pitches(syls: &mut [Syllable], clause_type: usize, tune: Option<&Tun
             calc_pitches_table(syls, 0, end, clause_type.min(3), &layout, no_tonic);
         }
     }
+
+    // `CalcPitches`' unpacking: only a stressed syllable takes the tune's
+    // envelope; the others rise or fall.
+    for syl in syls {
+        if syl.flags & SYL_RISE != 0 {
+            syl.env = PITCH_RISE;
+        } else if syl.stress <= 5 {
+            syl.env = PITCH_FALL;
+        }
+    }
 }
 
 /// `punctuation_to_tone[][]` — which tone table a clause type uses, per
@@ -935,7 +958,7 @@ pub fn tone_for_clause(intonation_group: usize, clause_type: usize) -> usize {
     } else {
         intonation_group
     };
-    PUNCT_TO_TONE[group][clause_type.min(5)] as usize
+    PUNCT_TO_TONE.at(group).at(clause_type.min(5)) as usize
 }
 
 /// `pitch_adjust_tab[]` — how the user's pitch parameter (0–100, default 50)
@@ -963,7 +986,7 @@ pub fn pitch_to_hz(value: f64, voice_pitch_base_hz: f64, voice_pitch_range: f64)
 /// <pitch2>` line (default `82 118` → 73 Hz), scaled by `pitch_adjust_tab`.
 pub fn base_pitch_hz(voice_pitch1: f64, user_pitch: u32) -> f64 {
     let ix = (user_pitch as usize).min(PITCH_ADJUST_TAB.len() - 1);
-    (voice_pitch1 - 9.0) * PITCH_ADJUST_TAB[ix] as f64 / 128.0
+    (voice_pitch1 - 9.0) * PITCH_ADJUST_TAB.at(ix) as f64 / 128.0
 }
 
 #[cfg(test)]
@@ -1008,7 +1031,9 @@ mod tests {
             syls[3].env, PITCH_FRISE,
             "tonic carries the question envelope"
         );
-        assert_eq!(syls[0].env, PITCH_FALL, "others keep the default");
+        // The pre-head climbs to the first stress, so it rises.
+        assert_eq!(syls[0].env, PITCH_RISE);
+        assert_eq!(syls[2].env, PITCH_FALL, "others keep the default");
     }
 
     #[test]
@@ -1019,7 +1044,7 @@ mod tests {
         let mut syls = syllables(&[1, 4, 1, 4]);
         calc_pitches(&mut syls, 4, None);
         assert!(
-            syls.iter().all(|s| s.env == PITCH_FALL),
+            syls.iter().skip(1).all(|s| s.env == PITCH_FALL),
             "no nucleus envelope: {syls:?}"
         );
     }
@@ -1032,6 +1057,7 @@ mod tests {
             pitch1: 40,
             pitch2: 20,
             flags: 0,
+            ..Syllable::default()
         };
         let start = syl.pitch_at(0.0);
         let end = syl.pitch_at(1.0);

@@ -11,6 +11,9 @@
 //!   bit 6 SET   → compressed;  lower 6 bits = byte count
 //!   bit 6 CLEAR → uncompressed; value = byte count (= UTF-8 byte length)
 
+#![deny(clippy::cast_possible_truncation)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::indexing_slicing))]
+
 // ---------------------------------------------------------------------------
 // Latin transpose map (from `tr_languages.c: transpose_map_latin[]`)
 // ---------------------------------------------------------------------------
@@ -226,7 +229,8 @@ pub fn transpose_alphabet(word: &str, cfg: &TransposeConfig) -> TransposeResult 
     if !cfg.is_active() {
         // No compression — use raw UTF-8 bytes.
         let bytes = word.as_bytes().to_vec();
-        let wlen = bytes.len() as u8;
+        // Too long a word for the field matches no entry.
+        let wlen = u8::try_from(bytes.len()).unwrap_or(u8::MAX);
         return TransposeResult { bytes, wlen };
     }
 
@@ -247,11 +251,7 @@ pub fn transpose_alphabet(word: &str, cfg: &TransposeConfig) -> TransposeResult 
                 }
                 Some(map) => {
                     let idx = (cp - cfg.transpose_min) as usize;
-                    if idx < map.len() {
-                        map[idx] as u32
-                    } else {
-                        0
-                    }
+                    map.get(idx).map_or(0, |&code| code as u32)
                 }
             };
             if code > 0 {
@@ -266,7 +266,8 @@ pub fn transpose_alphabet(word: &str, cfg: &TransposeConfig) -> TransposeResult 
     if !all_alpha {
         // Not all chars mapped — store uncompressed (raw UTF-8).
         let bytes = word.as_bytes().to_vec();
-        let wlen = bytes.len() as u8;
+        // Too long a word for the field matches no entry.
+        let wlen = u8::try_from(bytes.len()).unwrap_or(u8::MAX);
         return TransposeResult { bytes, wlen };
     }
 
@@ -276,16 +277,16 @@ pub fn transpose_alphabet(word: &str, cfg: &TransposeConfig) -> TransposeResult 
     if let Some(pairs_list) = cfg.frequent_pairs {
         let mut i = 0;
         let mut merged: Vec<u32> = Vec::with_capacity(codes.len());
-        while i < codes.len() {
-            if i + 1 < codes.len() {
-                let c2 = codes[i] | (codes[i + 1] << 8);
+        while let Some(&first) = codes.get(i) {
+            if let Some(&second) = codes.get(i + 1) {
+                let c2 = first | (second << 8);
                 let mut found = false;
                 for (ix, &pair) in pairs_list.iter().enumerate() {
                     if pair == 0x7fff || pair == 0 {
                         break;
                     }
-                    if c2 as u16 == pair {
-                        merged.push(ix as u32 + pairs_start);
+                    if c2 == u32::from(pair) {
+                        merged.push(u32::try_from(ix).unwrap_or(0) + pairs_start);
                         i += 2;
                         found = true;
                         break;
@@ -295,11 +296,11 @@ pub fn transpose_alphabet(word: &str, cfg: &TransposeConfig) -> TransposeResult 
                     }
                 }
                 if !found {
-                    merged.push(codes[i]);
+                    merged.push(first);
                     i += 1;
                 }
             } else {
-                merged.push(codes[i]);
+                merged.push(first);
                 i += 1;
             }
         }
@@ -323,8 +324,7 @@ pub fn transpose_alphabet(word: &str, cfg: &TransposeConfig) -> TransposeResult 
         out.push(((acc << (8 - bits)) & 0xff) as u8);
     }
 
-    let byte_count = out.len() as u8;
-    let wlen = byte_count | 0x40; // bit 6 = compressed
+    let wlen = u8::try_from(out.len()).unwrap_or(u8::MAX) | 0x40; // bit 6 = compressed
     TransposeResult { bytes: out, wlen }
 }
 

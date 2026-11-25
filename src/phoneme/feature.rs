@@ -5,6 +5,7 @@
 //!
 //! [`PhonemeFeature::from_str`] mirrors `phoneme_feature_from_string()`.
 //! [`PhonemeTab::apply_feature`] mirrors `phoneme_add_feature()`.
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::indexing_slicing))]
 
 // The 70+ associated constants on PhonemeFeature are 3-letter IPA tags.
 // Their names are self-explanatory given the standard IPA feature nomenclature,
@@ -164,11 +165,10 @@ impl PhonemeFeature {
     /// Mirrors `phoneme_feature_from_string()`.  Returns `None` if the string
     /// is not exactly 3 ASCII bytes.
     pub fn from_str(s: &str) -> Option<Self> {
-        let b = s.as_bytes();
-        if b.len() != 3 {
+        let &[a, b, c] = s.as_bytes() else {
             return None;
-        }
-        let value = ((b[0] as u32) << 16) | ((b[1] as u32) << 8) | (b[2] as u32);
+        };
+        let value = ((a as u32) << 16) | ((b as u32) << 8) | (c as u32);
         Some(Self(value))
     }
 

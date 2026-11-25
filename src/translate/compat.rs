@@ -3,6 +3,7 @@
 //! Applied as a *fallback*: a token that produces no phonemes is retried with
 //! its expansion, so the characters the port already reads correctly (full-width
 //! letters, circled digits, superscripts, Roman numerals) are untouched.
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::indexing_slicing))]
 
 /// Compatibility (NFKC) expansions for the characters this port would otherwise
 /// speak as nothing — squared units (`㎏` → `kg`), letterlike symbols
@@ -208,7 +209,8 @@ pub fn compatibility_expansion(c: char) -> Option<&'static str> {
     COMPATIBILITY_EXPANSIONS
         .binary_search_by_key(&cp, |&(k, _)| k)
         .ok()
-        .map(|i| COMPATIBILITY_EXPANSIONS[i].1)
+        .and_then(|i| COMPATIBILITY_EXPANSIONS.get(i))
+        .map(|&(_, expansion)| expansion)
 }
 
 /// Expand every character of `word` that has a compatibility form, returning

@@ -625,7 +625,7 @@ fn decode_phonemes(codes: &[u8], phdata: &PhonemeData) -> String {
         // `phSTRESS` == 1
         if ph.typ == 1 && ph.std_length <= 4 && ph.program == 0 {
             if ph.std_length > 1 {
-                out.push(STRESS_CHARS[ph.std_length as usize]);
+                out.extend(STRESS_CHARS.get(usize::from(ph.std_length)));
             }
         } else {
             out.push_str(&ph.mnemonic_str());
@@ -915,7 +915,10 @@ fn format_x(
             while target == lang && out.ends_with(' ') {
                 out.pop();
             }
-            out.push_str(&format!("({target})"));
+            out.push_str(&format!(
+                "({})",
+                espeak_ng::translate::switch_marker_name(data_dir, target)
+            ));
             if trailing_space {
                 out.push(' ');
             }
@@ -1030,26 +1033,23 @@ fn input_encoding(b: Option<u32>) -> espeak_ng::Encoding {
 
 fn gather_text(cli: &Cli) -> std::io::Result<String> {
     let enc = input_encoding(cli.input_encoding);
-    // Decode raw input bytes with the `-b` encoding.  UTF-8 keeps the strict
-    // read_to_string path; other encodings decode byte-by-byte.
+    let is_utf8 = matches!(enc, espeak_ng::Encoding::Utf8);
+    // Decode raw input bytes with the `-b` encoding.  Invalid UTF-8 is replaced
+    // rather than rejected, so the valid text around it is still spoken.
     let decode = |bytes: Vec<u8>| -> String {
+        if is_utf8 {
+            return match String::from_utf8(bytes) {
+                Ok(text) => text,
+                Err(e) => String::from_utf8_lossy(e.as_bytes()).into_owned(),
+            };
+        }
         espeak_ng::encoding::decode_to_string(&bytes, enc)
             .unwrap_or_else(|_| String::from_utf8_lossy(&bytes).into_owned())
     };
-    let is_utf8 = matches!(enc, espeak_ng::Encoding::Utf8);
-
     if let Some(ref path) = cli.file_input {
-        if is_utf8 {
-            return std::fs::read_to_string(path);
-        }
         return Ok(decode(std::fs::read(path)?));
     }
     if cli.stdin_all || (cli.positionals.is_empty() && !std::io::stdin().is_terminal()) {
-        if is_utf8 {
-            let mut buf = String::new();
-            std::io::stdin().read_to_string(&mut buf)?;
-            return Ok(buf);
-        }
         let mut buf = Vec::new();
         std::io::stdin().read_to_end(&mut buf)?;
         return Ok(decode(buf));
@@ -1111,15 +1111,15 @@ fn write_split_wavs(
             continue;
         }
         let at = at_sample(e.audio_position_ms).min(pcm.len());
-        if at > *cuts.last().unwrap() && at - *cuts.last().unwrap() > limit {
+        if cuts.last().is_some_and(|&last| at > last && at - last > limit) {
             cuts.push(at);
         }
     }
     cuts.push(pcm.len());
 
-    for (n, w) in cuts.windows(2).enumerate() {
+    for (n, (&from, &to)) in cuts.iter().zip(cuts.iter().skip(1)).enumerate() {
         let mut buf = Vec::new();
-        write_wav_16_mono(&mut buf, &pcm[w[0]..w[1]], rate)
+        write_wav_16_mono(&mut buf, pcm.get(from..to).unwrap_or_default(), rate)
             .map_err(|e| std::io::Error::other(format!("{e}")))?;
         std::fs::write(format!("{stem}_{:02}{ext}", n + 1), &buf)?;
     }
@@ -1127,8 +1127,9 @@ fn write_split_wavs(
 }
 
 fn write_wav_16_mono(w: &mut Vec<u8>, samples: &[i16], sample_rate: u32) -> std::io::Result<()> {
-    let data_bytes = samples.len().saturating_mul(2);
-    let riff_len = 36u32 + data_bytes as u32;
+    // (A WAV file's sizes are 32-bit.)
+    let data_bytes = u32::try_from(samples.len().saturating_mul(2)).unwrap_or(u32::MAX);
+    let riff_len = data_bytes.saturating_add(36);
 
     w.clear();
     w.extend_from_slice(b"RIFF");
@@ -1143,7 +1144,7 @@ fn write_wav_16_mono(w: &mut Vec<u8>, samples: &[i16], sample_rate: u32) -> std:
     w.extend_from_slice(&2u16.to_le_bytes());
     w.extend_from_slice(&16u16.to_le_bytes());
     w.extend_from_slice(b"data");
-    w.extend_from_slice(&(data_bytes as u32).to_le_bytes());
+    w.extend_from_slice(&data_bytes.to_le_bytes());
     for &s in samples {
         w.extend_from_slice(&s.to_le_bytes());
     }
@@ -1163,8 +1164,7 @@ fn parse_args(args: Vec<OsString>) -> Cli {
     // `--tie --sep=.` ties with a dot, while `--sep=. --tie` ties with U+0361.
     // `cli.sep` holds the character until the end of parsing.
     let mut tie_mode = false;
-    while i < args.len() {
-        let arg = &args[i];
+    while let Some(arg) = args.get(i) {
         if posix_end {
             cli.positionals.push(arg.clone());
             i += 1;
@@ -1298,8 +1298,8 @@ fn parse_args(args: Vec<OsString>) -> Cli {
         if s.starts_with('-') && s != "-" {
             let mut idx = 1usize;
             let bytes = s.as_bytes();
-            while idx < bytes.len() {
-                let c = bytes[idx] as char;
+            while let Some(&b) = bytes.get(idx) {
+                let c = b as char;
                 match c {
                     'h' => cli.print_help = true,
                     'q' => cli.quiet = true,

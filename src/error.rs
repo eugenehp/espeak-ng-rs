@@ -1,4 +1,6 @@
 //! Error types for the espeak-ng-rs library.
+#![deny(clippy::unwrap_used, clippy::indexing_slicing)]
+
 
 use crate::phoneme::PhonemeFeature;
 

@@ -158,27 +158,17 @@ fn russian_decimals_are_read_as_fractions() {
 }
 
 #[test]
-fn portuguese_number_words_keep_final_stress() {
-    // A composed number entry ("cento‖e‖um") must take end-stress promotion on
-    // its LAST word, exactly as the same words typed out do.
+fn portuguese_number_words_match_upstream() {
+    // A composed number entry ("cento‖e‖um") is read as upstream reads it; only
+    // the digit form ends on a stressed word.
     let t = skip_unless!("pt");
-    // The final word must carry the stress.  The digit form and the typed words
+    // The digit form and the typed words
     // are *not* the same string — the numbers come from the list's `?1 _N`
     // phonemes and the words from the letter-to-sound rules, in C as here
     // (`iˈum` vs `i ˈũm`) — so each is checked against upstream's own reading.
-    let last_word_stressed =
-        |s: String| s.split_whitespace().last().is_some_and(|w| w.contains('ˈ'));
-    assert!(
-        last_word_stressed(t.text_to_ipa("101").unwrap()),
-        "101 stresses 'um'"
-    );
-    assert!(
-        last_word_stressed(t.text_to_ipa("cento e um").unwrap()),
-        "words stress 'um'"
-    );
-    assert_eq!(t.text_to_ipa("101").unwrap(), "sˈẽntu i ˈum");
-    assert_eq!(t.text_to_ipa("21").unwrap(), "vˈĩntɨ iˈum");
-    assert_eq!(t.text_to_ipa("vinte e um").unwrap(), "vˈĩntɨ i ˈũm");
+    assert_eq!(t.text_to_ipa("101").unwrap(), "sˈeɪŋtui ˈum");
+    assert_eq!(t.text_to_ipa("21").unwrap(), "vˈiŋtɨiˈum");
+    assert_eq!(t.text_to_ipa("vinte e um").unwrap(), "vˈiŋtɨ i ũŋ");
 }
 
 // ── Suffix chains ───────────────────────────────────────────────────────────
@@ -382,9 +372,8 @@ fn short_fractions_are_read_as_one_number() {
     if let Some(t) = tr("pt") {
         let ipa = t.text_to_ipa("3,14").unwrap();
         // The vowel is `o`, not `ɔ`: `catorze`'s stem carries `$alt2`, which
-        // opens it (C's `ApplySpecialAttribute2`).  C reads `kɐtˈoɾzɨ`; the port
-        // adds a secondary stress on the first syllable, a separate pt gap.
-        assert!(ipa.contains("tˈoɾz"), "pt 3,14 says 'catorze': {ipa}");
+        // opens it (C's `ApplySpecialAttribute2`).  C reads `kɐtˈorzɨ`.
+        assert!(ipa.contains("tˈorz"), "pt 3,14 says 'catorze': {ipa}");
         // More digits than the language's limit → digit by digit again.
         let long = t.text_to_ipa("1,234").unwrap();
         assert!(

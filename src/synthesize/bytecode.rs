@@ -15,6 +15,7 @@
 // Instruction opcode constants mirror synthesize.h and are used internally.
 #![allow(missing_docs)]
 
+use crate::bytes::Bounded;
 use crate::phoneme::PhonemeTab;
 
 // ---------------------------------------------------------------------------
@@ -58,7 +59,7 @@ pub fn num_instn_words(instn: u16) -> usize {
     const N_WORDS: [u8; 16] = [0, 1, 0, 0, 1, 1, 0, 1, 1, 2, 4, 0, 0, 0, 0, 0];
 
     let hi4 = (instn >> 12) as usize;
-    let n = N_WORDS[hi4];
+    let n = N_WORDS.at(hi4);
     if n > 0 {
         return n as usize;
     }
@@ -125,6 +126,10 @@ pub struct PhonemeExtract {
     pub vwlstart_addr: Option<u32>,
     /// VowelEnding address (for vowel coda transitions).
     pub vwlending_addr: Option<u32>,
+    /// The length adjustment (ms) that comes with `vwlstart_addr`.
+    pub vwlstart_param: i8,
+    /// The length adjustment (ms) that comes with `vwlending_addr`.
+    pub vwlending_param: i8,
 
     /// If the phoneme does an unconditional ChangePhoneme(code), the target code.
     /// The caller should look up this code's synthesis data as a fallback.
@@ -210,7 +215,7 @@ pub fn select_vowel_start(program: u16, phonindex: &[u8], next_start_type: u8) -
     }
     let voweltype = voweltype as usize;
     let max_words = phonindex.len() / 2;
-    let word = |i: usize| -> u16 { u16::from_le_bytes([phonindex[i * 2], phonindex[i * 2 + 1]]) };
+    let word = |i: usize| -> u16 { u16::from_le_bytes([phonindex.at(i * 2), phonindex.at(i * 2 + 1)]) };
     let mut pc = program as usize;
     let scan_limit = pc + 128;
     while pc < max_words && pc < scan_limit {
@@ -253,7 +258,7 @@ pub fn scan_phoneme(program: u16, phonindex: &[u8]) -> PhonemeExtract {
         }
 
         let byte_off = pc * 2;
-        let instn = u16::from_le_bytes([phonindex[byte_off], phonindex[byte_off + 1]]);
+        let instn = u16::from_le_bytes([phonindex.at(byte_off), phonindex.at(byte_off + 1)]);
 
         // ── RETURN ───────────────────────────────────────────────────────────
         if instn == INSTN_RETURN {
@@ -268,7 +273,7 @@ pub fn scan_phoneme(program: u16, phonindex: &[u8]) -> PhonemeExtract {
                 // Address = ((instn & 0xf) << 18) | (next_word << 2)
                 if result.fmt_addr.is_none() && pc + 1 < max_words {
                     let next =
-                        u16::from_le_bytes([phonindex[(pc + 1) * 2], phonindex[(pc + 1) * 2 + 1]]);
+                        u16::from_le_bytes([phonindex.at((pc + 1) * 2), phonindex.at((pc + 1) * 2 + 1)]);
                     let addr = ((instn & 0xf) as u32) << 18 | ((next as u32) << 2);
                     result.fmt_addr = Some(addr);
                     // The param is stored in bits 11-4 of the instruction, sign-extended.
@@ -279,7 +284,7 @@ pub fn scan_phoneme(program: u16, phonindex: &[u8]) -> PhonemeExtract {
                 // `select_vowel_start`, which does its own bounded scan.)
                 if pc + 2 < max_words {
                     let next2 =
-                        u16::from_le_bytes([phonindex[(pc + 2) * 2], phonindex[(pc + 2) * 2 + 1]]);
+                        u16::from_le_bytes([phonindex.at((pc + 2) * 2), phonindex.at((pc + 2) * 2 + 1)]);
                     if next2 >> 12 == 0xf {
                         pc += 2;
                         continue;
@@ -291,7 +296,7 @@ pub fn scan_phoneme(program: u16, phonindex: &[u8]) -> PhonemeExtract {
                 // i_WAV: sampled waveform
                 if result.wav_addr.is_none() && pc + 1 < max_words {
                     let next =
-                        u16::from_le_bytes([phonindex[(pc + 1) * 2], phonindex[(pc + 1) * 2 + 1]]);
+                        u16::from_le_bytes([phonindex.at((pc + 1) * 2), phonindex.at((pc + 1) * 2 + 1)]);
                     let addr = ((instn & 0xf) as u32) << 18 | ((next as u32) << 2);
                     result.wav_addr = Some(addr);
                     result.wav_param = ((instn >> 4) & 0xff) as i8;
@@ -302,7 +307,7 @@ pub fn scan_phoneme(program: u16, phonindex: &[u8]) -> PhonemeExtract {
                 // i_VWLSTART
                 if result.vwlstart_addr.is_none() && pc + 1 < max_words {
                     let next =
-                        u16::from_le_bytes([phonindex[(pc + 1) * 2], phonindex[(pc + 1) * 2 + 1]]);
+                        u16::from_le_bytes([phonindex.at((pc + 1) * 2), phonindex.at((pc + 1) * 2 + 1)]);
                     result.vwlstart_addr =
                         Some(((instn & 0xf) as u32) << 18 | ((next as u32) << 2));
                 }
@@ -313,7 +318,7 @@ pub fn scan_phoneme(program: u16, phonindex: &[u8]) -> PhonemeExtract {
                 // i_VWLENDING
                 if result.vwlending_addr.is_none() && pc + 1 < max_words {
                     let next =
-                        u16::from_le_bytes([phonindex[(pc + 1) * 2], phonindex[(pc + 1) * 2 + 1]]);
+                        u16::from_le_bytes([phonindex.at((pc + 1) * 2), phonindex.at((pc + 1) * 2 + 1)]);
                     result.vwlending_addr =
                         Some(((instn & 0xf) as u32) << 18 | ((next as u32) << 2));
                 }
@@ -324,7 +329,7 @@ pub fn scan_phoneme(program: u16, phonindex: &[u8]) -> PhonemeExtract {
                 // i_WAVADD
                 if result.wav_addr.is_none() && pc + 1 < max_words {
                     let next =
-                        u16::from_le_bytes([phonindex[(pc + 1) * 2], phonindex[(pc + 1) * 2 + 1]]);
+                        u16::from_le_bytes([phonindex.at((pc + 1) * 2), phonindex.at((pc + 1) * 2 + 1)]);
                     result.wav_addr = Some(((instn & 0xf) as u32) << 18 | ((next as u32) << 2));
                 }
                 // WAVADD after FMT → this was the last instruction
@@ -337,7 +342,7 @@ pub fn scan_phoneme(program: u16, phonindex: &[u8]) -> PhonemeExtract {
                     // i_CALLPH: the next word is the program index to call.
                     // data = ((instn & 0xf) << 16) | next_word
                     let next =
-                        u16::from_le_bytes([phonindex[(pc + 1) * 2], phonindex[(pc + 1) * 2 + 1]]);
+                        u16::from_le_bytes([phonindex.at((pc + 1) * 2), phonindex.at((pc + 1) * 2 + 1)]);
                     let called_prog = ((((instn & 0xf) as u32) << 16) | next as u32) as usize;
                     // Recursively scan the called program and merge results.
                     if called_prog > 0 && called_prog < max_words {
@@ -357,8 +362,8 @@ pub fn scan_phoneme(program: u16, phonindex: &[u8]) -> PhonemeExtract {
                             result.vwlending_addr = sub.vwlending_addr;
                         }
                         for k in 0..4 {
-                            if result.vowel_transition[k] == 0 {
-                                result.vowel_transition[k] = sub.vowel_transition[k];
+                            if result.vowel_transition.at(k) == 0 {
+                                result.vowel_transition.put(k, sub.vowel_transition.at(k));
                             }
                         }
                     }
@@ -383,7 +388,7 @@ pub fn scan_phoneme(program: u16, phonindex: &[u8]) -> PhonemeExtract {
                 //                        vt[k+1]=(prog2<<16)+prog3.
                 if pc + 3 < max_words {
                     let w = |o: usize| {
-                        u16::from_le_bytes([phonindex[(pc + o) * 2], phonindex[(pc + o) * 2 + 1]])
+                        u16::from_le_bytes([phonindex.at((pc + o) * 2), phonindex.at((pc + o) * 2 + 1)])
                             as u32
                     };
                     let t0 = ((instn as u32 & 0xff) << 16) | w(1);
@@ -471,6 +476,8 @@ const PHON_VOWEL_TYPES: i32 = 28; // start_type/end_type base for vowel categori
 /// flags mark `sourceix != 0` positions for the `*PhW` condition variants.
 #[derive(Debug, Clone)]
 pub struct Neighbours {
+    /// A primary-stressed vowel precedes this phoneme in its word.
+    pub after_stress: bool,
     pub prev: u8,
     pub this: u8,
     pub next: u8,
@@ -511,7 +518,14 @@ pub struct Neighbours {
     pub this_wordstart: bool,
     pub prev_wordstart: bool,
     pub next_wordstart: bool,
+    /// The next-but-one phoneme itself starts a word.
     pub next2_wordstart: bool,
+    /// The phonemes two before and three after (C's `prev2PhW`, `next3PhW`).
+    pub prev2: u8,
+    pub next3: u8,
+    pub next3_wordstart: bool,
+    /// The voicing before a voiced stop's release is wanted (C's `control & 1`).
+    pub prevoicing: bool,
     /// The next vowel **in this word**, and its syllable's stress level — C's
     /// `nextVowel` condition, which scans forward to the next vowel and stops
     /// at a word boundary rather than looking a fixed distance ahead.  `0`
@@ -538,6 +552,7 @@ pub const STRESS_UNKNOWN: u8 = u8::MAX;
 impl Default for Neighbours {
     fn default() -> Self {
         Neighbours {
+            after_stress: false,
             prev: 0,
             this: 0,
             next: 0,
@@ -559,6 +574,10 @@ impl Default for Neighbours {
             prev_wordstart: false,
             next_wordstart: false,
             next2_wordstart: false,
+            prev2: 0,
+            next3: 0,
+            next3_wordstart: false,
+            prevoicing: false,
         }
     }
 }
@@ -568,7 +587,7 @@ impl Default for Neighbours {
 fn word_at(phonindex: &[u8], i: usize) -> u16 {
     let b = i * 2;
     if b + 1 < phonindex.len() {
-        u16::from_le_bytes([phonindex[b], phonindex[b + 1]])
+        u16::from_le_bytes([phonindex.at(b), phonindex.at(b + 1)])
     } else {
         0
     }
@@ -791,7 +810,7 @@ where
                     1 => {
                         // Call another phoneme/procedure.
                         if n_return < N_RETURN && data > 0 && data < max_words {
-                            return_stack[n_return] = pc + 2;
+                            return_stack.put(n_return, pc + 2);
                             n_return += 1;
                             pc = data;
                         } else {
@@ -827,8 +846,8 @@ where
                 let idx = (hi4 - 0xb) as usize; // 0..4
                 let addr =
                     ((instn & 0xf) as u32) << 18 | ((word_at(phonindex, pc + 1) as u32) << 2);
-                sound_addr[idx] = addr;
-                sound_param[idx] = ((instn >> 4) & 0xff) as i8; // signed char
+                sound_addr.put(idx, addr);
+                sound_param.put(idx, ((instn >> 4) & 0xff) as i8); // signed char
                 let after = word_at(phonindex, pc + 2);
                 if after != INSTN_CONTINUE {
                     if idx < 2 {
@@ -853,7 +872,7 @@ where
         if end_flag == 1 && n_return > 0 {
             end_flag = 0;
             n_return -= 1;
-            pc = return_stack[n_return];
+            pc = return_stack.at(n_return);
         }
     }
 
@@ -872,9 +891,11 @@ where
     }
     if sound_addr[2] != 0 {
         result.vwlstart_addr = Some(sound_addr[2]);
+        result.vwlstart_param = sound_param[2];
     }
     if sound_addr[3] != 0 {
         result.vwlending_addr = Some(sound_addr[3]);
+        result.vwlending_param = sound_param[3];
     }
     result.change_phoneme_code = change_phoneme;
     result.vowel_transition = vowel_transition;
@@ -923,8 +944,8 @@ where
     let instn2 = (instn >> 8) as usize; // 0..15
 
     if instn2 >= 14 {
-        // Other conditions (PreVoicing / Klatt / Mbrola): false at synthesis.
-        return false;
+        // Other conditions: `PreVoicing` (Klatt and Mbrola are always false).
+        return instn2 == 15 && data == 1 && nb.prevoicing;
     }
 
     let mut which = instn2 % 7;
@@ -1003,7 +1024,19 @@ where
                 return false;
             }
         }
-        // next3PhW (9) / prev2PhW (10): outside our window → conservative false.
+        9 => {
+            if nb.next_wordstart || nb.next2_wordstart || nb.next3_wordstart {
+                return false; // next3PhW across a word boundary
+            }
+            nb.next3
+        }
+        10 => {
+            if nb.this_wordstart || nb.prev_wordstart || nb.prev2 == 0 {
+                return false; // prev2PhW across a word boundary
+            }
+            check_endtype = true;
+            nb.prev2
+        }
         _ => return false,
     };
 
@@ -1030,7 +1063,7 @@ where
         COND_IS_FLAG => (ph.phflags & (1u32 << data)) != 0,
         COND_IS_OTHER => match data {
             0..=4 => stress_condition(nb, data, which, false, &lookup),
-            OTHER_IS_AFTER_STRESS => false, // needs history outside our window
+            OTHER_IS_AFTER_STRESS => nb.after_stress,
             OTHER_IS_NOT_VOWEL => ph.typ != PH_VOWEL,
             OTHER_IS_FINAL_VOWEL => {
                 // C scans to the end of the *word*: the last vowel in it is
@@ -1062,6 +1095,9 @@ where
                 match which {
                     1 => nb.next == 0 || nb.next_wordstart || resolve(nb.next).typ == PH_PAUSE,
                     0 | 5 => nb.this_wordstart,
+                    2 | 4 => {
+                        nb.next2 == 0 || nb.next2_wordstart || resolve(nb.next2).typ == PH_PAUSE
+                    }
                     _ => false,
                 }
             }
@@ -1147,7 +1183,7 @@ where
     match condition {
         4 /* STRESS_IS_PRIMARY */ => level >= wordstress as u16,
         3 /* STRESS_IS_SECONDARY */ => level > 3,
-        c => level < CONDITION_LEVEL[(c & 3) as usize],
+        c => level < CONDITION_LEVEL.at((c & 3) as usize),
     }
 }
 

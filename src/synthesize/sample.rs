@@ -21,6 +21,7 @@
 //   amp = consonant_amp * general_amplitude / 16 = 26*55/16 = 89
 //   output_sample = (raw_sample * amp) >> 8
 
+use crate::bytes::Bounded;
 /// Consonant amplitude (from wavegen.c constant `consonant_amp`).
 pub const CONSONANT_AMP: i32 = 26;
 
@@ -48,14 +49,14 @@ pub fn parse_wav_sample(
     }
 
     // Header
-    let wav_length = (phondata[idx] as usize) | ((phondata[idx + 1] as usize) << 8);
-    let wav_scale = phondata[idx + 2] as u16;
+    let wav_length = (phondata.at(idx) as usize) | ((phondata.at(idx + 1) as usize) << 8);
+    let wav_scale = phondata.at(idx + 2) as u16;
 
     if wav_length == 0 {
         return None;
     }
 
-    let data = &phondata[idx + 4..];
+    let data = phondata.get(idx + 4..).unwrap_or_default();
     if data.len() < wav_length {
         return None;
     }
@@ -66,15 +67,15 @@ pub fn parse_wav_sample(
         let n = wav_length / 2;
         (0..n)
             .map(|i| {
-                let lo = data[i * 2] as i32;
-                let hi = (data[i * 2 + 1] as i8) as i32;
+                let lo = data.at(i * 2) as i32;
+                let hi = (data.at(i * 2 + 1) as i8) as i32;
                 lo | (hi << 8)
             })
             .collect()
     } else {
         // 8-bit signed, scaled
         (0..wav_length)
-            .map(|i| (data[i] as i8) as i32 * wav_scale as i32)
+            .map(|i| (data.at(i) as i8) as i32 * wav_scale as i32)
             .collect()
     };
 
@@ -109,21 +110,21 @@ pub fn parse_wav_sample(
         // Short target (or a tiny sample): play the first `target_len` samples,
         // repeating cyclically only if the sample is shorter than the target.
         for i in 0..target_len {
-            seq.push(raw[i % wav_length]);
+            seq.push(raw.at(i % wav_length));
         }
     } else {
         // Longer than the sample: first 3/4 (len4*3), then loop the middle half
         // ([len4, 3*len4)) until nearly full, then the final tail from the end.
         let mut remaining = target_len;
         let c1 = len4 * 3;
-        seq.extend_from_slice(&raw[..c1]);
+        seq.extend_from_slice(raw.get(..c1).unwrap_or_default());
         remaining -= c1;
         while remaining > len4 * 3 {
-            seq.extend_from_slice(&raw[len4..len4 * 3]);
+            seq.extend_from_slice(raw.get(len4..len4 * 3).unwrap_or_default());
             remaining -= len4 * 2;
         }
         if remaining > 0 {
-            seq.extend_from_slice(&raw[wav_length - remaining..]);
+            seq.extend_from_slice(raw.get(wav_length - remaining..).unwrap_or_default());
         }
     }
 
@@ -145,9 +146,11 @@ pub fn parse_wav_sample(
 /// Header: `wav_length` (u16 LE = byte count) + `wav_scale` (`0` → 16-bit LE
 /// data) + a padding byte, followed by the samples as little-endian `i16`.
 pub fn compile_wav_sample(samples: &[i16]) -> Vec<u8> {
+    // The byte count is a `u16`.
+    let samples = samples.get(..usize::from(u16::MAX) / 2).unwrap_or(samples);
     let wav_length = samples.len() * 2;
     let mut out = Vec::with_capacity(4 + wav_length);
-    out.extend_from_slice(&(wav_length as u16).to_le_bytes());
+    out.extend_from_slice(&u16::try_from(wav_length).unwrap_or(u16::MAX).to_le_bytes());
     out.push(0); // wav_scale = 0 → 16-bit samples
     out.push(0); // reserved / padding
     for &s in samples {

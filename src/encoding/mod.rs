@@ -20,6 +20,7 @@
 //! let codepoints = dec.collect_codepoints();
 //! assert_eq!(codepoints[0], 'h' as u32);
 //! ```
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::indexing_slicing))]
 
 pub mod codepages;
 
@@ -251,7 +252,9 @@ pub const REPLACEMENT_CHAR: u32 = 0xFFFD;
 pub fn utf8_decode_one(buf: &[u8]) -> (u32, usize) {
     debug_assert!(!buf.is_empty(), "utf8_decode_one called on empty buffer");
 
-    let c0 = buf[0];
+    let Some(&c0) = buf.first() else {
+        return (REPLACEMENT_CHAR, 0);
+    };
     match c0 >> 4 {
         // 0xxxxxxx — 1-byte ASCII
         0x0..=0x7 => (c0 as u32, 1),
@@ -261,10 +264,9 @@ pub fn utf8_decode_one(buf: &[u8]) -> (u32, usize) {
 
         // 110xxxxx — 2-byte sequence
         0xC | 0xD => {
-            if buf.len() < 2 {
+            let &[_, c1, ..] = buf else {
                 return (REPLACEMENT_CHAR, buf.len());
-            }
-            let c1 = buf[1];
+            };
             if c1 & 0xC0 != 0x80 {
                 return (REPLACEMENT_CHAR, 1);
             }
@@ -274,11 +276,9 @@ pub fn utf8_decode_one(buf: &[u8]) -> (u32, usize) {
 
         // 1110xxxx — 3-byte sequence
         0xE => {
-            if buf.len() < 3 {
+            let &[_, c1, c2, ..] = buf else {
                 return (REPLACEMENT_CHAR, buf.len().min(1));
-            }
-            let c1 = buf[1];
-            let c2 = buf[2];
+            };
             if c1 & 0xC0 != 0x80 {
                 return (REPLACEMENT_CHAR, 1);
             }
@@ -295,12 +295,9 @@ pub fn utf8_decode_one(buf: &[u8]) -> (u32, usize) {
 
         // 11110xxx — 4-byte sequence
         _ /* 0xF */ => {
-            if buf.len() < 4 {
+            let &[_, c1, c2, c3, ..] = buf else {
                 return (REPLACEMENT_CHAR, buf.len().min(1));
-            }
-            let c1 = buf[1];
-            let c2 = buf[2];
-            let c3 = buf[3];
+            };
             if c1 & 0xC0 != 0x80 || c2 & 0xC0 != 0x80 || c3 & 0xC0 != 0x80 {
                 return (REPLACEMENT_CHAR, 1);
             }
@@ -323,29 +320,21 @@ pub fn utf8_decode_one(buf: &[u8]) -> (u32, usize) {
 /// Panics in debug builds if `cp` is not a valid Unicode scalar value or if
 /// `buf` is too small.
 pub fn utf8_encode_one(cp: u32, buf: &mut [u8]) -> usize {
-    if cp < 0x80 {
-        debug_assert!(buf.len() >= 1);
-        buf[0] = cp as u8;
-        1
+    let tail = |shift: u32| 0x80 | ((cp >> shift) & 0x3F) as u8;
+    let (bytes, n) = if cp < 0x80 {
+        ([cp as u8, 0, 0, 0], 1)
     } else if cp < 0x800 {
-        debug_assert!(buf.len() >= 2);
-        buf[0] = 0xC0 | (cp >> 6) as u8;
-        buf[1] = 0x80 | (cp & 0x3F) as u8;
-        2
+        ([0xC0 | (cp >> 6) as u8, tail(0), 0, 0], 2)
     } else if cp < 0x10000 {
-        debug_assert!(buf.len() >= 3);
-        buf[0] = 0xE0 | (cp >> 12) as u8;
-        buf[1] = 0x80 | ((cp >> 6) & 0x3F) as u8;
-        buf[2] = 0x80 | (cp & 0x3F) as u8;
-        3
+        ([0xE0 | (cp >> 12) as u8, tail(6), tail(0), 0], 3)
     } else {
-        debug_assert!(buf.len() >= 4);
-        buf[0] = 0xF0 | (cp >> 18) as u8;
-        buf[1] = 0x80 | ((cp >> 12) & 0x3F) as u8;
-        buf[2] = 0x80 | ((cp >> 6) & 0x3F) as u8;
-        buf[3] = 0x80 | (cp & 0x3F) as u8;
-        4
+        ([0xF0 | (cp >> 18) as u8, tail(12), tail(6), tail(0)], 4)
+    };
+    debug_assert!(buf.len() >= n);
+    for (to, from) in buf.iter_mut().zip(bytes.iter().take(n)) {
+        *to = *from;
     }
+    n
 }
 
 // ---------------------------------------------------------------------------
@@ -414,7 +403,7 @@ impl<'a> TextDecoder<'a> {
 
     /// Remaining bytes (useful for slicing the original buffer).
     pub fn remaining(&self) -> &[u8] {
-        &self.buf[self.pos..]
+        self.buf.get(self.pos..).unwrap_or_default()
     }
 
     /// Peek at the next codepoint without advancing the position.
@@ -486,7 +475,9 @@ impl<'a> TextDecoder<'a> {
     }
 
     fn decode_ascii(&mut self) -> u32 {
-        let b = self.buf[self.pos];
+        let Some(&b) = self.buf.get(self.pos) else {
+            return REPLACEMENT_CHAR;
+        };
         self.pos += 1;
         if b < 0x80 {
             b as u32
@@ -496,18 +487,22 @@ impl<'a> TextDecoder<'a> {
     }
 
     fn decode_utf8(&mut self) -> u32 {
-        let (cp, consumed) = utf8_decode_one(&self.buf[self.pos..]);
+        let (cp, consumed) = utf8_decode_one(self.remaining());
         self.pos += consumed;
         cp
     }
 
     fn decode_codepage(&mut self) -> u32 {
-        let b = self.buf[self.pos];
+        let Some(&b) = self.buf.get(self.pos) else {
+            return REPLACEMENT_CHAR;
+        };
         self.pos += 1;
         if b < 0x80 {
             b as u32
         } else if let Some(table) = self.encoding.codepage() {
-            table[(b - 0x80) as usize] as u32
+            table
+                .get(usize::from(b - 0x80))
+                .map_or(REPLACEMENT_CHAR, |&cp| cp.into())
         } else {
             REPLACEMENT_CHAR
         }
@@ -517,7 +512,7 @@ impl<'a> TextDecoder<'a> {
     /// Mirrors `string_decoder_getc_auto()` in encoding.c.
     fn decode_auto(&mut self) -> u32 {
         let saved_pos = self.pos;
-        let (cp, consumed) = utf8_decode_one(&self.buf[self.pos..]);
+        let (cp, consumed) = utf8_decode_one(self.remaining());
         if cp == REPLACEMENT_CHAR {
             // UTF-8 failed; fall back permanently to the codepage
             self.fell_back = true;
@@ -530,14 +525,12 @@ impl<'a> TextDecoder<'a> {
     }
 
     fn decode_ucs2(&mut self) -> u32 {
-        if self.pos + 1 >= self.buf.len() {
+        let Some(unit) = crate::bytes::u16_at(self.buf, self.pos) else {
             self.pos = self.buf.len();
             return REPLACEMENT_CHAR;
-        }
-        let lo = self.buf[self.pos] as u32;
-        let hi = self.buf[self.pos + 1] as u32;
+        };
         self.pos += 2;
-        lo | (hi << 8)
+        unit.into()
     }
 }
 

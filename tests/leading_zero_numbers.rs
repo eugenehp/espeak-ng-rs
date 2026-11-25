@@ -22,8 +22,8 @@ fn leading_zero_numbers_spell_the_zeros() {
     assert_eq!(ipa("05"), format!("{zero} {}", ipa("5")));
     assert_eq!(ipa("000"), format!("{zero} {zero} {zero}"));
 
-    // >3 digits with a leading zero: every digit individually.
-    assert_eq!(ipa("0800"), format!("{zero} {} {zero} {zero}", ipa("8")));
+    // >3 digits with a leading zero: every digit individually, as one word.
+    assert_eq!(ipa("0800"), format!("{zero}{}{zero}{zero}", ipa("8")));
 
     // Unaffected: a lone 0, ordinary numbers, and decimals.
     assert_eq!(ipa("0"), zero);

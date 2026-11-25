@@ -53,9 +53,14 @@ fn replacement_text_is_translated_by_the_rules() {
     if let Some(t) = tr("pt") {
         assert_eq!(
             t.text_to_ipa("™").unwrap(),
-            "sˈi\u{303}mbulʊ dɨ mˈaɾkɐ ʁˌeʒiʃtɾˈadɐ"
+            "sˈimbulʊ dɨ mˈaɾəkɐ ʁˌeʒiʃtɹˈadɐ"
         );
-        assert_eq!(t.text_to_ipa("©").unwrap(), "sˈi\u{303}mbulʊ dɨ kˌɔpiɹˈaɪt");
+        // The English word at the end is read in English.  (C prints a bare
+        // `(base)` there and reads the rest of the clause as schwas.)
+        assert_eq!(
+            t.text_to_ipa("© 2024").unwrap(),
+            "sˈimbulʊ dɨ (en)kˈɒpɪɹˌaɪt(pt-pt) dˈoɪʒ mˈil i vˈiŋtɨikwˈatɹu"
+        );
     }
 }
 
@@ -74,15 +79,15 @@ fn final_vowel_stops_at_the_word_boundary() {
 
 /// `S_PRIORITY_STRESS` (Italian, Portuguese): a priority marker *unstresses*
 /// the syllable it displaced instead of leaving it secondary, so "símbolo" is
-/// `sˈi\u{303}mbulʊ` — one stress, not two.
+/// `sˈimbulʊ` — one stress, not two.
 #[test]
 fn priority_stress_unstresses_what_it_displaces() {
     if let Some(pt) = tr("pt") {
-        assert_eq!(pt.text_to_ipa("símbolo").unwrap(), "sˈi\u{303}mbulʊ");
+        assert_eq!(pt.text_to_ipa("símbolo").unwrap(), "sˈimbulʊ");
         assert!(!pt.text_to_ipa("símbolo").unwrap().contains('ˌ'));
         // Words without a priority marker are unaffected.
-        assert_eq!(pt.text_to_ipa("Portugal").unwrap(), "pˌuɾtuɡˈɑl");
-        assert_eq!(pt.text_to_ipa("obrigado").unwrap(), "ˌɔbɾiɡˈadʊ");
+        assert_eq!(pt.text_to_ipa("Portugal").unwrap(), "pˌuɾətuɡˈɑl");
+        assert_eq!(pt.text_to_ipa("obrigado").unwrap(), "ˌɔbɹiɡˈadʊ");
     }
     if let Some(it) = tr("it") {
         assert_eq!(it.text_to_ipa("simbolo").unwrap(), "sˈimbolo");

@@ -1,4 +1,5 @@
 //! Parser for spectral frame sequences in the espeak-ng `phondata` binary.
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::indexing_slicing))]
 
 // src/synthesize/phondata.rs
 //
@@ -12,6 +13,8 @@
 // Which variant is used is determined by `frame[0].frflags & FRFLAG_KLATT`.
 //
 // References: synthesize.h (frame_t, SPECT_SEQ, SPECT_SEQK)
+
+use crate::bytes::{array_at, u16_at};
 
 /// Maximum frames in a spectral sequence (N_SEQ_FRAMES in synthesize.h)
 pub const N_SEQ_FRAMES: usize = 25;
@@ -42,6 +45,12 @@ pub const FRAME_T_SIZE: usize = 64;
 /// are meaningful.
 #[derive(Debug, Clone, Default)]
 pub struct SpectFrame {
+    /// How the rendered amplitude is modulated (C's `modulation`, 0 = not at
+    /// all).  Not part of the data file: set when a phoneme is rendered.
+    pub modulation: u8,
+    /// The samples to the next frame, once a phoneme's timing is known; `None`
+    /// while `length` is still the data file's.
+    pub samples: Option<u32>,
     /// Frame flags (FRFLAG_* bitmask)
     pub frflags: u16,
     /// Formant frequencies F0–F6 in Hz
@@ -72,13 +81,11 @@ pub struct SpectFrame {
 impl SpectFrame {
     /// Parse a non-Klatt frame_t2 from 44 bytes.
     pub fn from_bytes_t2(data: &[u8]) -> Option<Self> {
-        if data.len() < FRAME_T2_SIZE {
-            return None;
-        }
+        let data: &[u8; FRAME_T2_SIZE] = data.first_chunk()?;
         let mut f = SpectFrame::default();
         f.frflags = u16::from_le_bytes([data[0], data[1]]);
-        for i in 0..7 {
-            f.ffreq[i] = i16::from_le_bytes([data[2 + i * 2], data[3 + i * 2]]);
+        for (freq, b) in f.ffreq.iter_mut().zip(data[2..16].chunks_exact(2)) {
+            *freq = u16_at(b, 0)? as i16;
         }
         // offset 16
         f.length = data[16];
@@ -102,8 +109,8 @@ impl SpectFrame {
     pub fn to_bytes_t2(&self) -> [u8; FRAME_T2_SIZE] {
         let mut d = [0u8; FRAME_T2_SIZE];
         d[0..2].copy_from_slice(&self.frflags.to_le_bytes());
-        for i in 0..7 {
-            d[2 + i * 2..4 + i * 2].copy_from_slice(&self.ffreq[i].to_le_bytes());
+        for (b, freq) in d[2..16].chunks_exact_mut(2).zip(self.ffreq) {
+            b.copy_from_slice(&freq.to_le_bytes());
         }
         d[16] = self.length;
         d[17] = self.rms;
@@ -130,13 +137,11 @@ impl SpectFrame {
 
     /// Parse a Klatt frame_t from 64 bytes.
     pub fn from_bytes_t(data: &[u8]) -> Option<Self> {
-        if data.len() < FRAME_T_SIZE {
-            return None;
-        }
+        let data: &[u8; FRAME_T_SIZE] = data.first_chunk()?;
         let mut f = SpectFrame::default();
         f.frflags = u16::from_le_bytes([data[0], data[1]]);
-        for i in 0..7 {
-            f.ffreq[i] = i16::from_le_bytes([data[2 + i * 2], data[3 + i * 2]]);
+        for (freq, b) in f.ffreq.iter_mut().zip(data[2..16].chunks_exact(2)) {
+            *freq = u16_at(b, 0)? as i16;
         }
         f.length = data[16];
         f.rms = data[17];
@@ -170,6 +175,11 @@ impl SpectFrame {
         self.ffreq[3] as f64
     }
 
+    /// The samples to the next frame, at the rate they were timed for.
+    pub fn duration(&self) -> usize {
+        self.samples.map_or(usize::from(self.length) * 64, |n| n as usize)
+    }
+
     /// Return duration in samples at 22050 Hz (STEPSIZE = 64 samples).
     #[inline]
     pub fn dur_samples(&self, speed_factor: f64) -> usize {
@@ -193,10 +203,13 @@ pub fn compile_spect_seq(frames: &[SpectFrame]) -> Vec<u8> {
     } else {
         FRAME_T2_SIZE
     };
-    let length_total: i16 = frames.iter().map(|f| f.length as i16).sum();
+    let frames = frames.get(..255).unwrap_or(frames); // the count is a byte
+    let length_total = frames
+        .iter()
+        .fold(0i16, |sum, f| sum.saturating_add(f.length.into()));
     let mut out = Vec::with_capacity(4 + frames.len() * frame_size);
     out.extend_from_slice(&length_total.to_le_bytes());
-    out.push(frames.len() as u8);
+    out.push(u8::try_from(frames.len()).unwrap_or(u8::MAX));
     out.push(0); // sqflags
     for f in frames {
         if is_klatt {
@@ -229,20 +242,15 @@ impl SpectSeq {
     /// Returns `None` if the data is truncated or the frame count is 0.
     pub fn parse(phondata: &[u8], offset: usize) -> Option<Self> {
         // Header: length_total(i16) + n_frames(u8) + sqflags(u8) = 4 bytes
-        if offset + 4 > phondata.len() {
-            return None;
-        }
-        let data = &phondata[offset..];
-        let n_frames = data[2] as usize;
+        let data = phondata.get(offset..)?;
+        let [_, _, n_frames, _] = array_at(data, 0)?;
+        let n_frames = usize::from(n_frames);
         if n_frames == 0 || n_frames > N_SEQ_FRAMES {
             return None;
         }
 
         // Determine Klatt vs non-Klatt from first frame's frflags
-        if data.len() < 4 + 2 {
-            return None;
-        } // need at least frflags of frame 0
-        let first_frflags = u16::from_le_bytes([data[4], data[5]]);
+        let first_frflags = u16_at(data, 4)?;
         let is_klatt = (first_frflags & FRFLAG_KLATT) != 0;
         let frame_size = if is_klatt {
             FRAME_T_SIZE
@@ -257,7 +265,7 @@ impl SpectSeq {
         let mut frames = Vec::with_capacity(n_frames);
         for i in 0..n_frames {
             let base = 4 + i * frame_size;
-            let frame_data = &data[base..base + frame_size];
+            let frame_data = data.get(base..base + frame_size)?;
             let frame = if is_klatt {
                 SpectFrame::from_bytes_t(frame_data)?
             } else {

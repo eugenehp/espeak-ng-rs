@@ -151,7 +151,7 @@ pub fn parse_ipa(ipa: &str, voice: &VoiceParams) -> Vec<Segment> {
             s = &s[consumed..];
         } else {
             // Unknown IPA character — skip it.
-            let c = s.chars().next().unwrap();
+            let Some(c) = s.chars().next() else { break };
             s = &s[c.len_utf8()..];
         }
     }

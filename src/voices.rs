@@ -8,6 +8,9 @@
 //! `espeak_ListVoices` — the identification lines only, not the full acoustic
 //! voice spec.
 
+#![deny(clippy::cast_possible_truncation)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::indexing_slicing))]
+
 use std::fs;
 use std::path::Path;
 
@@ -277,8 +280,8 @@ fn parse_voice_file(root: &Path, path: &Path) -> Option<VoiceEntry> {
             "dictionary" => dictionary = it.next().map(str::to_string),
             "pitch" => {
                 let n: Vec<i32> = it.by_ref().filter_map(|x| x.parse().ok()).collect();
-                if n.len() >= 2 {
-                    pitch = Some((n[0], n[1]));
+                if let [a, b, ..] = *n {
+                    pitch = Some((a, b));
                 }
             }
             "intonation" => intonation = it.next().and_then(|x| x.parse().ok()),
@@ -373,17 +376,13 @@ fn parse_voice_file(root: &Path, path: &Path) -> Option<VoiceEntry> {
 /// Finnish, Estonian, Arabic and friends — so the placement rule has to come
 /// from the data, not from a table in the port.
 pub fn voice_stress_rule(data_dir: &Path, lang: &str) -> Option<Vec<i32>> {
-    list_voices(data_dir)
-        .into_iter()
-        .find(|v| v.language.eq_ignore_ascii_case(lang))
+    voice_for(data_dir, lang)
         .and_then(|v| v.stress_rule)
 }
 
 /// The `replace <flags> <old> <new>` lines a language's voice file declares.
 pub fn voice_replacements(data_dir: &Path, lang: &str) -> Vec<(u8, String, String)> {
-    list_voices(data_dir)
-        .into_iter()
-        .find(|v| v.language.eq_ignore_ascii_case(lang))
+    voice_for(data_dir, lang)
         .map(|v| v.replace)
         .unwrap_or_default()
 }
@@ -394,9 +393,7 @@ pub fn voice_replacements(data_dir: &Path, lang: &str) -> Vec<(u8, String, Strin
 /// word boundary; the second number, when present, replaces
 /// `langopts.vowel_pause`.
 pub fn voice_words(data_dir: &Path, lang: &str) -> Option<Vec<i32>> {
-    list_voices(data_dir)
-        .into_iter()
-        .find(|v| v.language.eq_ignore_ascii_case(lang))
+    voice_for(data_dir, lang)
         .and_then(|v| v.words)
 }
 
@@ -405,9 +402,7 @@ pub fn voice_words(data_dir: &Path, lang: &str) -> Option<Vec<i32>> {
 /// C turns it into `pitch_base`/`pitch_range` *and* a `formant_factor` — a
 /// voice pitched away from the default gets its formants shifted with it.
 pub fn voice_pitch(data_dir: &Path, lang: &str) -> Option<(i32, i32)> {
-    list_voices(data_dir)
-        .into_iter()
-        .find(|v| v.language.eq_ignore_ascii_case(lang))
+    voice_for(data_dir, lang)
         .and_then(|v| v.pitch)
 }
 
@@ -417,27 +412,46 @@ pub fn voice_pitch(data_dir: &Path, lang: &str) -> Option<(i32, i32)> {
 /// transcribed table (upstream #1466): twenty-two shipped languages set it, and
 /// it decides which tune each clause terminator maps to.
 pub fn voice_intonation(data_dir: &Path, lang: &str) -> Option<u8> {
-    list_voices(data_dir)
-        .into_iter()
-        .find(|v| v.language.eq_ignore_ascii_case(lang))
+    voice_for(data_dir, lang)
         .and_then(|v| v.intonation)
 }
 
 /// The `stressOpt` bits a language's voice file sets, if any — these *replace*
 /// the built-in `stress_flags` for that language, as they do in C.
 pub fn voice_stress_opt(data_dir: &Path, lang: &str) -> Option<u32> {
-    list_voices(data_dir)
-        .into_iter()
-        .find(|v| v.language.eq_ignore_ascii_case(lang))
+    voice_for(data_dir, lang)
         .and_then(|v| v.stress_opt)
+}
+
+/// The voice of a language: the file that names it first, or else one that
+/// lists it as another of its languages (`pt-pt`).
+fn voice_for(data_dir: &Path, lang: &str) -> Option<VoiceEntry> {
+    let mut voices = list_voices(data_dir);
+    let first = voices.iter().position(|v| v.language.eq_ignore_ascii_case(lang));
+    let ix = first.or_else(|| {
+        // Several files can list one (`en`); its own comes first.
+        let lists = |v: &VoiceEntry| v.other_languages.iter().any(|l| l.eq_ignore_ascii_case(lang));
+        let own = |v: &VoiceEntry| v.file.rsplit('/').next().is_some_and(|f| f.eq_ignore_ascii_case(lang));
+        voices
+            .iter()
+            .position(|v| lists(v) && own(v))
+            .or_else(|| voices.iter().position(lists))
+    })?;
+    Some(voices.swap_remove(ix))
 }
 
 /// The `stressLength <l0…l7>` table a language's voice file declares, if any.
 pub fn voice_stress_length(data_dir: &Path, lang: &str) -> Option<Vec<i32>> {
-    list_voices(data_dir)
-        .into_iter()
-        .find(|v| v.language.eq_ignore_ascii_case(lang))
+    voice_for(data_dir, lang)
         .and_then(|v| v.stress_length)
+}
+
+/// The acoustic lines (`formant`, `consonants`, `stressAmp`, …) of a language's
+/// own voice file.
+pub fn voice_acoustics(data_dir: &Path, lang: &str) -> Option<VariantParams> {
+    let voice = voice_for(data_dir, lang)?;
+    let bytes = fs::read(data_dir.join("lang").join(voice.file)).ok()?;
+    parse_variant(&String::from_utf8_lossy(&bytes))
 }
 
 /// Look up a voice by its primary language code and return `(dictionary,
@@ -445,11 +459,7 @@ pub fn voice_stress_length(data_dir: &Path, lang: &str) -> Option<Vec<i32>> {
 /// no voice file matches).  Used to resolve aliased voices like Norwegian
 /// Bokmål (`nb` → `dictionary no` / `phonemes no`).
 pub fn voice_data_overrides(data_dir: &Path, lang: &str) -> (Option<String>, Option<String>) {
-    let voices = list_voices(data_dir);
-    match voices
-        .iter()
-        .find(|v| v.language.eq_ignore_ascii_case(lang))
-    {
+    match voice_for(data_dir, lang) {
         Some(v) => (v.dictionary.clone(), v.phonemes.clone()),
         None => (None, None),
     }
@@ -460,10 +470,7 @@ pub fn voice_data_overrides(data_dir: &Path, lang: &str) -> (Option<String>, Opt
 /// European, `pt-BR`=`dictrules 2`→0x4 for Brazilian).  `0` when the voice has
 /// no `dictrules` directive.
 pub fn voice_dict_condition(data_dir: &Path, lang: &str) -> u32 {
-    let voices = list_voices(data_dir);
-    voices
-        .iter()
-        .find(|v| v.language.eq_ignore_ascii_case(lang))
+    voice_for(data_dir, lang)
         .map(|v| v.dict_rules.iter().fold(0u32, |acc, &n| acc | (1u32 << n)))
         .unwrap_or(0)
 }
@@ -472,10 +479,7 @@ pub fn voice_dict_condition(data_dir: &Path, lang: &str) -> u32 {
 /// bracketsAnnounced)` from the voice file, defaulting to C's `(4, 2)`.  The
 /// pause loop spends 2 per `phonPAUSE`, so 4 is two pauses and 0 is none.
 pub fn voice_bracket_pause(data_dir: &Path, lang: &str) -> (u8, u8) {
-    let voices = list_voices(data_dir);
-    voices
-        .iter()
-        .find(|v| v.language.eq_ignore_ascii_case(lang))
+    voice_for(data_dir, lang)
         .map_or((4, 2), |v| {
             (v.brackets.unwrap_or(4), v.brackets_announced.unwrap_or(2))
         })
@@ -529,8 +533,8 @@ pub fn load_mbrola_voice(data_dir: &Path, name: &str) -> Option<MbrolaVoice> {
             }
             Some("pitch") => {
                 let n: Vec<i32> = f.by_ref().filter_map(|x| x.parse().ok()).collect();
-                if n.len() >= 2 {
-                    pitch = Some((n[0], n[1]));
+                if let [a, b, ..] = *n {
+                    pitch = Some((a, b));
                 }
             }
             Some("mbrola") => {
@@ -563,14 +567,14 @@ pub struct VariantFormant {
     pub freq: i32,
     pub height: i32,
     pub width: i32,
+    /// Added to the frequency, in Hz.
+    pub freq_add: i32,
 }
 
 /// Acoustic parameters parsed from a variant voice file (`voices/!v/<name>`),
 /// e.g. `f3`, `m3`, `whisper`.  A variant modifies the *base* voice's synthesis
 /// (pitch, formants, breathiness, …).
 ///
-/// These are parsed and exposed but **not yet applied** to the synthesizer —
-/// that step is frame/spectrum-verifiable and tracked in `GAPS.md` §11.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct VariantParams {
     /// `name` line (e.g. `female3`).
@@ -585,8 +589,12 @@ pub struct VariantParams {
     pub flutter: Option<i32>,
     /// `voicing <n>`.
     pub voicing: Option<i32>,
+    /// `speed <percent>`.
+    pub speed: Option<u32>,
     /// `consonants <n>`.
     pub consonants: Option<i32>,
+    /// `klatt <source> …` — use the Klatt synthesizer, with this glottal source.
+    pub klatt: Option<u8>,
     /// `roughness <n>`.
     pub roughness: Option<i32>,
     /// `echo <delay_ms> <amplitude>`.
@@ -599,7 +607,9 @@ pub struct VariantParams {
     pub tone: Option<[i32; 12]>,
     /// `stressAmp …` (per stress level).
     pub stress_amp: Vec<i32>,
-    /// `stressAdd …`.
+    /// `stressLength …` (replaces the language's table).
+    pub stress_length: Vec<i32>,
+    /// `stressAdd …` (added to the table).
     pub stress_add: Vec<i32>,
     /// `breath …`.
     pub breath: Vec<i32>,
@@ -654,28 +664,35 @@ fn parse_variant(text: &str) -> Option<VariantParams> {
             }
             "pitch" => {
                 let n = ints(it);
-                if n.len() >= 2 {
-                    v.pitch = Some((n[0], n[1]));
+                if let [a, b, ..] = *n {
+                    v.pitch = Some((a, b));
                 }
             }
             "flutter" => v.flutter = it.next().and_then(|x| x.parse().ok()),
             "voicing" => v.voicing = it.next().and_then(|x| x.parse().ok()),
+            "speed" => v.speed = it.next().and_then(|x| x.parse().ok()),
             "consonants" => v.consonants = it.next().and_then(|x| x.parse().ok()),
+            "klatt" => {
+                let source = it.next().and_then(|x| x.parse().ok());
+                v.klatt = Some(source.unwrap_or(1));
+            }
             "roughness" => v.roughness = it.next().and_then(|x| x.parse().ok()),
             "echo" => {
                 let n = ints(it);
-                if n.len() >= 2 {
-                    v.echo = Some((n[0], n[1]));
+                if let [a, b, ..] = *n {
+                    v.echo = Some((a, b));
                 }
             }
             "formant" => {
                 let n = ints(it);
-                if n.len() >= 3 {
+                if let [index, freq, ..] = *n {
+                    let value = |i: usize, default| n.get(i).copied().unwrap_or(default);
                     v.formants.push(VariantFormant {
-                        index: n[0] as u8,
-                        freq: n[1],
-                        height: n[2],
-                        width: n.get(3).copied().unwrap_or(100),
+                        index: u8::try_from(index).unwrap_or(u8::MAX),
+                        freq,
+                        height: value(2, 100),
+                        width: value(3, 100),
+                        freq_add: value(4, 0),
                     });
                 }
             }
@@ -684,15 +701,13 @@ fn parse_variant(text: &str) -> Option<VariantParams> {
                 // the list so the last height extends to the top of the range.
                 let n = ints(it);
                 let mut pts = [-1i32; 12];
-                for (i, &x) in n.iter().take(12).enumerate() {
-                    pts[i] = x;
-                }
-                if n.len() < 12 {
-                    pts[n.len().min(11)] = -1;
+                for (pt, &x) in pts.iter_mut().zip(&n) {
+                    *pt = x;
                 }
                 v.tone = Some(pts);
             }
             "stressamp" | "stressAmp" => v.stress_amp = ints(it),
+            "stresslength" | "stressLength" => v.stress_length = ints(it),
             "stressadd" | "stressAdd" => v.stress_add = ints(it),
             "breath" => v.breath = ints(it),
             "breathw" => v.breathw = ints(it),
@@ -852,7 +867,8 @@ roughness 4
                 index: 1,
                 freq: 120,
                 height: 75,
-                width: 150
+                width: 150,
+                freq_add: -50,
             }
         );
     }

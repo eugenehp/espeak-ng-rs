@@ -58,7 +58,7 @@ fn billion_and_below_are_unchanged() {
 #[test]
 fn german_long_scale_billion_is_ten_to_the_twelfth() {
     // German uses the long scale: 10^12 = "Billion" (not the short-scale
-    // trillion), 10^18 = "Trillion".  Both require the higher scale words.
+    // trillion).  Past `max_digits` (14) the number is read digit by digit.
     let Some(t) = Translator::new("de", None).ok() else {
         eprintln!("[SKIP] no de data");
         return;
@@ -70,8 +70,8 @@ fn german_long_scale_billion_is_ten_to_the_twelfth() {
         ipa("1000000000000")
     );
     assert!(
-        ipa("1000000000000000000").contains("tɾɪljˈoːn"),
-        "de 10^18 = Trillion: {}",
+        ipa("1000000000000000000").starts_with("ˈaɪns nˈʊlnˈʊlnˈʊl"),
+        "de 10^18 is read digit by digit: {}",
         ipa("1000000000000000000")
     );
 }

@@ -3,6 +3,9 @@
 //! Rust equivalents of `PHONEME_TAB`, `PHONEME_TAB_LIST`, and
 //! `REPLACE_PHONEMES` from `phoneme.h`.
 
+#![deny(clippy::cast_possible_truncation)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::indexing_slicing))]
+
 use super::N_PHONEME_TAB_NAME;
 
 // ---------------------------------------------------------------------------
@@ -84,9 +87,9 @@ impl PhonemeTab {
 
     /// Parse a single `PhonemeTab` from 16 raw bytes (little-endian).
     pub fn from_bytes(bytes: &[u8; 16]) -> Self {
-        let mnemonic = u32::from_le_bytes(bytes[0..4].try_into().unwrap());
-        let phflags = u32::from_le_bytes(bytes[4..8].try_into().unwrap());
-        let program = u16::from_le_bytes(bytes[8..10].try_into().unwrap());
+        let mnemonic = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+        let phflags = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
+        let program = u16::from_le_bytes([bytes[8], bytes[9]]);
         let code = bytes[10];
         let typ = bytes[11];
         let start_type = bytes[12];
@@ -131,21 +134,23 @@ impl PhonemeTab {
 /// `n_phonemes` × 16-byte entries.
 pub fn compile_phontab(tables: &[PhonemeTabList]) -> Vec<u8> {
     let mut out = Vec::new();
-    out.push(tables.len() as u8);
+    let tables = tables.get(..255).unwrap_or(tables); // the counts are bytes
+    out.push(u8::try_from(tables.len()).unwrap_or(u8::MAX));
     out.extend_from_slice(&[0, 0, 0]); // header padding
 
     for t in tables {
-        out.push(t.phonemes.len() as u8);
+        let phonemes = t.phonemes.get(..255).unwrap_or(&t.phonemes);
+        out.push(u8::try_from(phonemes.len()).unwrap_or(u8::MAX));
         out.push(t.includes);
         out.extend_from_slice(&[0, 0]); // table-header padding
 
         let mut name = [0u8; N_PHONEME_TAB_NAME];
-        let nb = t.name.as_bytes();
-        let n = nb.len().min(N_PHONEME_TAB_NAME);
-        name[..n].copy_from_slice(&nb[..n]);
+        for (to, from) in name.iter_mut().zip(t.name.bytes()) {
+            *to = from;
+        }
         out.extend_from_slice(&name);
 
-        for ph in &t.phonemes {
+        for ph in phonemes {
             out.extend_from_slice(&ph.to_bytes());
         }
     }
@@ -177,7 +182,7 @@ impl PhonemeTabList {
             .iter()
             .position(|&b| b == 0)
             .unwrap_or(N_PHONEME_TAB_NAME);
-        String::from_utf8_lossy(&buf[..end]).into_owned()
+        String::from_utf8_lossy(buf.get(..end).unwrap_or_default()).into_owned()
     }
 }
 

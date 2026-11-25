@@ -31,7 +31,7 @@ fn compound_ordinals_are_one_word() {
         );
     }
     // 21. reads as one compound cardinal + suffix (matches '20.' ending).
-    assert_eq!(ipa("21."), format!("ˌaɪn ʊnt{}", ipa("20.")));
+    assert_eq!(ipa("21."), format!("ˈaɪn ʊnt{}", ipa("20.")));
     // Round and small ordinals are unchanged.
     assert_eq!(ipa("1."), "ˈeːɾstə");
     assert_eq!(ipa("3."), "dɾˈɪtə");

@@ -2,6 +2,7 @@
 //!
 //! C equivalents: `HashDictionary()`, `LookupDict2()`, `LookupDictList()`
 //! in `dictionary.c`.
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::indexing_slicing))]
 
 use super::file::Dictionary;
 use super::flags::{DictFlags1, DictFlags2};
@@ -98,6 +99,11 @@ pub struct LookupCtx {
 
 pub const CLAUSE_TYPE_SENTENCE: u32 = 0x8000;
 
+/// Bit `n`, or nothing for a flag byte no valid dictionary contains.
+fn bit(n: u8) -> u32 {
+    1u32.checked_shl(n.into()).unwrap_or(0)
+}
+
 /// Look up a single word in the hash table.
 ///
 /// Returns `Some(LookupResult)` if found (including "found flags only"
@@ -128,40 +134,39 @@ pub fn lookup_dict2(
         let mut hash_buf: Vec<u8> = compressed_word.clone();
         // Append original word chars starting at position ix (until implicit null)
         if ix < word.len() {
-            hash_buf.extend_from_slice(&word[ix..]);
+            hash_buf.extend(word.iter().skip(ix));
         }
         hash_word(&hash_buf)
     };
-    let bucket_start = dict.hashtab[hash];
+    let bucket_start = dict.hashtab.get(hash).copied().unwrap_or(usize::MAX);
 
     let data = &dict.data;
     let mut pos = bucket_start;
 
     loop {
-        if pos >= data.len() {
+        let Some(&entry_len) = data.get(pos) else {
             break;
-        }
-        let entry_len = data[pos] as usize;
+        };
+        let entry_len = entry_len as usize;
         if entry_len == 0 {
             break;
         } // end of bucket
 
         let entry_end = pos + entry_len;
-        if entry_end > data.len() {
+        let Some(entry) = data.get(pos..entry_end) else {
             break;
-        }
+        };
 
         // byte 1: word length info
         //   bits 0-5: word byte count
         //   bit  6  : compressed flag
         //   bit  7  : no_phonemes flag
-        let word_info = data[pos + 1];
+        let word_info = entry.get(1).copied().unwrap_or(0);
         let stored_len = word_info & 0x7f; // bits 0-6 must equal wlen (incl. compressed bit)
         let actual_len = (wlen & 0x3f) as usize; // byte count for memcmp
 
         if stored_len != wlen
-            || pos + 2 + actual_len > data.len()
-            || &data[pos + 2..pos + 2 + actual_len] != compressed_word.as_slice()
+            || data.get(pos + 2..pos + 2 + actual_len) != Some(compressed_word.as_slice())
         {
             pos = entry_end;
             continue;
@@ -179,10 +184,9 @@ pub fn lookup_dict2(
             phonemes = Vec::new();
         } else {
             let ph_start = p;
-            while p < entry_end && data[p] != 0 {
-                p += 1;
-            }
-            phonemes = data[ph_start..p].to_vec();
+            let rest = data.get(ph_start..entry_end).unwrap_or_default();
+            phonemes = rest.iter().copied().take_while(|&b| b != 0).collect();
+            p += phonemes.len();
             if p < entry_end {
                 p += 1;
             } // skip null
@@ -195,19 +199,19 @@ pub fn lookup_dict2(
         let mut condition_failed = false;
 
         while p < entry_end {
-            let flag = data[p];
+            let Some(&flag) = data.get(p) else { break };
             p += 1;
 
             if flag >= 100 {
                 // Conditional rule
                 if flag >= 132 {
                     // fail if this condition IS set
-                    if ctx.dict_condition & (1 << (flag - 132)) != 0 {
+                    if ctx.dict_condition & bit(flag - 132) != 0 {
                         condition_failed = true;
                     }
                 } else {
                     // allow only if this condition IS set
-                    if ctx.dict_condition & (1 << (flag - 100)) == 0 {
+                    if ctx.dict_condition & bit(flag - 100) == 0 {
                         condition_failed = true;
                     }
                 }
@@ -218,7 +222,7 @@ pub fn lookup_dict2(
                 // which must begin `word2` (C: `memcmp(word2, p, n_chars)`;
                 // the trailing space keeps "parce quelque" from "parce que").
                 skipwords = (flag - 80) as usize;
-                let rest = &data[p..entry_end];
+                let rest = data.get(p..entry_end).unwrap_or_default();
                 if rest.is_empty() || ctx.word2.get(..rest.len()) != Some(rest) {
                     condition_failed = true;
                 }
@@ -231,7 +235,7 @@ pub fn lookup_dict2(
                     flags1.set(super::FLAG_STRESS_END);
                 }
             } else if flag >= 32 {
-                flags2.set(1u32 << (flag - 32));
+                flags2.set(bit(flag - 32));
             } else {
                 flags1.set(1u32 << flag);
             }

@@ -16,6 +16,8 @@
 //!   ./target/release/espeak-ng-rs -q -w /tmp/r.wav "sea shells"
 //!   espeak-ng -q -w /tmp/o.wav "sea shells"
 //!   cargo run --features wav-analysis --bin spectral -- /tmp/o.wav /tmp/r.wav
+#![allow(clippy::unwrap_used, clippy::indexing_slicing, reason = "development tool")]
+
 
 use espeak_ng::analysis::{compare, Pcm, PitchOptions};
 

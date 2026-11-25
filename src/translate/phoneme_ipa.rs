@@ -15,11 +15,12 @@
 //! program reaches no `ipa` instruction does C fall back to mapping the
 //! mnemonic's characters through `ipa1[]`.
 
+use crate::bytes::Bounded;
 use std::path::Path;
 
 use crate::phoneme::{
-    PhonemeData, PHON_END_WORD, PHON_STRESS_2, PHON_STRESS_3, PHON_STRESS_D, PHON_STRESS_P,
-    PHON_STRESS_P2, PHON_STRESS_PREV, PHON_STRESS_TONIC, PHON_STRESS_U,
+    PhonemeData, PHON_END_WORD, PHON_LENGTHEN, PHON_STRESS_2, PHON_STRESS_3, PHON_STRESS_D, PHON_STRESS_P,
+    PHON_STRESS_P2, PHON_STRESS_PREV, PHON_STRESS_TONIC, PHON_STRESS_U, PHON_SYLLABIC,
 };
 use crate::synthesize::bytecode::{interpret_phoneme, Neighbours};
 
@@ -156,18 +157,22 @@ pub fn codes_to_ipa_opts(
     sep: Option<char>,
 ) -> String {
     // Indices of the codes that are actual sounds, for neighbour lookups.
-    let is_sound = |c: &PhonemeCode| !c.is_boundary && c.code > 8 && c.code != PHON_END_WORD;
+    // (the lengthener is a flag on its phoneme in C, not a neighbour).
+    let is_sound = |c: &PhonemeCode| {
+        !c.is_boundary && c.code > 8 && c.code != PHON_END_WORD && c.code != PHON_LENGTHEN
+    };
     let real: Vec<usize> = codes
         .iter()
         .enumerate()
         .filter(|(_, c)| is_sound(c))
         .map(|(i, _)| i)
         .collect();
+    let starts = super::word_starts(codes, &real);
     // Position within `real` for each code index, so the loop below can find a
     // phoneme's neighbours without rescanning.
     let mut rank = vec![usize::MAX; codes.len()];
     for (n, &i) in real.iter().enumerate() {
-        rank[i] = n;
+        rank.put(i, n);
     }
 
     let mut out = String::new();
@@ -181,6 +186,8 @@ pub fn codes_to_ipa_opts(
     let mut wrote_phoneme = false;
     let mut after_word_break = true;
     let mut pending_stress = String::new();
+    // The last sound written, for the markers that modify it.
+    let mut last_sound: Option<usize> = None;
 
     for (i, pc) in codes.iter().enumerate() {
         if let Some(CodeMarker::Punctuation(c)) = &pc.marker {
@@ -219,7 +226,7 @@ pub fn codes_to_ipa_opts(
             // C writes the marker through `WritePhMnemonic` like a phoneme name,
             // so `--sep` separates it and `--tie` goes inside it: `(en).ð.ə.(de)`
             // and `(-e-n)`.
-            let marker = format!("({target})");
+            let marker = format!("({})", super::switch_marker_name(data_dir, target));
             if let Some(sep) = sep {
                 // A closing marker took the word space back, so the phoneme
                 // before it is still the one to separate from.
@@ -298,8 +305,22 @@ pub fn codes_to_ipa_opts(
                         continue;
                     }
                 }
-                let nb = neighbours_at(codes, &real, rank[i], phdata);
-                let name = write_ph_mnemonic_ipa(phdata, code, &nb);
+                let nb = neighbours_at(codes, &real, &starts, rank.at(i), phdata);
+                let mut name = write_ph_mnemonic_ipa(phdata, code, &nb);
+                // C writes the syllabic marker and the lengthener through their
+                // phoneme's list entry, so a phoneme with an IPA name of its own
+                // is written twice: Arabic `A-` is "ʕʕ", Danish `A:` "ɑɑ".
+                if code == PHON_SYLLABIC || code == PHON_LENGTHEN {
+                    if let Some(n) = last_sound {
+                        let marked = codes.get(real.at(n)).map_or(0, |c| c.code);
+                        let nb = neighbours_at(codes, &real, &starts, n, phdata);
+                        if has_ipa_name(phdata, marked, &nb) {
+                            name = write_ph_mnemonic_ipa(phdata, marked, &nb);
+                        }
+                    }
+                } else {
+                    last_sound = Some(rank.at(i)).filter(|&n| n != usize::MAX);
+                }
                 if let Some(sep) = sep {
                     // Not before the clause's first phoneme, not straight after
                     // a word break, and not before a modifier letter.
@@ -342,27 +363,37 @@ pub fn codes_to_ipa_opts(
         .to_string()
 }
 
+/// Whether the phoneme's program gives it an IPA name.
+fn has_ipa_name(phdata: &PhonemeData, code: u8, nb: &Neighbours) -> bool {
+    phdata.get(code).filter(|ph| ph.program != 0).is_some_and(|ph| {
+        interpret_phoneme(ph.program, &phdata.phonindex, nb, |c| phdata.get(c).cloned())
+            .ipa_string
+            .is_some_and(|s| !s.is_empty())
+    })
+}
+
 /// The neighbour context for the phoneme that is `real[n]`, built the same way
 /// the code-list phoneme-program pass builds it.
 fn neighbours_at(
     codes: &[PhonemeCode],
     real: &[usize],
+    starts: &[bool],
     n: usize,
     phdata: &PhonemeData,
 ) -> Neighbours {
     if n == usize::MAX {
         return Neighbours::default();
     }
-    let i = real[n];
-    let at = |k: Option<&usize>| k.map(|&k| codes[k].code).unwrap_or(0);
+    let i = real.at(n);
+    let at = |k: Option<&usize>| k.and_then(|&k| codes.get(k)).map_or(0, |c| c.code);
     let next_wordstart = real.get(n + 1).is_some_and(|&k| {
-        codes[i + 1..k]
+        codes.get(i + 1..k).unwrap_or_default()
             .iter()
             .any(|c| c.is_boundary || c.code == PHON_END_WORD)
     });
     // Stress level of the syllable this phoneme belongs to, for programs that
     // condition on it.
-    let stress = codes[..i]
+    let stress = codes.get(..i).unwrap_or_default()
         .iter()
         .rev()
         .take_while(|c| !c.is_boundary)
@@ -373,17 +404,19 @@ fn neighbours_at(
             _ => None,
         })
         .unwrap_or(1);
-    let starts = super::word_starts(codes, real);
     Neighbours {
         prev: at(n.checked_sub(1).and_then(|k| real.get(k))),
-        this: codes[i].code,
+        this: codes.get(i).map_or(0, |c| c.code),
         next: at(real.get(n + 1)),
         next2: at(real.get(n + 2)),
         stress,
-        this_wordstart: starts[n],
-        prev_wordstart: n.checked_sub(1).is_some_and(|k| starts[k]),
+        this_wordstart: starts.at(n),
+        prev_wordstart: n.checked_sub(1).is_some_and(|k| starts.at(k)),
         next_wordstart,
-        next2_wordstart: next_wordstart,
+        next2_wordstart: starts.get(n + 2).copied().unwrap_or(false),
+        prev2: at(n.checked_sub(2).and_then(|k| real.get(k))),
+        next3: at(real.get(n + 3)),
+        next3_wordstart: starts.get(n + 3).copied().unwrap_or(false),
         ..Default::default()
     }
 }

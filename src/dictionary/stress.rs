@@ -6,6 +6,7 @@
 //! These functions assign stress markers to phoneme sequences produced by
 //! dictionary lookup or rule translation.
 
+use crate::bytes::Bounded;
 use crate::phoneme::load::PhonemeData;
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -97,12 +98,23 @@ const S_NO_EOC_LENGTHEN: u32 = 0x200000;
 // Language options needed by stress computation
 // ──────────────────────────────────────────────────────────────────────────────
 
+/// The language's reading of `S_FINAL_SPANISH`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FinalConsonant {
+    #[default]
+    Spanish,
+    NotNS,
+    NotS,
+}
+
 /// Stress-assignment options, mirroring the relevant `LANGUAGE_OPTIONS` fields
 /// from `translate.h`.
 ///
 /// Build a language-appropriate value with [`StressOpts::for_lang`].
 #[derive(Debug, Clone)]
 pub struct StressOpts {
+    /// Which final consonants draw the stress in the Spanish group.
+    pub final_consonant: FinalConsonant,
     /// Which syllable receives primary stress (a `STRESSPOSN_*` constant).
     pub stress_rule: u8,
     /// Bitmask of `S_*` stress flags.
@@ -128,6 +140,8 @@ pub struct StressOpts {
     /// word-finally.  Russian and Ukrainian use `0x03`, which crosses word
     /// boundaries (`привіт світ` → `pRIB'i:d[ zB'i:t[`).
     pub regressive_voicing: u32,
+    /// C `LOPT_PREFIXES`: a prefixed word's stem keeps a stress of its own.
+    pub prefix_stress: bool,
     /// `langopts.param[LOPT_ALT] & 2` — apply `ApplySpecialAttribute2()` to a
     /// word flagged `$alt` or `$alt2` (Italian, Portuguese, Slovenian).
     pub alt_attributes: bool,
@@ -178,6 +192,8 @@ impl Default for StressOpts {
             opt_length: 0,
             word_final_devoicing: false,
             regressive_voicing: 0,
+            final_consonant: FinalConsonant::Spanish,
+            prefix_stress: false,
             alt_attributes: false,
             alt_stress_upgrade: false,
             caps_mark_stress: false,
@@ -201,7 +217,7 @@ impl Default for StressOpts {
 /// dozen others do), which `for_lang_in` applies afterwards.
 fn stress_rule_for(lang: &str) -> u8 {
     match lang {
-        "af" | "am" | "as" | "be" | "bn" | "bpy" | "bs" | "cs" | "da" | "de" | "en" | "fo"
+        "af" | "am" | "as" | "be" | "bn" | "bpy" | "bs" | "cs" | "da" | "de" | "en"
         | "ga" | "gd" | "hr" | "hu" | "is" | "ka" | "kn" | "ltg" | "lv" | "mn" | "nb" | "nl"
         | "si" | "sk" | "smj" | "sr" | "sv" | "ta" | "te" | "vi" => STRESSPOSN_1L,
         "cmn" | "fr" | "ht" | "hy" | "pap" | "pt" | "ro" | "rup" | "sq" | "tt" | "yue" | "zh" => {
@@ -272,7 +288,7 @@ impl StressOpts {
         let mut opts = Self::for_lang(lang);
         if let Some(nums) = crate::voices::voice_stress_rule(data_dir, lang) {
             if let Some(&rule) = nums.first() {
-                opts.stress_rule = rule as u8;
+                opts.stress_rule = u8::try_from(rule).unwrap_or(opts.stress_rule);
             }
             if let Some(&wd1) = nums.get(1) {
                 opts.unstressed_wd1 = wd1;
@@ -285,7 +301,7 @@ impl StressOpts {
         // short pause after every word.
         if let Some(nums) = crate::voices::voice_words(data_dir, lang) {
             if let Some(&gap) = nums.first() {
-                opts.word_gap = gap as u8;
+                opts.word_gap = u8::try_from(gap).unwrap_or(opts.word_gap);
             }
             if let Some(&vp) = nums.get(1) {
                 opts.vowel_pause = vp as u32;
@@ -367,6 +383,13 @@ impl StressOpts {
             _ => 0,
         };
 
+        opts.prefix_stress = matches!(primary, "af" | "da" | "de" | "nl");
+
+        opts.final_consonant = match primary {
+            "an" | "ca" => FinalConsonant::NotNS,
+            "ia" => FinalConsonant::NotS,
+            _ => FinalConsonant::Spanish,
+        };
         match primary {
             // `LOPT_REGRESSIVE_VOICING`, transcribed from `tr_languages.c`: a
             // consonant cluster takes its voicing from its last member, bit
@@ -391,7 +414,7 @@ impl StressOpts {
                 opts.regressive_voicing = 0x107;
             }
             // `case L('r','u'): case L('s','k'): case L('c','s'):` share one arm.
-            "cs" | "sk" | "sr" => opts.regressive_voicing = 0x03,
+            "bs" | "cs" | "hr" | "sk" | "sr" => opts.regressive_voicing = 0x03,
             "pl" => opts.regressive_voicing = 0x09, // propagates through liquids/nasals
             "ru" | "uk" => {
                 // `Translator_Russian`: `LOPT_REGRESSIVE_VOICING = 0x03`, and
@@ -447,7 +470,7 @@ pub fn apply_word_final_devoicing(phonemes: &mut Vec<u8>, phdata: &PhonemeData) 
     // Find last voiced stop/fricative at word end (after all vowels)
     // Scan backwards, skipping null terminator and stress markers
     for i in (0..phonemes.len()).rev() {
-        let code = phonemes[i];
+        let code = phonemes.at(i);
         if code == 0 {
             continue;
         }
@@ -458,7 +481,7 @@ pub fn apply_word_final_devoicing(phonemes: &mut Vec<u8>, phdata: &PhonemeData) 
                 5 | 7 => {
                     // phVSTOP or phVFRICATIVE: devoice if has unvoiced equivalent
                     if ph.end_type != 0 {
-                        phonemes[i] = ph.end_type;
+                        phonemes.put(i, ph.end_type);
                     }
                     return;
                 }
@@ -516,13 +539,13 @@ pub fn apply_special_attribute2(phonemes: &mut [u8], phdata: &PhonemeData, alt2:
         (code_plain_e, code_stressed_e, code_plain_o, code_stressed_o)
     };
     for i in 0..phonemes.len().saturating_sub(1) {
-        if phonemes[i] == STRESS_P {
-            let p = &mut phonemes[i + 1];
-            if *p == from_e {
-                *p = to_e;
-            } else if *p == from_o {
-                *p = to_o;
-            }
+        if phonemes.at(i) == STRESS_P {
+            let swapped = match phonemes.at(i + 1) {
+                p if p == from_e => to_e,
+                p if p == from_o => to_o,
+                p => p,
+            };
+            phonemes.put(i + 1, swapped);
             break; // only the first primary stress matters
         }
     }
@@ -549,11 +572,11 @@ pub fn get_vowel_stress(
     vowel_stress: &mut [i8; 100], // N_WORD_PHONEMES/2
     control: i32,
     stress_flags: u32,
+    mut stressed_syllable: i32,
 ) -> (i32, i32, i32) {
     let mut count = 1i32;
     let mut max_stress: i32 = -1;
     let mut stress: i32 = -1;
-    let mut stressed_syllable: i32 = 0;
     let mut primary_posn: i32 = 0;
 
     vowel_stress[0] = STRESS_IS_UNSTRESSED;
@@ -565,7 +588,7 @@ pub fn get_vowel_stress(
     let _phon_prev_stress = PHON_STRESS_PREV;
 
     while i < original.len() {
-        let phcode = original[i];
+        let phcode = original.at(i);
         if phcode == 0 {
             break;
         }
@@ -584,19 +607,19 @@ pub fn get_vowel_stress(
                 let mut j = count - 1;
                 while j > 0
                     && stressed_syllable == 0
-                    && (vowel_stress[j as usize] as i8) < STRESS_IS_PRIMARY
+                    && (vowel_stress.at(j as usize) as i8) < STRESS_IS_PRIMARY
                 {
-                    let vs = vowel_stress[j as usize];
+                    let vs = vowel_stress.at(j as usize);
                     if vs != STRESS_IS_DIMINISHED && vs != STRESS_IS_UNSTRESSED {
-                        vowel_stress[j as usize] = STRESS_IS_PRIMARY;
+                        vowel_stress.put(j as usize, STRESS_IS_PRIMARY);
                         if max_stress < STRESS_IS_PRIMARY as i32 {
                             max_stress = STRESS_IS_PRIMARY as i32;
                             primary_posn = j;
                         }
                         // Reduce any preceding primary stresses to secondary
                         for ix in 1..j {
-                            if vowel_stress[ix as usize] == STRESS_IS_PRIMARY {
-                                vowel_stress[ix as usize] = STRESS_IS_SECONDARY;
+                            if vowel_stress.at(ix as usize) == STRESS_IS_PRIMARY {
+                                vowel_stress.put(ix as usize, STRESS_IS_SECONDARY);
                             }
                         }
                         break;
@@ -626,7 +649,7 @@ pub fn get_vowel_stress(
 
         if is_vowel {
             if count < 99 {
-                vowel_stress[count as usize] = stress as i8;
+                vowel_stress.put(count as usize, stress as i8);
 
                 if stress >= STRESS_IS_PRIMARY as i32 && stress >= max_stress {
                     primary_posn = count;
@@ -636,7 +659,7 @@ pub fn get_vowel_stress(
                 // phUNSTRESSED: force unstressed if control bit 0 set
                 if stress < 0 && (control & 1) != 0 {
                     if ph.map(|p| p.phflags & PH_UNSTRESSED != 0).unwrap_or(false) {
-                        vowel_stress[count as usize] = STRESS_IS_UNSTRESSED;
+                        vowel_stress.put(count as usize, STRESS_IS_UNSTRESSED);
                     }
                 }
 
@@ -645,28 +668,28 @@ pub fn get_vowel_stress(
             }
         } else if is_syllabic {
             if count < 99 {
-                vowel_stress[count as usize] = stress as i8;
+                vowel_stress.put(count as usize, stress as i8);
                 if stress < 0 && (control & 1) != 0 {
-                    vowel_stress[count as usize] = STRESS_IS_UNSTRESSED;
+                    vowel_stress.put(count as usize, STRESS_IS_UNSTRESSED);
                 }
                 count += 1;
             }
         }
 
         // Copy phoneme to output
-        phonemes[out_pos] = phcode;
+        phonemes.put(out_pos, phcode);
         out_pos += 1;
     }
 
     // Null-terminate the compacted phoneme array
     if out_pos < phonemes.len() {
-        phonemes[out_pos] = 0;
+        phonemes.put(out_pos, 0);
         phonemes.truncate(out_pos + 1);
     }
 
     // Terminal boundary
     if count < 100 {
-        vowel_stress[count as usize] = STRESS_IS_UNSTRESSED;
+        vowel_stress.put(count as usize, STRESS_IS_UNSTRESSED);
     }
 
     // Explicit stressed syllable from $1/$2 etc (> 0)
@@ -674,7 +697,7 @@ pub fn get_vowel_stress(
         if stressed_syllable >= count {
             stressed_syllable = count - 1;
         }
-        vowel_stress[stressed_syllable as usize] = STRESS_IS_PRIMARY;
+        vowel_stress.put(stressed_syllable as usize, STRESS_IS_PRIMARY);
         max_stress = STRESS_IS_PRIMARY as i32;
         primary_posn = stressed_syllable;
     }
@@ -682,20 +705,20 @@ pub fn get_vowel_stress(
     // Handle PRIORITY stress: replace primary markers
     if max_stress == STRESS_IS_PRIORITY as i32 {
         for ix in 1..count {
-            if vowel_stress[ix as usize] == STRESS_IS_PRIMARY {
+            if vowel_stress.at(ix as usize) == STRESS_IS_PRIMARY {
                 // A language with `S_PRIORITY_STRESS` (Italian, Portuguese)
                 // *unstresses* the syllable the priority marker displaced
                 // rather than leaving it secondary — C's
                 // `stress_flags & S_PRIORITY_STRESS` branch, which was noted
                 // here but never implemented.
-                vowel_stress[ix as usize] = if stress_flags & S_PRIORITY_STRESS != 0 {
+                vowel_stress.put(ix as usize, if stress_flags & S_PRIORITY_STRESS != 0 {
                     STRESS_IS_UNSTRESSED
                 } else {
                     STRESS_IS_SECONDARY
-                };
+                });
             }
-            if vowel_stress[ix as usize] == STRESS_IS_PRIORITY {
-                vowel_stress[ix as usize] = STRESS_IS_PRIMARY;
+            if vowel_stress.at(ix as usize) == STRESS_IS_PRIORITY {
+                vowel_stress.put(ix as usize, STRESS_IS_PRIMARY);
                 primary_posn = ix;
             }
         }
@@ -754,6 +777,8 @@ pub fn set_word_stress(
         &mut vowel_stress,
         1, // control=1: mark phUNSTRESSED vowels
         opts.stress_flags,
+        // A `$1`…`$7` position wins over the rules' own stress markers.
+        stressed_syllable,
     );
     // An explicit primary-stress marker already in the phonemes (e.g. a `ˈ` from
     // Lojban's capital-stress notation) fixes the stressed syllable.  C's
@@ -781,7 +806,7 @@ pub fn set_word_stress(
     // Re-apply dict-specified stressed syllable
     if stressed_syllable > 0 {
         let sc = stressed_syllable.min(vowel_count - 1);
-        vowel_stress[sc as usize] = STRESS_IS_PRIMARY;
+        vowel_stress.put(sc as usize, STRESS_IS_PRIMARY);
         max_stress = STRESS_IS_PRIMARY as i32;
     }
 
@@ -813,7 +838,7 @@ pub fn set_word_stress(
     let final_ph2 = {
         let non_zero: Vec<u8> = phonetic.iter().filter(|&&c| c != 0).copied().collect();
         if non_zero.len() >= 2 {
-            non_zero[non_zero.len() - 2]
+            non_zero.at(non_zero.len() - 2)
         } else {
             final_ph
         }
@@ -859,25 +884,35 @@ pub fn set_word_stress(
                         let mnem = phdata.get(final_ph).map(|p| p.mnemonic).unwrap_or(0);
                         let ph2_type = phdata.get(final_ph2).map(|p| p.typ).unwrap_or(0);
                         // simplified Spanish rule
-                        if mnem != b'n' as u32 && mnem != b's' as u32 {
-                            if ph2_type == PH_VOWEL {
-                                ss = vowel_count - 1;
+                        let (n, s) = (mnem == u32::from(b'n'), mnem == u32::from(b's'));
+                        let last = match opts.final_consonant {
+                            // Aragonese and Catalan
+                            FinalConsonant::NotNS => !(n || s) || ph2_type != PH_VOWEL,
+                            // Interlingua
+                            FinalConsonant::NotS => !s || ph2_type != PH_VOWEL,
+                            // -ns keeps the stress on the syllable before.
+                            FinalConsonant::Spanish => {
+                                let nasal = phdata.get(final_ph).is_some_and(|p| p.typ == crate::phoneme::PH_NASAL);
+                                !(s && ph2_type == crate::phoneme::PH_NASAL) && (!(nasal || s) || ph2_type != PH_VOWEL)
                             }
+                        };
+                        if last {
+                            ss = vowel_count - 1;
                         }
                     }
                 }
 
                 if stressflags & S_FINAL_LONG != 0 {
-                    if vowel_length[(vowel_count - 1) as usize]
-                        > vowel_length[(vowel_count - 2) as usize]
+                    if vowel_length.at((vowel_count - 1) as usize)
+                        > vowel_length.at((vowel_count - 2) as usize)
                     {
                         ss = vowel_count - 1;
                     }
                 }
 
                 // Avoid explicitly unstressed/diminished syllables
-                if vowel_stress[ss as usize] == STRESS_IS_DIMINISHED
-                    || vowel_stress[ss as usize] == STRESS_IS_UNSTRESSED
+                if vowel_stress.at(ss as usize) == STRESS_IS_DIMINISHED
+                    || vowel_stress.at(ss as usize) == STRESS_IS_UNSTRESSED
                 {
                     if ss > 1 {
                         ss -= 1;
@@ -886,12 +921,12 @@ pub fn set_word_stress(
                     }
                 }
 
-                if vowel_stress[ss as usize] < 0 {
-                    let prev_ok = ss == 0 || vowel_stress[(ss - 1) as usize] < STRESS_IS_PRIMARY;
+                if vowel_stress.at(ss as usize) < 0 {
+                    let prev_ok = ss == 0 || vowel_stress.at((ss - 1) as usize) < STRESS_IS_PRIMARY;
                     let next_ok = ss as usize + 1 >= vowel_count as usize
-                        || vowel_stress[(ss + 1) as usize] < STRESS_IS_PRIMARY;
+                        || vowel_stress.at((ss + 1) as usize) < STRESS_IS_PRIMARY;
                     if prev_ok || next_ok {
-                        vowel_stress[ss as usize] = STRESS_IS_PRIMARY;
+                        vowel_stress.put(ss as usize, STRESS_IS_PRIMARY);
                     }
                 }
             }
@@ -901,8 +936,8 @@ pub fn set_word_stress(
             if stressed_syllable == 0 {
                 let mut ss = vowel_count - 1;
                 while ss > 0 {
-                    if vowel_stress[ss as usize] < STRESS_IS_DIMINISHED {
-                        vowel_stress[ss as usize] = STRESS_IS_PRIMARY;
+                    if vowel_stress.at(ss as usize) < STRESS_IS_DIMINISHED {
+                        vowel_stress.put(ss as usize, STRESS_IS_PRIMARY);
                         break;
                     }
                     ss -= 1;
@@ -918,7 +953,7 @@ pub fn set_word_stress(
                     ss = 1;
                 }
                 if max_stress == STRESS_IS_DIMINISHED as i32 {
-                    vowel_stress[ss as usize] = STRESS_IS_PRIMARY;
+                    vowel_stress.put(ss as usize, STRESS_IS_PRIMARY);
                 }
                 max_stress = STRESS_IS_PRIMARY as i32;
             }
@@ -933,18 +968,18 @@ pub fn set_word_stress(
                 let ss = if (vowel_count as usize) < 16 {
                     let final_type = phdata.get(final_ph).map(|p| p.typ).unwrap_or(0);
                     if final_type == PH_VOWEL {
-                        GUESS_RU_V[vowel_count as usize]
+                        GUESS_RU_V.at(vowel_count as usize)
                     } else if final_type == 4 {
                         // phSTOP
-                        GUESS_RU_T[vowel_count as usize]
+                        GUESS_RU_T.at(vowel_count as usize)
                     } else {
-                        GUESS_RU[vowel_count as usize]
+                        GUESS_RU.at(vowel_count as usize)
                     }
                 } else {
                     vowel_count - 3
                 };
                 if ss > 0 && ss < vowel_count {
-                    vowel_stress[ss as usize] = STRESS_IS_PRIMARY;
+                    vowel_stress.put(ss as usize, STRESS_IS_PRIMARY);
                 }
                 max_stress = STRESS_IS_PRIMARY as i32;
             }
@@ -955,20 +990,20 @@ pub fn set_word_stress(
                 let mut max_weight = -1i8;
                 let mut ss = 1i32;
                 for ix in 1..vowel_count - 1 {
-                    if vowel_stress[ix as usize] < STRESS_IS_DIMINISHED {
-                        let wt = syllable_weight[ix as usize];
+                    if vowel_stress.at(ix as usize) < STRESS_IS_DIMINISHED {
+                        let wt = syllable_weight.at(ix as usize);
                         if wt >= max_weight {
                             max_weight = wt;
                             ss = ix;
                         }
                     }
                 }
-                if syllable_weight[(vowel_count - 1) as usize] == 2 && max_weight < 2 {
+                if syllable_weight.at((vowel_count - 1) as usize) == 2 && max_weight < 2 {
                     ss = vowel_count - 1;
                 } else if max_weight <= 0 {
                     ss = 1;
                 }
-                vowel_stress[ss as usize] = STRESS_IS_PRIMARY;
+                vowel_stress.put(ss as usize, STRESS_IS_PRIMARY);
                 max_stress = STRESS_IS_PRIMARY as i32;
             }
         }
@@ -977,31 +1012,31 @@ pub fn set_word_stress(
             if stressed_syllable == 0 {
                 let mut ss = vowel_count - 1;
                 for ix in 1..vowel_count {
-                    if vowel_stress[ix as usize] == STRESS_IS_UNSTRESSED {
+                    if vowel_stress.at(ix as usize) == STRESS_IS_UNSTRESSED {
                         ss = ix - 1;
                         break;
                     }
                 }
-                vowel_stress[ss as usize] = STRESS_IS_PRIMARY;
+                vowel_stress.put(ss as usize, STRESS_IS_PRIMARY);
                 max_stress = STRESS_IS_PRIMARY as i32;
             }
         }
         STRESSPOSN_ALL => {
             for ix in 1..vowel_count {
-                if vowel_stress[ix as usize] < STRESS_IS_DIMINISHED {
-                    vowel_stress[ix as usize] = STRESS_IS_PRIMARY;
+                if vowel_stress.at(ix as usize) < STRESS_IS_DIMINISHED {
+                    vowel_stress.put(ix as usize, STRESS_IS_PRIMARY);
                 }
             }
         }
         STRESSPOSN_GREENLANDIC => {
             let mut long_vowel = 0i32;
             for ix in 1..vowel_count {
-                if vowel_stress[ix as usize] == STRESS_IS_PRIMARY {
-                    vowel_stress[ix as usize] = STRESS_IS_SECONDARY;
+                if vowel_stress.at(ix as usize) == STRESS_IS_PRIMARY {
+                    vowel_stress.put(ix as usize, STRESS_IS_SECONDARY);
                 }
-                if vowel_length[ix as usize] > 0 {
+                if vowel_length.at(ix as usize) > 0 {
                     long_vowel = ix;
-                    vowel_stress[ix as usize] = STRESS_IS_SECONDARY;
+                    vowel_stress.put(ix as usize, STRESS_IS_SECONDARY);
                 }
             }
             let ss = if stressed_syllable == 0 {
@@ -1016,7 +1051,7 @@ pub fn set_word_stress(
                 stressed_syllable
             };
             if ss > 0 && ss < vowel_count {
-                vowel_stress[ss as usize] = STRESS_IS_PRIMARY;
+                vowel_stress.put(ss as usize, STRESS_IS_PRIMARY);
             }
             max_stress = STRESS_IS_PRIMARY as i32;
         }
@@ -1027,22 +1062,22 @@ pub fn set_word_stress(
                 } else {
                     1i32
                 };
-                vowel_stress[ss as usize] = STRESS_IS_PRIMARY;
+                vowel_stress.put(ss as usize, STRESS_IS_PRIMARY);
                 max_stress = STRESS_IS_PRIMARY as i32;
             }
         }
         STRESSPOSN_EU => {
             if stressed_syllable == 0 && vowel_count > 2 {
                 for ix in 1..vowel_count {
-                    vowel_stress[ix as usize] = STRESS_IS_DIMINISHED;
+                    vowel_stress.put(ix as usize, STRESS_IS_DIMINISHED);
                 }
                 let ss = 2i32;
                 if max_stress == STRESS_IS_DIMINISHED as i32 {
-                    vowel_stress[ss as usize] = STRESS_IS_PRIMARY;
+                    vowel_stress.put(ss as usize, STRESS_IS_PRIMARY);
                 }
                 max_stress = STRESS_IS_PRIMARY as i32;
                 if vowel_count > 3 {
-                    vowel_stress[(vowel_count - 1) as usize] = STRESS_IS_SECONDARY;
+                    vowel_stress.put((vowel_count - 1) as usize, STRESS_IS_SECONDARY);
                 }
             }
         }
@@ -1056,15 +1091,15 @@ pub fn set_word_stress(
         && (control & 2) == 0
         && vowel_count > 2
         && max_stress_input < STRESS_IS_SECONDARY as i32
-        && vowel_stress[(vowel_count - 1) as usize] == STRESS_IS_PRIMARY
+        && vowel_stress.at((vowel_count - 1) as usize) == STRESS_IS_PRIMARY
     {
         if phdata
             .get(final_ph)
             .map(|p| p.typ == PH_VOWEL)
             .unwrap_or(false)
         {
-            vowel_stress[(vowel_count - 1) as usize] = STRESS_IS_UNSTRESSED;
-            vowel_stress[(vowel_count - 2) as usize] = STRESS_IS_PRIMARY;
+            vowel_stress.put((vowel_count - 1) as usize, STRESS_IS_UNSTRESSED);
+            vowel_stress.put((vowel_count - 2) as usize, STRESS_IS_PRIMARY);
         }
     }
 
@@ -1096,14 +1131,14 @@ pub fn set_word_stress(
         eprintln!("[stress] flags={:#x} rule={} vowel_count={} stressed_syllable={} max_stress={} vs={:?} stress={}",
             stressflags,
             opts.stress_rule, vowel_count, stressed_syllable, max_stress,
-            &vowel_stress[..(vowel_count as usize + 1).min(6)], stress);
+            vowel_stress.get(..(vowel_count as usize + 1).min(6)).unwrap_or_default(), stress);
     }
     // ── Trochaic fill ──────────────────────────────────────────────────────
     let mut done = false;
     let mut first_primary = 0i32;
 
     for v in 1..vowel_count {
-        if vowel_stress[v as usize] < STRESS_IS_DIMINISHED {
+        if vowel_stress.at(v as usize) < STRESS_IS_DIMINISHED {
             // Candidate for stress assignment
             if stressflags & S_FINAL_NO_2 != 0
                 && (stress as i32) < STRESS_IS_PRIMARY as i32
@@ -1112,13 +1147,13 @@ pub fn set_word_stress(
                 // Don't give secondary stress to final vowel
             } else if stressflags & 0x8000 != 0 && !done {
                 // Priority: left-to-right fill
-                vowel_stress[v as usize] = stress;
+                vowel_stress.put(v as usize, stress);
                 done = true;
                 stress = STRESS_IS_SECONDARY;
             } else {
                 // Trochaic: stress a vowel surrounded by unstressed vowels
-                let prev_ok = vowel_stress[(v - 1) as usize] <= STRESS_IS_UNSTRESSED;
-                let next_vs = vowel_stress[(v + 1) as usize];
+                let prev_ok = vowel_stress.at((v - 1) as usize) <= STRESS_IS_UNSTRESSED;
+                let next_vs = vowel_stress.at((v + 1) as usize);
                 let next_ok = next_vs <= STRESS_IS_UNSTRESSED
                     || (stress == STRESS_IS_PRIMARY && next_vs <= STRESS_IS_NOT_STRESSED);
 
@@ -1126,10 +1161,10 @@ pub fn set_word_stress(
                     // Check S_2_TO_HEAVY: skip light syllables if heavy exists later
                     let skip = if v > 1
                         && stressflags & S_2_TO_HEAVY != 0
-                        && syllable_weight[v as usize] == 0
+                        && syllable_weight.at(v as usize) == 0
                     {
-                        (v..vowel_count - 1).any(|i| syllable_weight[i as usize] > 0)
-                            || (syllable_weight[(v + 1) as usize] > 0)
+                        (v..vowel_count - 1).any(|i| syllable_weight.at(i as usize) > 0)
+                            || (syllable_weight.at((v + 1) as usize) > 0)
                     } else {
                         false
                     };
@@ -1138,7 +1173,7 @@ pub fn set_word_stress(
                         if stress == STRESS_IS_SECONDARY && stressflags & S_NO_AUTO_2 != 0 {
                             // Don't assign secondary stress automatically
                         } else {
-                            vowel_stress[v as usize] = stress;
+                            vowel_stress.put(v as usize, stress);
                             done = true;
                             stress = STRESS_IS_SECONDARY;
                         }
@@ -1147,11 +1182,11 @@ pub fn set_word_stress(
             }
         }
 
-        if vowel_stress[v as usize] >= STRESS_IS_PRIMARY {
+        if vowel_stress.at(v as usize) >= STRESS_IS_PRIMARY {
             if first_primary == 0 {
                 first_primary = v;
             } else if stressflags & S_FIRST_PRIMARY != 0 {
-                vowel_stress[v as usize] = STRESS_IS_SECONDARY;
+                vowel_stress.put(v as usize, STRESS_IS_SECONDARY);
             }
         }
     }
@@ -1171,8 +1206,8 @@ pub fn set_word_stress(
     let mut ms = STRESS_IS_DIMINISHED as i32;
     let mut ms_posn = 0i32;
     for v in 1..vowel_count {
-        if vowel_stress[v as usize] as i32 >= ms {
-            ms = vowel_stress[v as usize] as i32;
+        if vowel_stress.at(v as usize) as i32 >= ms {
+            ms = vowel_stress.at(v as usize) as i32;
             ms_posn = v;
         }
     }
@@ -1180,7 +1215,7 @@ pub fn set_word_stress(
     if tonic >= 0 {
         if tonic > ms || ms <= STRESS_IS_PRIMARY as i32 {
             if ms_posn > 0 && ms_posn < 100 {
-                vowel_stress[ms_posn as usize] = tonic as i8;
+                vowel_stress.put(ms_posn as usize, tonic as i8);
             }
         }
         ms = tonic;
@@ -1220,14 +1255,14 @@ pub fn set_word_stress(
 
     let mut v = 1i32;
     let phonetic_slice: &[u8] = if phonetic.last() == Some(&0) {
-        &phonetic[..phonetic.len() - 1]
+        phonetic.get(..phonetic.len() - 1).unwrap_or_default()
     } else {
         &phonetic
     };
 
     let mut pi = 0usize;
     while pi < phonetic_slice.len() {
-        let phcode = phonetic_slice[pi];
+        let phcode = phonetic_slice.at(pi);
         pi += 1;
         if phcode == 0 {
             break;
@@ -1238,15 +1273,14 @@ pub fn set_word_stress(
         let ph_flags = ph.map(|p| p.phflags).unwrap_or(0);
 
         let _is_pause = ph_type == PH_PAUSE;
-        let is_vowel = ph_type == PH_VOWEL && ph_flags & PH_NONSYLLABIC == 0;
-
-        // Check for syllabic marker (next phoneme PHON_SYLLABIC)
-        // We don't have lookahead here, so skip for now
+        // A vowel, or a consonant followed by the syllabic marker.
+        let is_vowel = ph_type == PH_VOWEL && ph_flags & PH_NONSYLLABIC == 0
+            || phonetic_slice.get(pi) == Some(&PHON_SYLLABIC);
 
         if is_vowel {
-            debug_assert!(v <= vowel_count, "v={} vowel_count={}", v, vowel_count);
+            // Vowels past the fixed-size table (a word of 100 or more) go unmarked.
             if v <= vowel_count {
-                let mut v_stress = vowel_stress[v as usize] as i32;
+                let mut v_stress = vowel_stress.at(v as usize) as i32;
 
                 if v_stress <= STRESS_IS_UNSTRESSED as i32 {
                     // Decide final stress level for weak/unstressed vowels
@@ -1259,15 +1293,15 @@ pub fn set_word_stress(
                     } else if stressflags & S_NO_DIM != 0 || v == 1 || v == vowel_count - 1 {
                         v_stress = STRESS_IS_UNSTRESSED as i32;
                     } else if v == vowel_count - 2
-                        && vowel_stress[(vowel_count - 1) as usize] <= STRESS_IS_UNSTRESSED
+                        && vowel_stress.at((vowel_count - 1) as usize) <= STRESS_IS_UNSTRESSED
                     {
                         v_stress = STRESS_IS_UNSTRESSED as i32;
                     } else {
                         // Unstressed internal syllable
-                        let prev_vs = vowel_stress[(v - 1) as usize] as i32;
+                        let prev_vs = vowel_stress.at((v - 1) as usize) as i32;
                         if prev_vs < STRESS_IS_DIMINISHED as i32 || stressflags & S_MID_DIM == 0 {
                             v_stress = STRESS_IS_DIMINISHED as i32;
-                            vowel_stress[v as usize] = STRESS_IS_DIMINISHED;
+                            vowel_stress.put(v as usize, STRESS_IS_DIMINISHED);
                         }
                     }
                 }
@@ -1277,7 +1311,7 @@ pub fn set_word_stress(
                 if v_stress == STRESS_IS_DIMINISHED as i32 || v_stress > STRESS_IS_UNSTRESSED as i32
                 {
                     let idx = v_stress.max(0).min(6) as usize;
-                    output.push(STRESS_PHONEMES[idx]);
+                    output.push(STRESS_PHONEMES.at(idx));
                 }
 
                 // `LOPT_IT_LENGTHEN`: drop the `:` that follows a vowel which is
@@ -1329,21 +1363,21 @@ pub fn change_word_stress(phonemes: &mut Vec<u8>, phdata: &PhonemeData, new_stre
     let mut vowel_stress = [0i8; 100];
     // control=0: do not strip stress markers (just read them)
     let (max_stress, vowel_count, _primary_posn) =
-        get_vowel_stress(&mut phonetic, phdata, &mut vowel_stress, 0, 0);
+        get_vowel_stress(&mut phonetic, phdata, &mut vowel_stress, 0, 0, 0);
 
     if new_stress >= STRESS_IS_PRIMARY as i32 {
         // Promote: find first vowel at max_stress level and raise it
         for ix in 1..vowel_count as usize {
-            if vowel_stress[ix] as i32 >= max_stress {
-                vowel_stress[ix] = new_stress as i8;
+            if vowel_stress.at(ix) as i32 >= max_stress {
+                vowel_stress.put(ix, new_stress as i8);
                 break;
             }
         }
     } else {
         // Demote: lower all vowels above new_stress
         for ix in 1..vowel_count as usize {
-            if vowel_stress[ix] as i32 > new_stress {
-                vowel_stress[ix] = new_stress as i8;
+            if vowel_stress.at(ix) as i32 > new_stress {
+                vowel_stress.put(ix, new_stress as i8);
             }
         }
     }
@@ -1352,7 +1386,7 @@ pub fn change_word_stress(phonemes: &mut Vec<u8>, phdata: &PhonemeData, new_stre
     let mut output: Vec<u8> = Vec::with_capacity(phonetic.len() + vowel_count as usize + 2);
     let mut v = 1i32;
     let slice: &[u8] = if phonetic.last() == Some(&0) {
-        &phonetic[..phonetic.len() - 1]
+        phonetic.get(..phonetic.len() - 1).unwrap_or_default()
     } else {
         &phonetic
     };
@@ -1367,9 +1401,9 @@ pub fn change_word_stress(phonemes: &mut Vec<u8>, phdata: &PhonemeData, new_stre
         let is_vowel = ph_type == PH_VOWEL && ph_flags & PH_NONSYLLABIC == 0;
 
         if is_vowel && v < vowel_count {
-            let vs = vowel_stress[v as usize] as i32;
+            let vs = vowel_stress.at(v as usize) as i32;
             if vs == STRESS_IS_DIMINISHED as i32 || vs > STRESS_IS_UNSTRESSED as i32 {
-                output.push(STRESS_PHONEMES[vs.max(0).min(6) as usize]);
+                output.push(STRESS_PHONEMES.at(vs.max(0).min(6) as usize));
             }
             v += 1;
         }
@@ -1431,7 +1465,7 @@ fn apply_2l(
     if stressed_syllable == 0 && vowel_count > 2 {
         let ss = 2usize;
         if *max_stress == STRESS_IS_DIMINISHED as i32 {
-            vowel_stress[ss] = STRESS_IS_PRIMARY;
+            vowel_stress.put(ss, STRESS_IS_PRIMARY);
         }
         *max_stress = STRESS_IS_PRIMARY as i32;
     }
@@ -1457,7 +1491,7 @@ fn compute_syllable_weights(
     let mut pos = 0usize;
 
     while pos < len && ix < vowel_count as usize {
-        let phcode = phonetic[pos];
+        let phcode = phonetic.at(pos);
         if phcode == 0 {
             break;
         }
@@ -1477,7 +1511,7 @@ fn compute_syllable_weights(
             if lengthened || ph_flags & PH_LONG != 0 {
                 weight += 1;
             }
-            vowel_length[ix] = weight;
+            vowel_length.put(ix, weight);
 
             if lengthened && pos < len {
                 pos += 1;
@@ -1498,7 +1532,7 @@ fn compute_syllable_weights(
             if next1_is_cons && (!next2_is_vowel || next1_is_long) {
                 weight += 1;
             }
-            syllable_weight[ix] = weight;
+            syllable_weight.put(ix, weight);
             ix += 1;
         }
     }

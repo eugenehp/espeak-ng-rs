@@ -13,6 +13,7 @@
 //! ```
 //! A rule string ends with `0x00`; `RULE_GROUP_END` marks the end of a group.
 
+use crate::bytes::Bounded;
 use super::file::Dictionary;
 use super::{
     BITNUM_FLAG_ALT, DOLLAR_LIST, DOLLAR_NOPREFIX, DOLLAR_UNPR, FLAG_FIRST_UPPER, FLAG_HYPHEN,
@@ -60,7 +61,7 @@ pub fn is_letter(letter_bits: &[u8; 256], c: u32, group: usize) -> bool {
         return false;
     }
     let idx = (c as usize) & 0xff;
-    (letter_bits[idx] >> group) & 1 != 0
+    (letter_bits.at(idx) >> group) & 1 != 0
 }
 
 /// Letter-group check that applies `letter_bits_offset` correctly.
@@ -109,7 +110,7 @@ const REMOVE_ACCENT: [u8; 414] = [
 pub fn fold_accent(c: char) -> char {
     let wc = c as u32;
     if (0xc0..0xc0 + REMOVE_ACCENT.len() as u32).contains(&wc) {
-        match REMOVE_ACCENT[(wc - 0xc0) as usize] {
+        match REMOVE_ACCENT.at((wc - 0xc0) as usize) {
             0 => c,
             base => base as char,
         }
@@ -136,7 +137,7 @@ pub fn is_letter_wc(
     } else if (0xc0..0xc0 + REMOVE_ACCENT.len() as u32).contains(&wc) {
         // An accented letter is tested through its unaccented base (C's
         // `IsLetter`), so `í` is a vowel wherever `i` is.
-        match REMOVE_ACCENT[(wc - 0xc0) as usize] {
+        match REMOVE_ACCENT.at((wc - 0xc0) as usize) {
             0 => return false,
             base => base as usize,
         }
@@ -150,12 +151,11 @@ pub fn is_letter_wc(
     if group >= 8 {
         return false;
     }
-    (letter_bits[idx] >> group) & 1 != 0
+    (letter_bits.at(idx) >> group) & 1 != 0
 }
 
 pub fn is_alpha(c: u32) -> bool {
-    // Use unicode alphanumeric as a portable approximation.
-    (c as u8).is_ascii_alphabetic() || (c >= 0xc0 && c < 0x2c0)
+    char::from_u32(c).is_some_and(char::is_alphabetic)
 }
 
 pub fn is_digit(c: u32) -> bool {
@@ -191,7 +191,7 @@ pub fn is_letter_group(
         }
         // The C code terminates groups at RULE_GROUP_END (0x07) or null.
         // Also handle '~' meaning "any character matches" (return 0).
-        let gb = group_data[g_pos];
+        let gb = group_data.at(g_pos);
         if gb == 0 {
             break;
         }
@@ -205,12 +205,12 @@ pub fn is_letter_group(
         // Each entry in the letter group is a null-terminated UTF-8 string.
         let entry_start = g_pos;
         while g_pos < group_data.len()
-            && group_data[g_pos] != 0
-            && group_data[g_pos] != super::RULE_GROUP_END
+            && group_data.at(g_pos) != 0
+            && group_data.at(g_pos) != super::RULE_GROUP_END
         {
             g_pos += 1;
         }
-        let entry = &group_data[entry_start..g_pos];
+        let entry = group_data.get(entry_start..g_pos).unwrap_or_default();
         if g_pos < group_data.len() {
             g_pos += 1;
         } // skip null
@@ -222,9 +222,9 @@ pub fn is_letter_group(
 
         let matches = if backwards {
             // Match the entry at text_pos backwards (entry is forward-oriented)
-            text_pos + 1 >= n && &text[text_pos + 1 - n..=text_pos] == entry
+            text_pos + 1 >= n && text.get(text_pos + 1 - n..=text_pos).unwrap_or_default() == entry
         } else {
-            text_pos + n <= text.len() && &text[text_pos..text_pos + n] == entry
+            text_pos + n <= text.len() && text.get(text_pos..text_pos + n).unwrap_or_default() == entry
         };
 
         if matches {
@@ -349,7 +349,10 @@ fn dollar_rule(
     }
     // C copies up to the match point and terminates with a space, so the lookup
     // text stops at the first space or NUL anyway.
-    let text = ctx.word[ctx.word_start..end]
+    let text = ctx
+        .word
+        .get(ctx.word_start..end)
+        .unwrap_or_default()
         .split(|&b| b == 0 || b == b' ')
         .next()
         .unwrap_or(&[]);
@@ -415,7 +418,7 @@ pub fn match_rule(
 
     // Each rule is a null-terminated string.
     // We loop through rules until RULE_GROUP_END.
-    while r_pos < rules.len() && rules[r_pos] != RULE_GROUP_END {
+    while r_pos < rules.len() && rules.at(r_pos) != RULE_GROUP_END {
         let mut check_atstart = false;
         let mut consumed = 0usize; // letters consumed from input
         let mut distance_left: i32 = -2;
@@ -438,7 +441,7 @@ pub fn match_rule(
             if r_pos >= rules.len() {
                 break;
             }
-            let rb = rules[r_pos];
+            let rb = rules.at(r_pos);
             r_pos += 1;
             let mut add_points: i32 = 0;
 
@@ -457,7 +460,7 @@ pub fn match_rule(
                                 if cp >= rules.len() {
                                     break;
                                 }
-                                let b = rules[cp];
+                                let b = rules.at(cp);
                                 cp += 1;
                                 if b == 0 || b == RULE_PHONEMES {
                                     break;
@@ -500,7 +503,7 @@ pub fn match_rule(
                         common_phonemes = Some(rules_abs_offset + r_pos);
                     }
                     RULE_CONDITION => {
-                        let cond_num = rules[r_pos];
+                        let cond_num = rules.at(r_pos);
                         r_pos += 1;
                         if cond_num >= 32 {
                             if dict_condition & (1 << (cond_num - 32)) != 0 {
@@ -536,7 +539,7 @@ pub fn match_rule(
                         failed = 1;
                         break;
                     }
-                    let letter = word[post_ptr];
+                    let letter = word.at(post_ptr);
                     post_ptr += 1;
 
                     if letter == rb || (letter == REPLACED_E && rb == b'e') {
@@ -560,7 +563,7 @@ pub fn match_rule(
                     // C checks: if post_ptr[-1] == 0, we're past end of text
                     if post_ptr == 0
                         || post_ptr >= word.len()
-                        || (post_ptr > 0 && word[post_ptr - 1] == 0)
+                        || (post_ptr > 0 && word.at(post_ptr - 1) == 0)
                     {
                         failed = 1;
                         break;
@@ -568,7 +571,7 @@ pub fn match_rule(
 
                     let (wc, xbytes) = utf8_decode(word, post_ptr);
                     letter_w = wc;
-                    let letter = word[post_ptr];
+                    let letter = word.at(post_ptr);
                     post_ptr += 1;
 
                     match rb {
@@ -632,7 +635,7 @@ pub fn match_rule(
                             }
                         }
                         RULE_DOLLAR => {
-                            let command = rules[r_pos];
+                            let command = rules.at(r_pos);
                             r_pos += 1;
                             post_ptr -= 1;
                             if command == DOLLAR_UNPR {
@@ -671,7 +674,7 @@ pub fn match_rule(
                             let mut p2 = post_ptr + xbytes;
                             let mut vowel_count = 0i32;
                             let mut syllable_count = 1i32;
-                            while r_pos < rules.len() && rules[r_pos] == RULE_SYLLABLE {
+                            while r_pos < rules.len() && rules.at(r_pos) == RULE_SYLLABLE {
                                 r_pos += 1;
                                 syllable_count += 1;
                             }
@@ -736,7 +739,7 @@ pub fn match_rule(
                         }
                         RULE_SKIPCHARS => {
                             // Skip forward until we find the char(s) indicated by the rule
-                            let target = rules[r_pos] as u32;
+                            let target = rules.at(r_pos) as u32;
                             let mut p2 = post_ptr.saturating_sub(1);
                             let mut p2_prev = p2;
                             let mut found_lw = letter_w;
@@ -769,7 +772,7 @@ pub fn match_rule(
                             let search_start = ctx.word_pos + group_length;
                             let search_end = post_ptr;
                             for k in search_start..search_end {
-                                if k < word.len() && word[k] == b'e' {
+                                if k < word.len() && word.at(k) == b'e' {
                                     match_.del_fwd = rules_abs_offset + k; // approximate
                                     break;
                                 }
@@ -778,9 +781,9 @@ pub fn match_rule(
                         RULE_ENDING => {
                             // next 3 bytes encode the end_type
                             if r_pos + 2 < rules.len() {
-                                let end_type = (rules[r_pos] as u32) << 16
-                                    | ((rules[r_pos + 1] & 0x7f) as u32) << 8
-                                    | (rules[r_pos + 2] & 0x7f) as u32;
+                                let end_type = (rules.at(r_pos) as u32) << 16
+                                    | ((rules.at(r_pos + 1) & 0x7f) as u32) << 8
+                                    | (rules.at(r_pos + 2) & 0x7f) as u32;
                                 r_pos += 3;
 
                                 if ctx.word_vowel_count == 0
@@ -824,7 +827,7 @@ pub fn match_rule(
                         distance_left = 19;
                     }
 
-                    if pre_ptr >= word.len() || word[pre_ptr] == 0 {
+                    if pre_ptr >= word.len() || word.at(pre_ptr) == 0 {
                         failed = 1;
                         break;
                     }
@@ -842,7 +845,7 @@ pub fn match_rule(
 
                     let (lw, xbytes) = utf8_decode_backwards(word, pre_ptr + 1);
                     letter_w = lw;
-                    let letter = word[pre_ptr];
+                    let letter = word.at(pre_ptr);
 
                     match rb {
                         RULE_LETTERGP => {
@@ -903,7 +906,7 @@ pub fn match_rule(
                             }
                         }
                         RULE_DOLLAR => {
-                            let command = rules[r_pos];
+                            let command = rules.at(r_pos);
                             r_pos += 1;
                             if pre_ptr < word.len() {
                                 pre_ptr += 1;
@@ -924,7 +927,7 @@ pub fn match_rule(
                         }
                         RULE_SYLLABLE => {
                             let mut syllable_count = 1i32;
-                            while r_pos < rules.len() && rules[r_pos] == RULE_SYLLABLE {
+                            while r_pos < rules.len() && rules.at(r_pos) == RULE_SYLLABLE {
                                 r_pos += 1;
                                 syllable_count += 1;
                             }
@@ -996,10 +999,10 @@ pub fn match_rule(
                             let mut k = pre_ptr;
                             let mut found_dot = false;
                             loop {
-                                if k >= word.len() || word[k] == 0 || word[k] == b' ' {
+                                if k >= word.len() || word.at(k) == 0 || word.at(k) == b' ' {
                                     break;
                                 }
-                                if word[k] == b'.' {
+                                if word.at(k) == b'.' {
                                     add_points = 50;
                                     found_dot = true;
                                     break;
@@ -1021,23 +1024,23 @@ pub fn match_rule(
                             }
                         }
                         RULE_SKIPCHARS => {
-                            let target = rules[r_pos];
+                            let target = rules.at(r_pos);
                             let mut p2 = (pre_ptr + 1).min(word.len().saturating_sub(1));
                             let mut p2_prev = p2;
                             loop {
                                 if p2 >= word.len() {
                                     break;
                                 }
-                                if word[p2] == target {
+                                if word.at(p2) == target {
                                     break;
                                 }
-                                if word[p2] == RULE_SPACE || word[p2] == 0 {
+                                if word.at(p2) == RULE_SPACE || word.at(p2) == 0 {
                                     break;
                                 }
                                 p2_prev = p2;
                                 p2 = p2.saturating_sub(1);
                             }
-                            if p2 < word.len() && word[p2] == target {
+                            if p2 < word.len() && word.at(p2) == target {
                                 pre_ptr = p2_prev;
                             }
                         }
@@ -1075,7 +1078,7 @@ pub fn match_rule(
         // every word unpronounceable.
         if failed == 2 && !unpron_ignore_local {
             let at_word_start =
-                !check_atstart || (pre_ptr == 0 || word[pre_ptr.saturating_sub(1)] == b' ');
+                !check_atstart || (pre_ptr == 0 || word.at(pre_ptr.saturating_sub(1)) == b' ');
             if at_word_start {
                 if check_atstart {
                     match_.points += 4;
@@ -1083,12 +1086,12 @@ pub fn match_rule(
                 if match_.points >= best.points {
                     if std::env::var("ESPEAK_DEBUG_RULES").is_ok() {
                         let ph_off = match_.phonemes_offset;
-                        let rule_end = rules[_rule_start..]
+                        let rule_end = rules.get(_rule_start..).unwrap_or_default()
                             .iter()
                             .position(|&b| b == 0)
                             .map(|rel| _rule_start + rel)
                             .unwrap_or(rules.len());
-                        let rule_bytes = &rules[_rule_start..rule_end];
+                        let rule_bytes = rules.get(_rule_start..rule_end).unwrap_or_default();
                         eprintln!(
                             "  [RULE MATCH] word={:?} rule_start={} abs={} points={} ph_off={:?} rule={:?}",
                             String::from_utf8_lossy(ctx.word),
@@ -1107,7 +1110,7 @@ pub fn match_rule(
                 // exactly where C's `option_phonemes & espeakPHONEMES_TRACE`
                 // block sits.
                 if trace_enabled() && match_.points > 0 {
-                    let rule_end = rules[_rule_start..]
+                    let rule_end = rules.get(_rule_start..).unwrap_or_default()
                         .iter()
                         .position(|&b| b == 0)
                         .map(|rel| _rule_start + rel)
@@ -1116,12 +1119,12 @@ pub fn match_rule(
                         Vec::new()
                     } else {
                         let start = match_.phonemes_offset;
-                        let end = dict.data[start..]
+                        let end = dict.data.get(start..).unwrap_or_default()
                             .iter()
                             .position(|&b| b == 0)
                             .map(|rel| start + rel)
                             .unwrap_or(dict.data.len());
-                        dict.data[start..end].to_vec()
+                        dict.data.get(start..end).unwrap_or_default().to_vec()
                     };
                     trace_push(RuleTrace {
                         word_pos: ctx.word_pos,
@@ -1131,7 +1134,7 @@ pub fn match_rule(
                             // The group's own letters, at the current position.
                             word.get(ctx.word_pos..(ctx.word_pos + group_length).min(word.len()))
                                 .unwrap_or(&[]),
-                            &rules[_rule_start..rule_end],
+                            rules.get(_rule_start..rule_end).unwrap_or_default(),
                             ctx.unpron_test,
                         ),
                         phonemes,
@@ -1141,7 +1144,7 @@ pub fn match_rule(
         }
 
         // Skip to end of this rule (null terminator)
-        while r_pos < rules.len() && rules[r_pos] != 0 {
+        while r_pos < rules.len() && rules.at(r_pos) != 0 {
             r_pos += 1;
         }
         if r_pos < rules.len() {
@@ -1290,7 +1293,7 @@ pub fn translate_rules_ext(
     let rules_abs_base = dict.rules_offset;
 
     while pos < word_buf.len() {
-        let c = word_buf[pos];
+        let c = word_buf.at(pos);
         if c == 0 || c == b' ' {
             break;
         }
@@ -1332,7 +1335,7 @@ pub fn translate_rules_ext(
             if g3_idx < 128 {
                 let c2 = (g3_idx + 1) as u8; // c2 used for groups3[c2-1]
                 if let Some(g3_rules) = dict.group3(c2) {
-                    let g3_abs = dict.groups.groups3[g3_idx].unwrap_or(0);
+                    let g3_abs = dict.groups.groups3.at(g3_idx).unwrap_or(0);
                     // Use total bytes (group_length_total) to match C's group_length
                     let ctx = make_ctx(
                         word_buf,
@@ -1356,18 +1359,17 @@ pub fn translate_rules_ext(
         }
 
         // Check groups2 (two-letter chains)
-        let n = dict.groups.groups2_count[c as usize] as usize;
+        let n = dict.groups.groups2_count.at(c as usize) as usize;
         if !found && n > 0 && pos + 1 < word_buf.len() {
-            let c2 = word_buf[pos + 1];
+            let c2 = word_buf.at(pos + 1);
             let key = (c as u16) | ((c2 as u16) << 8);
-            let g1 = dict.groups.groups2_start[c as usize] as usize;
+            let g1 = dict.groups.groups2_start.at(c as usize) as usize;
             let g_end = (g1 + n).min(dict.groups.groups2.len());
 
             for g in g1..g_end {
-                if dict.groups.groups2[g].key == key {
+                if let Some(entry) = dict.groups.groups2.get(g).filter(|e| e.key == key) {
                     found = true;
-                    let entry = &dict.groups.groups2[g];
-                    let g2_rules = &dict.data[entry.offset..];
+                    let g2_rules = dict.data.get(entry.offset..).unwrap_or_default();
                     let ctx2 = make_ctx(
                         word_buf,
                         pos,
@@ -1402,7 +1404,7 @@ pub fn translate_rules_ext(
                         *word_stressed_count,
                     );
                     if let Some(g1_rules) = dict.group1(c) {
-                        let g1_abs = dict.groups.groups1[c as usize].unwrap_or(rules_abs_base);
+                        let g1_abs = dict.groups.groups1.at(c as usize).unwrap_or(rules_abs_base);
                         let mut np1 = pos;
                         match1 = match_rule(dict, &ctx1, g1_rules, g1_abs, &mut np1);
                         next_pos1 = np1;
@@ -1420,7 +1422,7 @@ pub fn translate_rules_ext(
         if !found {
             // Single-letter chain
             if let Some(g1_rules) = dict.group1(c) {
-                let g1_abs = dict.groups.groups1[c as usize].unwrap_or(rules_abs_base);
+                let g1_abs = dict.groups.groups1.at(c as usize).unwrap_or(rules_abs_base);
                 let ctx = make_ctx(
                     word_buf,
                     pos,
@@ -1469,9 +1471,9 @@ pub fn translate_rules_ext(
                 // Only at the lead byte of a real two-byte character: inside a
                 // longer one (`№` is E2 84 96) the bytes decode as a bogus
                 // letter (U+0116 Ė), which would turn "№" into "e".
-                let at_lead = wc_bytes == 1 && (0xc0..0xe0).contains(&word_buf[pos]);
+                let at_lead = wc_bytes == 1 && (0xc0..0xe0).contains(&word_buf.at(pos));
                 if match1.points == 0 && at_lead && (0xc0..0xc0 + REMOVE_ACCENT.len() as u32).contains(&wc) {
-                    let base = REMOVE_ACCENT[(wc - 0xc0) as usize];
+                    let base = REMOVE_ACCENT.at((wc - 0xc0) as usize);
                     let n = wc_bytes + 1; // the letter's length in bytes
                     let before_space = pos == word_start || word_buf.get(pos.wrapping_sub(1)).is_none_or(|b| *b == b' ');
                     let after_space = word_buf.get(pos + n).is_none_or(|b| *b == b' ' || *b == 0);
@@ -1480,15 +1482,15 @@ pub fn translate_rules_ext(
                         // spaces where the extra bytes were: the replacement is
                         // never longer than the original.
                         let mut end = pos + n;
-                        while end < word_buf.len() && word_buf[end] != b' ' && word_buf[end] != 0 {
+                        while end < word_buf.len() && word_buf.at(end) != b' ' && word_buf.at(end) != 0 {
                             end += 1;
                         }
                         let mut rewritten = word_buf.to_vec();
-                        rewritten[pos] = base;
-                        let tail: Vec<u8> = word_buf[pos + n..end].to_vec();
-                        rewritten[pos + 1..pos + 1 + tail.len()].copy_from_slice(&tail);
-                        for b in &mut rewritten[pos + 1 + tail.len()..end] {
-                            *b = b' ';
+                        rewritten.put(pos, base);
+                        let tail: Vec<u8> = word_buf.get(pos + n..end).unwrap_or_default().to_vec();
+                        let padded = tail.into_iter().chain(std::iter::repeat(b' '));
+                        for (b, to) in rewritten.iter_mut().take(end).skip(pos + 1).zip(padded) {
+                            *b = to;
                         }
                         *word_vowel_count = 0;
                         *word_stressed_count = 0;
@@ -1526,7 +1528,7 @@ pub fn translate_rules_ext(
             if match1.phonemes_offset != MatchRecord::NONE {
                 let ph_start = match1.phonemes_offset;
                 let mut ph_end = ph_start;
-                while ph_end < dict.data.len() && dict.data[ph_end] != 0 {
+                while ph_end < dict.data.len() && dict.data.at(ph_end) != 0 {
                     ph_end += 1;
                 }
                 // A rule whose phonemes *start* with `phonSWITCH` is an
@@ -1536,9 +1538,9 @@ pub fn translate_rules_ext(
                 // and returns just the marker so the caller can re-translate;
                 // appending it instead left the marker stranded inside the word
                 // (`de Copyright` → `k'o:py:r_^_t`).
-                if dict.data[ph_start] == crate::phoneme::PHON_SWITCH {
+                if dict.data.at(ph_start) == crate::phoneme::PHON_SWITCH {
                     out_phonemes.clear();
-                    out_phonemes.extend_from_slice(&dict.data[ph_start..ph_end]);
+                    out_phonemes.extend_from_slice(dict.data.get(ph_start..ph_end).unwrap_or_default());
                     out_end_phonemes.clear();
                     out_end_type = 0;
                     out_suffix_start = 0;
@@ -1553,7 +1555,7 @@ pub fn translate_rules_ext(
                 // Update vowel/stress counts from appended phonemes
                 if let Some(ph) = phdata {
                     let mut unstress_mark = false;
-                    for &code in &dict.data[ph_start..ph_end] {
+                    for &code in dict.data.get(ph_start..ph_end).unwrap_or_default() {
                         if let Some(phoneme) = ph.get(code) {
                             if phoneme.typ == 1 {
                                 // stress-type phoneme: check std_length
@@ -1574,7 +1576,7 @@ pub fn translate_rules_ext(
                     }
                 }
                 let before_len = out_phonemes.len();
-                out_phonemes.extend_from_slice(&dict.data[ph_start..ph_end]);
+                out_phonemes.extend_from_slice(dict.data.get(ph_start..ph_end).unwrap_or_default());
                 // Capture the ending's phonemes.  A *prefix* match (SUFX_P)
                 // always wins — C returns from `TranslateRules` right there — but
                 // for suffixes keep the first match, which is what the rest of
@@ -1585,7 +1587,7 @@ pub fn translate_rules_ext(
                 {
                     out_stem_ph_len = before_len;
                     out_end_phonemes.clear();
-                    out_end_phonemes.extend_from_slice(&out_phonemes[before_len..]);
+                    out_end_phonemes.extend_from_slice(out_phonemes.get(before_len..).unwrap_or_default());
                 }
             }
             if match1.end_type != 0 && want_ending {
@@ -1674,24 +1676,24 @@ pub fn utf8_decode(buf: &[u8], pos: usize) -> (u32, usize) {
     if pos >= buf.len() {
         return (0, 0);
     }
-    let b0 = buf[pos] as u32;
+    let b0 = buf.at(pos) as u32;
     if b0 < 0x80 {
         return (b0, 0);
     } else if b0 < 0xe0 {
         if pos + 1 < buf.len() {
-            let b1 = buf[pos + 1] as u32;
+            let b1 = buf.at(pos + 1) as u32;
             return (((b0 & 0x1f) << 6) | (b1 & 0x3f), 1);
         }
     } else if b0 < 0xf0 {
         if pos + 2 < buf.len() {
-            let b1 = buf[pos + 1] as u32;
-            let b2 = buf[pos + 2] as u32;
+            let b1 = buf.at(pos + 1) as u32;
+            let b2 = buf.at(pos + 2) as u32;
             return (((b0 & 0x0f) << 12) | ((b1 & 0x3f) << 6) | (b2 & 0x3f), 2);
         }
     } else if pos + 3 < buf.len() {
-        let b1 = buf[pos + 1] as u32;
-        let b2 = buf[pos + 2] as u32;
-        let b3 = buf[pos + 3] as u32;
+        let b1 = buf.at(pos + 1) as u32;
+        let b2 = buf.at(pos + 2) as u32;
+        let b3 = buf.at(pos + 3) as u32;
         return (
             ((b0 & 0x07) << 18) | ((b1 & 0x3f) << 12) | ((b2 & 0x3f) << 6) | (b3 & 0x3f),
             3,
@@ -1708,7 +1710,7 @@ fn utf8_decode_backwards(buf: &[u8], pos: usize) -> (u32, usize) {
     }
     // Walk backwards over continuation bytes
     let mut start = pos - 1;
-    while start > 0 && (buf[start] & 0xc0) == 0x80 {
+    while start > 0 && (buf.at(start) & 0xc0) == 0x80 {
         start -= 1;
     }
     let (c, _) = utf8_decode(buf, start);
@@ -1721,7 +1723,7 @@ fn letter_group_no(r_pos: &mut usize, rules: &[u8]) -> usize {
     if *r_pos >= rules.len() {
         return 0;
     }
-    let b = rules[*r_pos];
+    let b = rules.at(*r_pos);
     *r_pos += 1;
     // may be negative wrap-around
     (b as i16 - b'A' as i16).rem_euclid(N_LETTER_GROUPS as i16) as usize
@@ -1973,7 +1975,7 @@ pub fn decode_dict_flags(flags: [u32; 2]) -> String {
     let mut out = String::new();
     let stress = (flags[0] & 0xf) as usize;
     if stress != 0 {
-        out.push_str(STRESS[stress]);
+        out.push_str(STRESS.at(stress));
     }
     for (bit, name) in NAMES {
         if name.is_empty() {
@@ -2031,7 +2033,7 @@ pub fn decode_rule(group_chars: &[u8], rule: &[u8], unpron_test: bool) -> String
 
     let mut i = 0usize;
     while i < rule.len() {
-        let rb = rule[i];
+        let rb = rule.at(i);
         i += 1;
 
         if rb <= RULE_LINENUM {
@@ -2120,7 +2122,7 @@ pub fn decode_rule(group_chars: &[u8], rule: &[u8], unpron_test: bool) -> String
                 c = last;
             }
         } else if rb <= RULE_LAST_RULE {
-            c = SYMBOLS[rb as usize];
+            c = SYMBOLS.at(rb as usize);
         } else if rb == RULE_SPACE {
             c = b'_';
         } else {

@@ -342,7 +342,7 @@ fn space_grouped_thousands_compose() {
         // 1 234 567 = un million … mille … (carries "miljɔ̃" and "mil").
         let big = ipa("1 234 567");
         assert!(
-            big.contains("miljɔ̃") && big.contains("mil"),
+            big.contains("miljˈɔ̃") && big.contains("mˈil"),
             "fr 1 234 567: {big}"
         );
         // A non-3-digit trailing group is NOT merged (12 34 stays two numbers).

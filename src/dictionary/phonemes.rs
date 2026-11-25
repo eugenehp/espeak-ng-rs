@@ -9,6 +9,7 @@
 //
 // They require access to the active phoneme table (PhonemeData) because
 // the encoding is language-specific.
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::indexing_slicing))]
 
 use super::N_WORD_PHONEMES;
 use crate::phoneme::PhonemeData;
@@ -36,19 +37,18 @@ pub fn encode_phonemes(input: &str, phdata: &PhonemeData) -> (Vec<u8>, Option<St
     let mut i = 0;
 
     // Skip leading ASCII whitespace (matching C's `isspace`)
-    while i < bytes.len() && bytes[i] < 0x80 && bytes[i].is_ascii_whitespace() {
+    while bytes.get(i).is_some_and(u8::is_ascii_whitespace) {
         i += 1;
     }
 
-    while i < bytes.len() {
-        let c = bytes[i];
+    while let Some(&c) = bytes.get(i) {
         if c == 0 || c.is_ascii_whitespace() {
             break;
         }
 
         if c == b'|' {
             // Separator between mnemonics.  Double || = literal |.
-            if i + 1 < bytes.len() && bytes[i + 1] == b'|' {
+            if bytes.get(i + 1) == Some(&b'|') {
                 // fall through and try to match "||" as a mnemonic
             } else {
                 i += 1;
@@ -63,7 +63,7 @@ pub fn encode_phonemes(input: &str, phdata: &PhonemeData) -> (Vec<u8>, Option<St
             // Unrecognised phoneme
             let bstart = i;
             let bend = next_char_boundary(bytes, i);
-            bad = Some(String::from_utf8_lossy(&bytes[bstart..bend]).into_owned());
+            bad = Some(String::from_utf8_lossy(bytes.get(bstart..bend).unwrap_or_default()).into_owned());
             out.push(0); // C writes a 0 byte
             i += 1;
         } else {
@@ -73,8 +73,8 @@ pub fn encode_phonemes(input: &str, phdata: &PhonemeData) -> (Vec<u8>, Option<St
 
             // phonSWITCH is followed by the language name in the output.
             if is_switch_phoneme_code(phdata, max_ph) {
-                while i < bytes.len() && bytes[i].is_ascii_alphabetic() {
-                    out.push(bytes[i].to_ascii_lowercase());
+                while let Some(b) = bytes.get(i).filter(|b| b.is_ascii_alphabetic()) {
+                    out.push(b.to_ascii_lowercase());
                     i += 1;
                 }
                 out.push(0);
@@ -104,8 +104,7 @@ pub fn decode_phonemes(encoded: &[u8], phdata: &PhonemeData) -> String {
     let mut out = String::from("* ");
 
     let mut i = 0;
-    while i < encoded.len() {
-        let phcode = encoded[i];
+    while let Some(&phcode) = encoded.get(i) {
         i += 1;
         if phcode == 0 {
             break;
@@ -121,11 +120,8 @@ pub fn decode_phonemes(encoded: &[u8], phdata: &PhonemeData) -> String {
 
         if tab.typ == PH_STRESS && tab.std_length <= 4 && tab.program == 0 {
             let sl = tab.std_length as usize;
-            if sl > 1 && sl < STRESS_CHARS.len() {
-                let sc = STRESS_CHARS[sl] as char;
-                if sc != ' ' {
-                    out.push(sc);
-                }
+            if let Some(&sc) = STRESS_CHARS.get(sl).filter(|&&c| sl > 1 && c != b' ') {
+                out.push(sc as char);
             }
         } else {
             let mnem = tab.mnemonic;
@@ -138,8 +134,8 @@ pub fn decode_phonemes(encoded: &[u8], phdata: &PhonemeData) -> String {
             }
 
             if is_switch_phoneme_code(phdata, phcode) {
-                while i < encoded.len() && (encoded[i] as char).is_ascii_alphabetic() {
-                    out.push(encoded[i] as char);
+                while let Some(&b) = encoded.get(i).filter(|b| b.is_ascii_alphabetic()) {
+                    out.push(b as char);
                     i += 1;
                 }
             }
@@ -213,10 +209,9 @@ fn is_switch_phoneme_code(phdata: &PhonemeData, code: u8) -> bool {
 }
 
 fn next_char_boundary(bytes: &[u8], i: usize) -> usize {
-    if i >= bytes.len() {
+    let Some(&c) = bytes.get(i) else {
         return i;
-    }
-    let c = bytes[i];
+    };
     let seq_len = if c < 0x80 {
         1
     } else if c < 0xe0 {

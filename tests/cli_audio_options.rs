@@ -65,16 +65,22 @@ fn break_lengths_follow_the_tag() {
     let plain = speak_ms(&["one two"]);
     let delta = |markup: &str| speak_ms(&["-m", markup]) as i64 - plain as i64;
 
-    // `time` is wall-clock exact, whatever the speaking rate.
-    assert!((delta(r#"one<break time="2s"/>two"#) - 2000).abs() < 60);
-    assert!((delta(r#"one<break time="500ms"/>two"#) - 500).abs() < 60);
-    assert!((delta(r#"one<break time="1.5s"/>two"#) - 1500).abs() < 60);
+    // `time` is wall-clock exact, whatever the speaking rate: exactly, between
+    // two breaks, and within the final lengthening of "one" (a clause now ends
+    // after it, as in C) against the unbroken phrase.
+    let two = delta(r#"one<break time="2s"/>two"#);
+    let half = delta(r#"one<break time="500ms"/>two"#);
+    assert!((two - half - 1500).abs() <= 2, "{two} - {half}");
+    assert!((delta(r#"one<break time="2s"/>two"#) - 2000).abs() < 80);
+    assert!((delta(r#"one<break time="500ms"/>two"#) - 500).abs() < 80);
+    assert!((delta(r#"one<break time="1.5s"/>two"#) - 1500).abs() < 80);
     // `strength` is in clause units, which follow the voice's rate, so these
     // are only checked for order and for being in the right neighbourhood.
     let weak = delta(r#"one<break strength="weak"/>two"#);
     let medium = delta(r#"one<break strength="medium"/>two"#);
     let strong = delta(r#"one<break strength="x-strong"/>two"#);
-    assert!(weak > 50 && weak < 200, "weak = {weak}");
+    // (C: `weak` is only a short pause phoneme before the next word.)
+    assert!(weak > 0 && weak < 50, "weak = {weak}");
     assert!(medium > weak, "medium {medium} <= weak {weak}");
     assert!(
         strong > medium + 300,
@@ -92,12 +98,12 @@ fn ssml_break_scales_the_time_attribute() {
     let delta = |args: &[&str]| speak_ms(args) as i64 - plain as i64;
     let text = r#"one<break time="1s"/>two"#;
 
-    assert!((delta(&["-m", "--ssml-break=100", text]) - 1000).abs() < 60);
-    assert!((delta(&["-m", "--ssml-break=50", text]) - 500).abs() < 60);
-    assert!((delta(&["-m", "--ssml-break=200", text]) - 2000).abs() < 60);
+    assert!((delta(&["-m", "--ssml-break=100", text]) - 1000).abs() < 80);
+    assert!((delta(&["-m", "--ssml-break=50", text]) - 500).abs() < 80);
+    assert!((delta(&["-m", "--ssml-break=200", text]) - 2000).abs() < 80);
     // The option takes a required argument, so the space-separated form works
     // and does not swallow the text.
-    assert!((delta(&["-m", "--ssml-break", "50", text]) - 500).abs() < 60);
+    assert!((delta(&["-m", "--ssml-break", "50", text]) - 500).abs() < 80);
     // `strength` is not scaled.
     let s = r#"one<break strength="x-strong"/>two"#;
     assert_eq!(delta(&["-m", "--ssml-break=50", s]), delta(&["-m", s]));

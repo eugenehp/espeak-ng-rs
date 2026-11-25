@@ -3,6 +3,8 @@
 //! In the C code these are plain `unsigned int` fields.  The wrappers here
 //! give the bit-field constants a typed home without changing the underlying
 //! representation.
+#![deny(clippy::unwrap_used, clippy::indexing_slicing)]
+
 
 // Bit-field constants mirror C defines verbatim; their names are self-documenting.
 #![allow(missing_docs)]

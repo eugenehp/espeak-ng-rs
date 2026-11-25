@@ -22,15 +22,16 @@ fn dash_b_2_decodes_latin1_file() {
         .write_all(b"caf\xe9")
         .unwrap();
 
-    // Default (UTF-8) rejects the invalid byte → no phoneme output.
+    // Default (UTF-8) replaces the invalid byte and speaks the rest.
     let utf8 = Command::new(bin)
         .args(["--ipa", "-q", "-f"])
         .arg(&path)
         .output()
         .expect("run utf8");
+    assert!(utf8.status.success());
     assert!(
-        String::from_utf8_lossy(&utf8.stdout).trim().is_empty(),
-        "UTF-8 read should fail on the invalid byte"
+        String::from_utf8_lossy(&utf8.stdout).contains('k'),
+        "the valid text around the invalid byte should still be spoken"
     );
 
     // `-b 2` (Latin-1) decodes é and pronounces "café".

@@ -33,6 +33,7 @@
 //   16..26         = various
 //   27 PAUSE_CLAUSE
 //   28..33         = vowel type marks
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::indexing_slicing))]
 
 /// The Kirshenbaum-to-IPA array from dictionary.c, indexed by `char - 0x20`.
 /// Entries are Unicode codepoints (u32).
@@ -55,7 +56,7 @@ pub const IPA1: [u32; 96] = [
 /// Returns the Unicode codepoint.
 pub fn ipa1_char(c: u8) -> u32 {
     if c >= 0x20 && c < 0x80 {
-        IPA1[(c - 0x20) as usize]
+        IPA1.get(usize::from(c - 0x20)).map_or(u32::from(c), |&ipa| ipa.into())
     } else {
         c as u32
     }

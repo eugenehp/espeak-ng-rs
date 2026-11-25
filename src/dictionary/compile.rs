@@ -19,6 +19,7 @@
 //! through to letter rules).  No `_rules`/`_list` sources ship with the port, so
 //! the compiler is verified by **round-trip** against the reader.
 
+use crate::bytes::Bounded;
 use super::lookup::hash_word;
 use super::transpose::{transpose_alphabet, TransposeConfig};
 use super::{N_HASH_DICT, RULE_GROUP_END, RULE_GROUP_START, RULE_PHONEMES};
@@ -108,7 +109,7 @@ pub fn parse_list_dsl_mode(
                     .unwrap_or(0);
                 Some(&joined[..cut.min(joined.len())])
             }
-            many => Some(many[0]),
+            many => Some(many.at(0)),
         };
         if text_not_phonemes != lang_textmode {
             flags.push(BITNUM_FLAG_TEXTMODE);
@@ -426,7 +427,7 @@ pub fn parse_rules_dsl_offset(
                         // Keep the two-byte prefix when it is itself valid text
                         // (one two-byte letter, or two ASCII ones); otherwise
                         // fall back to the first character.
-                        true => std::str::from_utf8(&name.as_bytes()[..2])
+                        true => std::str::from_utf8(name.as_bytes().get(..2).unwrap_or_default())
                             .map(str::to_string)
                             .unwrap_or_else(|_| name.chars().next().into_iter().collect()),
                         false => name.to_string(),
@@ -487,7 +488,7 @@ pub fn parse_rules_dsl_offset(
         // A leading `?n` / `?!n` is the rule's voice condition, not part of the
         // letter spec.
         let mut condition = 0u8;
-        if let Some(rest) = parts[0].strip_prefix('?') {
+        if let Some(rest) = parts.at(0).strip_prefix('?') {
             let (neg, digits) = match rest.strip_prefix('!') {
                 Some(d) => (32u8, d),
                 None => (0, rest),
@@ -510,16 +511,16 @@ pub fn parse_rules_dsl_offset(
         // turned that into "c is pronounced /q/".
         let mut split = 1;
         while split < parts.len() {
-            let t = parts[split];
-            let spec_so_far: String = parts[..split].concat();
+            let t = parts.at(split);
+            let spec_so_far: String = parts.get(..split).unwrap_or_default().concat();
             if t.starts_with('(') || spec_so_far.ends_with(')') {
                 split += 1;
             } else {
                 break;
             }
         }
-        let letter_spec: String = parts[..split].concat();
-        let mnemonics: String = parts[split..].concat();
+        let letter_spec: String = parts.get(..split).unwrap_or_default().concat();
+        let mnemonics: String = parts.get(split..).unwrap_or_default().concat();
         let mnemonics = mnemonics.as_str();
         // `[pre)] match [(post]` — `)` ends the pre-context, `(` starts the post.
         let (pre, rest) = letter_spec
@@ -592,12 +593,12 @@ fn encode_context(s: &str, reverse: bool) -> Vec<u8> {
     };
     let mut i = 0;
     while i < bytes.len() {
-        let c = bytes[i];
+        let c = bytes.at(i);
         i += 1;
         let token = match c {
             b'_' => vec![RULE_SPACE],
             b'A' | b'B' | b'C' | b'F' | b'G' | b'H' => {
-                pair(RULE_LETTERGP, LETTERGP[(c - b'A') as usize] + b'A')
+                pair(RULE_LETTERGP, LETTERGP.at((c - b'A') as usize) + b'A')
             }
             // `Y` is rewritten to `I` before the group lookup, giving LETTERGP_Y.
             b'Y' => pair(RULE_LETTERGP, LETTERGP[8] + b'A'),
@@ -619,10 +620,10 @@ fn encode_context(s: &str, reverse: bool) -> Vec<u8> {
             // `T` is `$w_alt1` spelled short; C emits it command-first either way.
             b'T' => vec![RULE_DOLLAR, 0x11],
             b'L' if i + 1 < bytes.len()
-                && bytes[i].is_ascii_digit()
-                && bytes[i + 1].is_ascii_digit() =>
+                && bytes.at(i).is_ascii_digit()
+                && bytes.at(i + 1).is_ascii_digit() =>
             {
-                let n = (bytes[i] - b'0') * 10 + (bytes[i + 1] - b'0');
+                let n = (bytes.at(i) - b'0') * 10 + (bytes.at(i + 1) - b'0');
                 i += 2;
                 pair(RULE_LETTERGP2, b'A' + n)
             }
@@ -669,8 +670,8 @@ fn encode_context(s: &str, reverse: bool) -> Vec<u8> {
                 // neither may be zero.
                 let mut sxflags: u32 = 0x0080_8000 | if c == b'P' { SUFX_P } else { 0 };
                 let mut value: u32 = 0;
-                while i < bytes.len() && !bytes[i].is_ascii_whitespace() {
-                    match bytes[i] {
+                while i < bytes.len() && !bytes.at(i).is_ascii_whitespace() {
+                    match bytes.at(i) {
                         b'e' => sxflags |= SUFX_E,
                         b'i' => sxflags |= SUFX_I,
                         b'p' => sxflags |= SUFX_P,
@@ -717,6 +718,7 @@ fn encode_context(s: &str, reverse: bool) -> Vec<u8> {
 ///
 /// Layout: for each group `RULE_GROUP_START`, the name bytes, `0`, then each
 /// rule (`<match letters> RULE_PHONEMES <phonemes> 0`), then `RULE_GROUP_END`.
+#[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
 pub fn compile_rules(groups: &[RuleGroup]) -> Vec<u8> {
     let mut out = Vec::new();
     // Letter-group definitions come first, so a rule referring to one is
@@ -898,6 +900,7 @@ fn compile_replace_section(pairs: &[(String, String)], rules_offset: usize) -> V
 /// [`compile_dict_with_rules`] plus a `.replace` table (emitted first in the
 /// rules section, correctly aligned).  Empty `replace` reproduces the plain
 /// behaviour.
+#[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
 pub fn compile_dict_full(
     entries: &[ListEntry],
     transpose: &TransposeConfig,
@@ -923,7 +926,7 @@ pub fn compile_dict_full(
         let mut hash_buf = compressed.clone();
         let wb = e.word.as_bytes();
         if ix < wb.len() {
-            hash_buf.extend_from_slice(&wb[ix..]);
+            hash_buf.extend_from_slice(wb.get(ix..).unwrap_or_default());
         }
         let hash = hash_word(&hash_buf);
 
@@ -943,7 +946,7 @@ pub fn compile_dict_full(
             // (`dict_line[1] |= 0x80`), so the word still carries its flags and
             // falls through to the rules.  A few emoji names are this long.
             entry.truncate(2 + compressed.len());
-            entry[1] = (wlen & 0x7f) | 0x80;
+            entry.put(1, (wlen & 0x7f) | 0x80);
             entry.extend_from_slice(&e.flags);
             if entry.len() > u8::MAX as usize {
                 return Err(format!(

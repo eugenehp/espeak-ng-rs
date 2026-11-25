@@ -1,0 +1,36 @@
+[package]
+name = "espeak-ng-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+espeak-ng = { path = "..", default-features = false }
+
+# Not a member of the parent workspace: it needs nightly and libFuzzer.
+[workspace]
+
+[[bin]]
+name = "dictionary"
+path = "fuzz_targets/dictionary.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "phontab"
+path = "fuzz_targets/phontab.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "text_to_ipa"
+path = "fuzz_targets/text_to_ipa.rs"
+test = false
+doc = false
+bench = false

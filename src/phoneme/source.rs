@@ -12,6 +12,8 @@
 //! No phoneme-source files ship in this checkout, so the parser is validated by
 //! round-tripping synthetic source through `compile_phontab` → `parse_phontab`.
 
+#![deny(clippy::cast_possible_truncation)]
+
 use super::feature::PhonemeFeature;
 use super::table::{PhonemeTab, PhonemeTabList};
 use super::{PH_LIQUID, PH_PAUSE, PH_STRESS, PH_VOWEL};
@@ -58,7 +60,7 @@ pub fn parse_phoneme_dsl(source: &str) -> Vec<PhonemeTabList> {
                 // `includes` = 1-based index of the base table, or 0 for none.
                 let includes = base
                     .and_then(|b| tables.iter().position(|t| t.name == b))
-                    .map(|i| (i + 1) as u8)
+                    .and_then(|i| u8::try_from(i + 1).ok())
                     .unwrap_or(0);
                 tables.push(PhonemeTabList {
                     name,
@@ -99,7 +101,7 @@ pub fn parse_phoneme_dsl(source: &str) -> Vec<PhonemeTabList> {
                     cur.as_mut(),
                     tokens.next().and_then(|t| t.parse::<u32>().ok()),
                 ) {
-                    ph.std_length = v.min(u8::MAX as u32) as u8;
+                    ph.std_length = u8::try_from(v).unwrap_or(u8::MAX);
                 }
             }
             "lengthmod" => {
@@ -107,7 +109,7 @@ pub fn parse_phoneme_dsl(source: &str) -> Vec<PhonemeTabList> {
                     cur.as_mut(),
                     tokens.next().and_then(|t| t.parse::<u32>().ok()),
                 ) {
-                    ph.length_mod = v.min(u8::MAX as u32) as u8;
+                    ph.length_mod = u8::try_from(v).unwrap_or(u8::MAX);
                 }
             }
             _ => {

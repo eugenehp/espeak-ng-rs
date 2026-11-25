@@ -173,3 +173,37 @@ fn translation_with_a_corrupt_dictionary_does_not_panic() {
         }
     }
 }
+
+/// Arbitrary text, plain and as SSML, must not panic in any script or with any
+/// nesting of markup, digits and embedded commands.
+#[test]
+fn text_and_ssml_do_not_panic() {
+    if data_dir().is_none() {
+        return;
+    }
+    const PIECES: &[&str] = &[
+        "a", "Hello", " ", ".", ",", "\"", "(", "-", "$", "5", "0", "99999999999", "²", "½", "ç",
+        "د", "ڈ", "я", "的", "ह", "\u{1}5P", "\u{0}", "\u{301}", "😀", "©", "[[h@l'oU]]", "[[",
+        "<speak>", "</speak>", "<prosody rate=\"fast\">", "</prosody>", "<say-as interpret-as=",
+        "<voice xml:lang=\"de\">", "<", "&amp;", "&#", "'s", "ﬁ", "1.2.3", "10:30", "٥",
+    ];
+    // `FUZZ_ROUNDS` raises the count for a longer local run.
+    let rounds = std::env::var("FUZZ_ROUNDS")
+        .ok()
+        .and_then(|n| n.parse().ok())
+        .unwrap_or(40);
+    let mut rng = Lcg::new(0xFACE);
+    for lang in ["en", "de", "fr", "pt", "ru", "ar", "ku", "cmn", "hi", "tr"] {
+        let Ok(t) = espeak_ng::Translator::new(lang, None) else {
+            continue;
+        };
+        for _ in 0..rounds {
+            let n = rng.next_u8() as usize % 24;
+            let text: String = (0..n)
+                .map(|_| PIECES[rng.next_u8() as usize % PIECES.len()])
+                .collect();
+            let _ = t.text_to_ipa(&text);
+            let _ = t.text_to_ipa_ssml(&text);
+        }
+    }
+}

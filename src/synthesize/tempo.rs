@@ -10,6 +10,7 @@
 //! caller can post-process synthesized audio to adjust tempo independently of the
 //! frame-duration rate control already in the synthesizer.
 
+use crate::bytes::Bounded;
 /// Lowest pitch we track (Hz) → the longest pitch period searched.
 const MIN_PITCH_HZ: f64 = 65.0;
 /// Highest pitch we track (Hz) → the shortest pitch period searched.
@@ -30,7 +31,7 @@ fn find_pitch_period(s: &[i16], min_p: usize, max_p: usize) -> usize {
     for p in min_p..=max_p {
         let mut diff = 0i64;
         for i in 0..n {
-            diff += (s[i] as i64 - s[i + p] as i64).abs();
+            diff += (s.at(i) as i64 - s.at(i + p) as i64).abs();
         }
         if diff < best_diff {
             best_diff = diff;
@@ -44,7 +45,7 @@ fn find_pitch_period(s: &[i16], min_p: usize, max_p: usize) -> usize {
 fn overlap_add(out: &mut Vec<i16>, down: &[i16], up: &[i16], n: usize) {
     for i in 0..n {
         let t = (i as f64 + 0.5) / n as f64;
-        let v = down[i] as f64 * (1.0 - t) + up[i] as f64 * t;
+        let v = down.at(i) as f64 * (1.0 - t) + up.at(i) as f64 * t;
         out.push(v.round().clamp(i16::MIN as f64, i16::MAX as f64) as i16);
     }
 }
@@ -64,30 +65,30 @@ pub fn change_tempo(pcm: &[i16], speed: f64, sample_rate: u32) -> Vec<i16> {
     let mut pos = 0usize;
 
     while pos + 2 * max_p <= pcm.len() {
-        let period = find_pitch_period(&pcm[pos..], min_p, max_p).clamp(min_p.max(1), max_p);
+        let period = find_pitch_period(pcm.get(pos..).unwrap_or_default(), min_p, max_p).clamp(min_p.max(1), max_p);
         // Where the output "should" be, given how much input we've consumed.
         let expected = pos as f64 / speed;
 
         if speed > 1.0 && out.len() as f64 > expected {
             // Ahead of schedule → drop one period: merge this period with the
             // next (crossfade), consuming two periods but emitting one.
-            overlap_add(&mut out, &pcm[pos..], &pcm[pos + period..], period);
+            overlap_add(&mut out, pcm.get(pos..).unwrap_or_default(), pcm.get(pos + period..).unwrap_or_default(), period);
             pos += 2 * period;
         } else if speed < 1.0 && (out.len() as f64) < expected {
             // Behind schedule → insert one period: emit it, then a crossfade
             // into the next, emitting two periods for one consumed.
-            out.extend_from_slice(&pcm[pos..pos + period]);
-            overlap_add(&mut out, &pcm[pos..], &pcm[pos + period..], period);
+            out.extend_from_slice(pcm.get(pos..pos + period).unwrap_or_default());
+            overlap_add(&mut out, pcm.get(pos..).unwrap_or_default(), pcm.get(pos + period..).unwrap_or_default(), period);
             pos += period;
         } else {
             // On schedule → copy one period straight through.
-            out.extend_from_slice(&pcm[pos..pos + period]);
+            out.extend_from_slice(pcm.get(pos..pos + period).unwrap_or_default());
             pos += period;
         }
     }
 
     // Copy whatever tail remains.
-    out.extend_from_slice(&pcm[pos..]);
+    out.extend_from_slice(pcm.get(pos..).unwrap_or_default());
     out
 }
 
@@ -106,8 +107,8 @@ fn resample_linear(s: &[i16], target_len: usize) -> Vec<i16> {
             let src = i as f64 * last / denom;
             let idx = src.floor() as usize;
             let frac = src - idx as f64;
-            let a = s[idx] as f64;
-            let b = s[(idx + 1).min(s.len() - 1)] as f64;
+            let a = s.at(idx) as f64;
+            let b = s.at((idx + 1).min(s.len() - 1)) as f64;
             (a + (b - a) * frac)
                 .round()
                 .clamp(i16::MIN as f64, i16::MAX as f64) as i16

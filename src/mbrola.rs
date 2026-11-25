@@ -24,6 +24,7 @@
 //! absent.  Everything up to the `.pho` text is testable, and is checked
 //! against the shipped `*_phtrans` tables byte-for-byte.  See GAPS §1.4.
 
+use crate::bytes::Bounded;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -127,28 +128,28 @@ impl MbrolaTable {
             }
 
             let f: Vec<&str> = line.split_whitespace().collect();
-            if f.len() < 5 {
+            let [control, name, next, percent, mbr_name, ..] = *f else {
                 continue;
-            }
-            let control = match f[0].parse::<i32>() {
+            };
+            let control = match control.parse::<i32>() {
                 Ok(c) => c as u32,
                 Err(_) => continue,
             };
-            let percent = match f[3].parse::<i32>() {
+            let percent = match percent.parse::<i32>() {
                 Ok(p) => p,
                 Err(_) => continue,
             };
             table.entries.push(MbrolaEntry {
-                name: string_to_word(f[1]),
-                next_phoneme: match f[2] {
+                name: string_to_word(name),
+                next_phoneme: match next {
                     "NULL" => 0,
                     "VWL" => NEXT_ANY_VOWEL,
                     other => string_to_word(other),
                 },
-                mbr_name: if f[4] == "NULL" {
+                mbr_name: if mbr_name == "NULL" {
                     0
                 } else {
-                    string_to_word(f[4])
+                    string_to_word(mbr_name)
                 },
                 mbr_name2: f.get(5).map(|s| string_to_word(s)).unwrap_or(0),
                 percent,
@@ -165,7 +166,7 @@ impl MbrolaTable {
             return Err(Error::InvalidData("mbrola phtrans: file too short".into()));
         }
         let rd = |o: usize| -> u32 {
-            u32::from_le_bytes([bytes[o], bytes[o + 1], bytes[o + 2], bytes[o + 3]])
+            crate::bytes::u32_at(bytes, o).unwrap_or(0)
         };
         let mut table = MbrolaTable {
             volume: rd(0),
@@ -503,6 +504,7 @@ pub struct MbrPhoneme {
 /// the first half of a split vowel, negative for the second.  With `final_only`
 /// the phoneme gets a single target at 100% (used for a nasal or liquid that
 /// runs into a pause).
+#[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
 pub fn write_pitch(p: &MbrPhoneme, split: i32, final_only: bool) -> Vec<(i32, i32)> {
     // Apply the pitch change only over this proportion of the phoneme.
     const ENV100: i32 = 80;
@@ -555,7 +557,7 @@ pub fn write_pitch(p: &MbrPhoneme, split: i32, final_only: bool) -> Vec<(i32, i3
     // A linear rise or fall needs no intermediate points.
     if p.env > 1 {
         for &yi in &y[1..4] {
-            let p2 = ((env[yi] as i32 * range) >> 8) + base;
+            let p2 = ((env.at(yi) as i32 * range) >> 8) + base;
             let y2 = if split > 0 {
                 yi as i32 * ENV100 / env_split.max(1)
             } else if split < 0 {
@@ -683,7 +685,8 @@ pub fn synthesize(pho: &str, database: &Path) -> Result<PcmBuffer> {
     let pcm = out
         .stdout
         .chunks_exact(2)
-        .map(|b| i16::from_le_bytes([b[0], b[1]]))
+        .filter_map(|b| crate::bytes::u16_at(b, 0))
+        .map(|b| b as i16)
         .collect();
     Ok(pcm)
 }
