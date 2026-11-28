@@ -65,20 +65,31 @@ pub fn change_tempo(pcm: &[i16], speed: f64, sample_rate: u32) -> Vec<i16> {
     let mut pos = 0usize;
 
     while pos + 2 * max_p <= pcm.len() {
-        let period = find_pitch_period(pcm.get(pos..).unwrap_or_default(), min_p, max_p).clamp(min_p.max(1), max_p);
+        let period = find_pitch_period(pcm.get(pos..).unwrap_or_default(), min_p, max_p)
+            .clamp(min_p.max(1), max_p);
         // Where the output "should" be, given how much input we've consumed.
         let expected = pos as f64 / speed;
 
         if speed > 1.0 && out.len() as f64 > expected {
             // Ahead of schedule → drop one period: merge this period with the
             // next (crossfade), consuming two periods but emitting one.
-            overlap_add(&mut out, pcm.get(pos..).unwrap_or_default(), pcm.get(pos + period..).unwrap_or_default(), period);
+            overlap_add(
+                &mut out,
+                pcm.get(pos..).unwrap_or_default(),
+                pcm.get(pos + period..).unwrap_or_default(),
+                period,
+            );
             pos += 2 * period;
         } else if speed < 1.0 && (out.len() as f64) < expected {
             // Behind schedule → insert one period: emit it, then a crossfade
             // into the next, emitting two periods for one consumed.
             out.extend_from_slice(pcm.get(pos..pos + period).unwrap_or_default());
-            overlap_add(&mut out, pcm.get(pos..).unwrap_or_default(), pcm.get(pos + period..).unwrap_or_default(), period);
+            overlap_add(
+                &mut out,
+                pcm.get(pos..).unwrap_or_default(),
+                pcm.get(pos + period..).unwrap_or_default(),
+                period,
+            );
             pos += period;
         } else {
             // On schedule → copy one period straight through.

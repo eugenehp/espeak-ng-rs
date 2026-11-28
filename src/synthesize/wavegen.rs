@@ -31,9 +31,9 @@
 //
 // References: wavegen.c (Wavegen, SetSynth, PeaksToHarmspect, WavegenInit)
 
-use crate::bytes::Bounded;
 use super::phondata::SpectFrame;
 use super::VoiceParams;
+use crate::bytes::Bounded;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -70,13 +70,13 @@ static PK_SHAPE1: [u8; 257] = [
     203, 201, 199, 197, 195, 193, 191, 189, 187, 185, 183, 180, 178, 176, 173, 171, 169, 166, 164,
     161, 159, 156, 154, 151, 148, 146, 143, 140, 138, 135, 132, 129, 126, 123, 120, 118, 115, 112,
     108, 105, 102, 99, 96, 95, 93, 91, 90, 88, 86, 85, 83, 82, 80, 79, 77, 76, 74, 73, 72, 70, 69,
-    68, 67, 66, 64, 63, 62, 61, 60, 59, 58, 57, 56, 55, 55, 54, 53, 52, 52, 51, 50, 50, 49, 48,
-    48, 47, 47, 46, 46, 46, 45, 45, 45, 44, 44, 44, 44, 44, 44, 44, 43, 43, 43, 43, 44, 43, 42,
-    42, 41, 40, 40, 39, 38, 38, 37, 36, 36, 35, 35, 34, 33, 33, 32, 32, 31, 30, 30, 29, 29, 28,
-    28, 27, 26, 26, 25, 25, 24, 24, 23, 23, 22, 22, 21, 21, 20, 20, 19, 19, 18, 18, 18, 17, 17,
-    16, 16, 15, 15, 15, 14, 14, 13, 13, 13, 12, 12, 11, 11, 11, 10, 10, 10, 9, 9, 9, 8, 8, 8, 7,
-    7, 7, 7, 6, 6, 6, 5, 5, 5, 5, 4, 4, 4, 4, 4, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    68, 67, 66, 64, 63, 62, 61, 60, 59, 58, 57, 56, 55, 55, 54, 53, 52, 52, 51, 50, 50, 49, 48, 48,
+    47, 47, 46, 46, 46, 45, 45, 45, 44, 44, 44, 44, 44, 44, 44, 43, 43, 43, 43, 44, 43, 42, 42, 41,
+    40, 40, 39, 38, 38, 37, 36, 36, 35, 35, 34, 33, 33, 32, 32, 31, 30, 30, 29, 29, 28, 28, 27, 26,
+    26, 25, 25, 24, 24, 23, 23, 22, 22, 21, 21, 20, 20, 19, 19, 18, 18, 18, 17, 17, 16, 16, 15, 15,
+    15, 14, 14, 13, 13, 13, 12, 12, 11, 11, 11, 10, 10, 10, 9, 9, 9, 8, 8, 8, 7, 7, 7, 7, 6, 6, 6,
+    5, 5, 5, 5, 4, 4, 4, 4, 4, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0,
 ];
 
 /// `Flutter_tab[]` — a slow irregular wobble added to the pitch.
@@ -95,11 +95,11 @@ static FLUTTER_TAB: [u8; 0x170] = [
     170, 148, 128, 113, 100, 93, 90, 92, 97, 104, 112, 119, 125, 127, 127, 123, 116, 107, 97, 87,
     78, 72, 70, 72, 78, 89, 102, 117, 132, 147, 159, 167, 171, 170, 164, 153, 139, 123, 106, 91,
     78, 70, 67, 69, 77, 90, 107, 127, 146, 166, 184, 197, 207, 211, 210, 205, 196, 185, 173, 161,
-    150, 142, 137, 135, 135, 138, 141, 145, 146, 145, 140, 132, 120, 104, 85, 65, 46, 28, 14, 5,
-    1, 5, 15, 31, 52, 77, 104, 129, 154, 176, 193, 205, 211, 211, 208, 200, 191, 181, 171, 164,
-    159, 156, 157, 160, 165, 170, 174, 177, 176, 171, 163, 150, 135, 118, 99, 81, 66, 54, 47, 45,
-    49, 58, 72, 89, 107, 126, 142, 156, 166, 170, 169, 163, 152, 138, 123, 108, 93, 82, 74, 72,
-    74, 80, 90, 103, 117, 130,
+    150, 142, 137, 135, 135, 138, 141, 145, 146, 145, 140, 132, 120, 104, 85, 65, 46, 28, 14, 5, 1,
+    5, 15, 31, 52, 77, 104, 129, 154, 176, 193, 205, 211, 211, 208, 200, 191, 181, 171, 164, 159,
+    156, 157, 160, 165, 170, 174, 177, 176, 171, 163, 150, 135, 118, 99, 81, 66, 54, 47, 45, 49,
+    58, 72, 89, 107, 126, 142, 156, 166, 170, 169, 163, 152, 138, 123, 108, 93, 82, 74, 72, 74, 80,
+    90, 103, 117, 130,
 ];
 
 /// `pk_shape2` — the squarer peaks of a `formant…` voice with `peak_shape` 1.
@@ -167,7 +167,8 @@ impl Default for FormantScale {
 impl FormantScale {
     /// A frame's formant frequency in this voice, Hz × 256.
     pub(super) fn freq(&self, ix: usize, hz: i16) -> i64 {
-        let freq = i64::from(hz) * i64::from(self.freq.at(ix)) + i64::from(self.freq_add.at(ix)) * 256;
+        let freq =
+            i64::from(hz) * i64::from(self.freq.at(ix)) + i64::from(self.freq_add.at(ix)) * 256;
         freq.max(0)
     }
 
@@ -216,7 +217,10 @@ struct Peak {
 /// Convert a `SpectFrame` to a peak array using the default voice scaling.
 ///
 /// Mirrors the `SetSynth()` initialisation in wavegen.c.
-#[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "indices are bounded by the loops over these lists"
+)]
 fn frame_to_peaks(fr: &SpectFrame, voice: &FormantScale) -> [Peak; 9] {
     let mut peaks = [Peak::default(); 9];
     // C runs `for (ix = 0; ix < 8; ix++)`: frequencies for peaks 0–6 come from
@@ -247,14 +251,19 @@ fn frame_to_peaks(fr: &SpectFrame, voice: &FormantScale) -> [Peak; 9] {
 }
 
 /// Interpolate two peak arrays by factor t ∈ [0, 1].
-#[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "indices are bounded by the loops over these lists"
+)]
 fn interpolate_peaks(p1: &[Peak; 9], p2: &[Peak; 9], t: f64) -> [Peak; 9] {
     let mut out = [Peak::default(); 9];
     for i in 0..9 {
         out[i].freq = (p1.at(i).freq as f64 + (p2.at(i).freq - p1.at(i).freq) as f64 * t) as i64;
-        out[i].height = (p1.at(i).height as f64 + (p2.at(i).height - p1.at(i).height) as f64 * t) as i64;
+        out[i].height =
+            (p1.at(i).height as f64 + (p2.at(i).height - p1.at(i).height) as f64 * t) as i64;
         out[i].left = (p1.at(i).left as f64 + (p2.at(i).left - p1.at(i).left) as f64 * t) as i64;
-        out[i].right = (p1.at(i).right as f64 + (p2.at(i).right - p1.at(i).right) as f64 * t) as i64;
+        out[i].right =
+            (p1.at(i).right as f64 + (p2.at(i).right - p1.at(i).right) as f64 * t) as i64;
     }
     out
 }
@@ -416,7 +425,10 @@ pub static DEFAULT_TONE_ADJUST: std::sync::LazyLock<[u8; N_TONE_ADJUST]> =
 
 /// `SetToneAdjust` — expand `tone <freq> <height> …` pairs into the per-harmonic
 /// amplitude table, linearly interpolating between the points.
-#[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "indices are bounded by the loops over these lists"
+)]
 pub fn set_tone_adjust(tone_pts: &[i32; 12]) -> [u8; N_TONE_ADJUST] {
     let mut out = [0u8; N_TONE_ADJUST];
     let mut pts = *tone_pts;
@@ -486,7 +498,10 @@ pub fn synthesize_frames(
 /// `amps` and `pitches_hz` are parallel to `frames`.  `voice.speed_percent`
 /// still governs the per-frame sample count (frame lengths already encode the
 /// duration model).  Returns unnormalised i32 samples.
-#[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "indices are bounded by the loops over these lists"
+)]
 pub fn synthesize_frames_seq(
     frames: &[super::phondata::SpectFrame],
     amps: &[f64],
@@ -642,7 +657,10 @@ impl<'a> WaveGen<'a> {
 
     /// `PeaksToHarmspect()` into table `ix`; `first` is the initial call, where
     /// the interpolation increments are not yet wanted.
-    #[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "indices are bounded by the loops over these lists"
+    )]
     fn fill_table(&mut self, ix: usize, peaks: &[Peak; N_PEAKS], first: bool) -> usize {
         let pitch = self.pitch << 4; // Hz << 16
         let hmax = peaks_to_harmspect(peaks, pitch, &mut self.hspect[ix], &self.voice.tone_adjust);
@@ -667,7 +685,10 @@ impl<'a> WaveGen<'a> {
         hmax
     }
 
-    #[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "indices are bounded by the loops over these lists"
+    )]
     fn run(&mut self, seg: &Segment, last: bool) {
         // The length is rounded to whole steps and follows on from the last.
         let length = match (seg.length + STEPSIZE / 2) & !(STEPSIZE - 1) {
@@ -773,8 +794,10 @@ impl<'a> WaveGen<'a> {
                 .and_then(|n| WAVEMULT.get(n))
             {
                 for pk in N_HARMONIC_PEAKS + 1..N_PEAKS {
-                    let theta = (self.peak_harmonic.at(pk) as u32).wrapping_mul(waveph.into()) as u16;
-                    total += i64::from(SIN_TAB.at(usize::from(theta >> 5))) * self.peak_height.at(pk);
+                    let theta =
+                        (self.peak_harmonic.at(pk) as u32).wrapping_mul(waveph.into()) as u16;
+                    total +=
+                        i64::from(SIN_TAB.at(usize::from(theta >> 5))) * self.peak_height.at(pk);
                 }
                 total = total / hf_factor * i64::from(window);
             }
@@ -795,7 +818,8 @@ impl<'a> WaveGen<'a> {
             }
             total += self.next_breath(&peaks);
             let sample = ((total >> 8) * self.amplitude2) >> 13;
-            self.out.push(sample.clamp(i32::MIN.into(), i32::MAX.into()) as i32);
+            self.out
+                .push(sample.clamp(i32::MIN.into(), i32::MAX.into()) as i32);
         }
     }
 
@@ -819,7 +843,10 @@ impl<'a> WaveGen<'a> {
         if self.voice.breath.iter().all(|&amp| amp == 0) {
             return 0;
         }
-        self.noise_seed = self.noise_seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+        self.noise_seed = self
+            .noise_seed
+            .wrapping_mul(1_103_515_245)
+            .wrapping_add(12_345);
         let noise = f64::from((self.noise_seed >> 16) & 0x3fff) - f64::from(0x2000);
         let mut value = 0;
         for ((filter, peak), &amp) in self.breath.iter_mut().zip(peaks).zip(&self.voice.breath) {
@@ -914,7 +941,8 @@ mod tests {
         let frames: Vec<SpectFrame> = (0..8).map(|_| full_voiced_frame(400, 1400, 2400)).collect();
         let render = |voice: VoiceParams| {
             let mut phase = i32::MAX;
-            let out = synthesize_frames_seq(&frames, &[1.0; 8], &[120.0; 8], &[], &voice, &mut phase);
+            let out =
+                synthesize_frames_seq(&frames, &[1.0; 8], &[120.0; 8], &[], &voice, &mut phase);
             out.iter().map(|&x| f64::from(x).powi(2)).sum::<f64>()
         };
         let full = render(VoiceParams::default());
@@ -1102,13 +1130,16 @@ mod tests {
     /// voices are unchanged and a `tone` line contributes only its difference.
     #[test]
     fn default_tone_curve_is_a_no_op() {
-        let peaks = frame_to_peaks(&SpectFrame {
-            ffreq: [100, 700, 1200, 2500, 3300, 3700, 7000],
-            fheight: [200; 8],
-            fwidth: [40; 6],
-            fright: [40; 3],
-            ..Default::default()
-        }, &FormantScale::default());
+        let peaks = frame_to_peaks(
+            &SpectFrame {
+                ffreq: [100, 700, 1200, 2500, 3300, 3700, 7000],
+                fheight: [200; 8],
+                fwidth: [40; 6],
+                fright: [40; 3],
+                ..Default::default()
+            },
+            &FormantScale::default(),
+        );
         let mut with_default = [0i32; MAX_HARMONIC];
         let mut without = [0i32; MAX_HARMONIC];
         let flat = [128u8; N_TONE_ADJUST];

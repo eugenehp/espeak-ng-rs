@@ -49,7 +49,7 @@ fn space_less_scripts_get_their_sentence_breaks() {
     if let Some(cmn) = tr("cmn") {
         assert_eq!(
             cmn.text_to_ipa("你好。再见").unwrap(),
-            "niɜχˈɑu2\ntsˈai5 tɕˈiɛ5n"
+            "ni˧˥χˈɑu˨˩˦\ntsˈai˥˩ tɕˈiɛ˥˩n"
         );
     }
     if let Some(ja) = tr("ja") {

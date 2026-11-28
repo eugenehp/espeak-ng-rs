@@ -258,8 +258,8 @@ fn chinese_readings_come_from_the_dictionary_with_tones() {
     // phoneme codes produced gibberish (`你` → `qr`), and the tone phonemes —
     // phSTRESS-type entries carrying a program — were dropped entirely.
     let t = skip_unless!("cmn");
-    assert_eq!(t.text_to_ipa("你").unwrap(), "nˈi2");
-    assert_eq!(t.text_to_ipa("中文").unwrap(), "ts.ˈonɡ5 wˈuəɜn");
+    assert_eq!(t.text_to_ipa("你").unwrap(), "nˈi˨˩˦");
+    assert_eq!(t.text_to_ipa("中文").unwrap(), "ts.ˈonɡ˥˥ wˈuə˧˥n");
 }
 
 #[test]
@@ -275,14 +275,14 @@ fn mandarin_third_tone_sandhi() {
     let t = skip_unless!("cmn");
     let nihao = t.text_to_ipa("你好").unwrap();
     assert!(
-        nihao.starts_with("niɜ"),
+        nihao.starts_with("ni˧˥"),
         "3+3 sandhi raises the first tone: {nihao}"
     );
     // The sandhi pair is one word: no space, and no stress on the first half.
-    assert_eq!(nihao, "niɜχˈɑu2", "the pair reads as one word: {nihao}");
+    assert_eq!(nihao, "ni˧˥χˈɑu˨˩˦", "the pair reads as one word: {nihao}");
     let beijing = t.text_to_ipa("北京").unwrap();
     assert!(
-        beijing.contains("pˈei2"),
+        beijing.contains("pˈei˨˩"),
         "214 before another tone → 21: {beijing}"
     );
 }
@@ -454,7 +454,7 @@ fn tone_placement_does_not_disturb_chinese() {
     // The same pass handles Mandarin, where the tone is written after the
     // syllable and must be pulled back over the coda (`w'u@35n`).
     if let Some(t) = tr("cmn") {
-        assert_eq!(t.text_to_ipa("中文").unwrap(), "ts.ˈonɡ5 wˈuəɜn");
+        assert_eq!(t.text_to_ipa("中文").unwrap(), "ts.ˈonɡ˥˥ wˈuə˧˥n");
     }
     if let Some(t) = tr("yue") {
         assert_eq!(t.text_to_ipa("你好").unwrap(), "nˈei5 hˈou2");

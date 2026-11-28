@@ -376,8 +376,7 @@ fn parse_voice_file(root: &Path, path: &Path) -> Option<VoiceEntry> {
 /// Finnish, Estonian, Arabic and friends — so the placement rule has to come
 /// from the data, not from a table in the port.
 pub fn voice_stress_rule(data_dir: &Path, lang: &str) -> Option<Vec<i32>> {
-    voice_for(data_dir, lang)
-        .and_then(|v| v.stress_rule)
+    voice_for(data_dir, lang).and_then(|v| v.stress_rule)
 }
 
 /// The `replace <flags> <old> <new>` lines a language's voice file declares.
@@ -393,8 +392,7 @@ pub fn voice_replacements(data_dir: &Path, lang: &str) -> Vec<(u8, String, Strin
 /// word boundary; the second number, when present, replaces
 /// `langopts.vowel_pause`.
 pub fn voice_words(data_dir: &Path, lang: &str) -> Option<Vec<i32>> {
-    voice_for(data_dir, lang)
-        .and_then(|v| v.words)
+    voice_for(data_dir, lang).and_then(|v| v.words)
 }
 
 /// The `pitch <base> <range>` a language's voice file declares, if any.
@@ -402,8 +400,7 @@ pub fn voice_words(data_dir: &Path, lang: &str) -> Option<Vec<i32>> {
 /// C turns it into `pitch_base`/`pitch_range` *and* a `formant_factor` — a
 /// voice pitched away from the default gets its formants shifted with it.
 pub fn voice_pitch(data_dir: &Path, lang: &str) -> Option<(i32, i32)> {
-    voice_for(data_dir, lang)
-        .and_then(|v| v.pitch)
+    voice_for(data_dir, lang).and_then(|v| v.pitch)
 }
 
 /// The `intonation <n>` group a language's voice file selects, if any.
@@ -412,26 +409,35 @@ pub fn voice_pitch(data_dir: &Path, lang: &str) -> Option<(i32, i32)> {
 /// transcribed table (upstream #1466): twenty-two shipped languages set it, and
 /// it decides which tune each clause terminator maps to.
 pub fn voice_intonation(data_dir: &Path, lang: &str) -> Option<u8> {
-    voice_for(data_dir, lang)
-        .and_then(|v| v.intonation)
+    voice_for(data_dir, lang).and_then(|v| v.intonation)
 }
 
 /// The `stressOpt` bits a language's voice file sets, if any — these *replace*
 /// the built-in `stress_flags` for that language, as they do in C.
 pub fn voice_stress_opt(data_dir: &Path, lang: &str) -> Option<u32> {
-    voice_for(data_dir, lang)
-        .and_then(|v| v.stress_opt)
+    voice_for(data_dir, lang).and_then(|v| v.stress_opt)
 }
 
 /// The voice of a language: the file that names it first, or else one that
 /// lists it as another of its languages (`pt-pt`).
 fn voice_for(data_dir: &Path, lang: &str) -> Option<VoiceEntry> {
     let mut voices = list_voices(data_dir);
-    let first = voices.iter().position(|v| v.language.eq_ignore_ascii_case(lang));
+    let first = voices
+        .iter()
+        .position(|v| v.language.eq_ignore_ascii_case(lang));
     let ix = first.or_else(|| {
         // Several files can list one (`en`); its own comes first.
-        let lists = |v: &VoiceEntry| v.other_languages.iter().any(|l| l.eq_ignore_ascii_case(lang));
-        let own = |v: &VoiceEntry| v.file.rsplit('/').next().is_some_and(|f| f.eq_ignore_ascii_case(lang));
+        let lists = |v: &VoiceEntry| {
+            v.other_languages
+                .iter()
+                .any(|l| l.eq_ignore_ascii_case(lang))
+        };
+        let own = |v: &VoiceEntry| {
+            v.file
+                .rsplit('/')
+                .next()
+                .is_some_and(|f| f.eq_ignore_ascii_case(lang))
+        };
         voices
             .iter()
             .position(|v| lists(v) && own(v))
@@ -442,8 +448,7 @@ fn voice_for(data_dir: &Path, lang: &str) -> Option<VoiceEntry> {
 
 /// The `stressLength <l0…l7>` table a language's voice file declares, if any.
 pub fn voice_stress_length(data_dir: &Path, lang: &str) -> Option<Vec<i32>> {
-    voice_for(data_dir, lang)
-        .and_then(|v| v.stress_length)
+    voice_for(data_dir, lang).and_then(|v| v.stress_length)
 }
 
 /// The acoustic lines (`formant`, `consonants`, `stressAmp`, …) of a language's
@@ -479,10 +484,9 @@ pub fn voice_dict_condition(data_dir: &Path, lang: &str) -> u32 {
 /// bracketsAnnounced)` from the voice file, defaulting to C's `(4, 2)`.  The
 /// pause loop spends 2 per `phonPAUSE`, so 4 is two pauses and 0 is none.
 pub fn voice_bracket_pause(data_dir: &Path, lang: &str) -> (u8, u8) {
-    voice_for(data_dir, lang)
-        .map_or((4, 2), |v| {
-            (v.brackets.unwrap_or(4), v.brackets_announced.unwrap_or(2))
-        })
+    voice_for(data_dir, lang).map_or((4, 2), |v| {
+        (v.brackets.unwrap_or(4), v.brackets_announced.unwrap_or(2))
+    })
 }
 
 /// An MBROLA voice: the `voices/mb/mb-<db>` file's `language` and its

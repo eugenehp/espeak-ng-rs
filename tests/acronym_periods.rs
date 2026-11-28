@@ -68,8 +68,9 @@ fn period_between_words_reads_as_dot() {
     let ipa = t.text_to_ipa("cat.Dog").unwrap();
     assert!(!ipa.contains('\n'), "cat.Dog must not break: {ipa:?}");
     assert_eq!(ipa, "kˈat dˈɒt dˈɒɡ");
-    // digit.word too ("5.and" → "five dot and").
-    assert_eq!(t.text_to_ipa("5.and").unwrap(), "fˈaɪv dˈɒt and");
+    // digit.word too ("5.and" → "five dot and"), the dot in the number's word
+    // and so unstressed, as C reads it.
+    assert_eq!(t.text_to_ipa("5.and").unwrap(), "fˈaɪv dɒt and");
 }
 
 #[test]
@@ -83,10 +84,7 @@ fn period_between_digits_in_comma_decimal_locale() {
     };
     let ipa = t.text_to_ipa("3.14").unwrap();
     assert!(!ipa.contains('\n'), "de 3.14 must not break: {ipa:?}");
-    assert!(
-        ipa.contains("pˈʊŋkt"),
-        "de 3.14 reads '.' as punkt: {ipa:?}"
-    );
+    assert!(ipa.contains("pʊŋkt"), "de 3.14 reads '.' as punkt: {ipa:?}");
     assert!(
         ipa.contains("fˈɪɾtseːn"),
         "de 3.14 reads 14 as vierzehn: {ipa:?}"

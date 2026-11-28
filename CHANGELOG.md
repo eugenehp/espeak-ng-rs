@@ -7,9 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-28
+
 ### Breaking
 
-This release changes the public API and needs to be 0.3.0. `MIGRATION.md` lists
+This release changes the public API, hence 0.3.0. `MIGRATION.md` lists
 every break that `cargo semver-checks` reports against 0.2.0, with the
 replacements. In short:
 
@@ -28,7 +30,9 @@ The high-level API (`EspeakNg`, `Translator`, `VoiceSpec`, the CLI) is unchanged
 
 ### Changed
 
-- **Bundled data** refreshed from espeak-ng master `f0fb11a8` (1.53.0) (#46).
+- **Bundled data** refreshed from espeak-ng master `ee9fa7cc` (1.53.0) (#46):
+  the Dutch rules and list, Mandarin's tone phonemes and two emoji lists
+  changed since `f0fb11a8`.
 - **Audio timing and loudness follow C.** The wave generator is a port of
   `Wavegen()` as one continuous state machine, and vowel lengths follow
   `CalcLengths`/`LookupSpect` instead of fitted constants. All speech sounds
@@ -89,6 +93,224 @@ The high-level API (`EspeakNg`, `Translator`, `VoiceSpec`, the CLI) is unchanged
 - A whole number the dictionary lists is read as that word (Marathi 100).
 - A `<break>` clause has no tonic syllable, and `weak`/`x-weak` are a short pause
   phoneme, as in C.
+- Words the rules can't read are spelled, and a letter with no dictionary name
+  is read by the rules, as in C's `LookupLetter`.
+- Dictionary flags that were parsed but ignored now apply: `$combine` (Czech,
+  English and Polish join a word with the next), `$double` (Italian lengthens
+  the next word's first consonant), `$unstressend`, and a stem's own flags
+  under a prefix.
+- A voice's `replace` lines apply, and consecutive words switched to the same
+  language are read as one phrase.
+- Rule conditions see the previous word and whether the clause ends a sentence;
+  Vietnamese and Macedonian use their own vowel lists, and Turkic languages and
+  Basque their suffix rules.
+- Belarusian words are found in its dictionary.
+- Spanish-type final-consonant stress, Vietnamese's default falling tone, and
+  the pauses phoneme programs insert between words follow C.
+- An ideograph a language can't read (Hakka, Japanese) is "Chinese letter",
+  as in C, instead of nothing. A word in another language in a tone language
+  takes the default tones, and Hakka's tone sandhi is sung.
+- `-X` no longer traces the internal check of whether a word can be read.
+- Words in another language are played with their own phoneme table, with
+  C's 10 ms pause at each switch; before, their codes were played from the
+  clause's table (Russian with English words: 5.5 to 17.6 dB against C).
+- A character nothing reads is said as C's `TranslateLetter` says it: the
+  alphabet's name, then "letter" or "symbol" and its code ("symbol 2605" for
+  `★`, "braille 1 2"), or the letter in its alphabet's language. Scripts C
+  spells are spelled the same way, so Han in English is "Chinese letter" and
+  kana "Japanese letter"; the port no longer reads them in Mandarin or
+  Japanese. Superscripts are read as their base letter.
+- The rules no longer read on into the next word after a character they have
+  no rule for (`★ y` read the `y`).
+- Mandarin's neutral tone is unstressed and follows the tone before it
+  (`35` + `11` → `33`); a word in another language takes Mandarin, Vietnamese,
+  Cantonese or Hakka default tones, printed as C prints them.
+- A tone in IPA is written through its vowel, as in C.
+- Vietnamese numbers with an empty group (1000500) are spaced as in C.
+- Symbols in running text follow C's `TranslateRules`/`LookupLetter`: the
+  language's rules first, then its entry; a character given only as `_c`
+  is silent (French `#`, `/`, `=`, `§`); otherwise English is asked for a
+  plain entry, and a one-character word is spelled unless a letter follows
+  it (`@` alone is "at sign", in `a @ b` "at"). The port's own reading table
+  for symbols the data doesn't name (Russian `°` "градусов", `±` in a dozen
+  languages, `№` outside the languages that name it) is removed: C says
+  nothing for those.
+- A `$textmode` replacement is split as C's `SegmentReplacement` splits it,
+  nested replacements are expanded (Mandarin `☃` → `雪与雪人` → `xue3 …`), and
+  a replacement word the rules can't read is dropped, as in C: Japanese
+  symbols whose names are kanji or katakana are silent.
+- A letter the rules have no rule for marks the word to be spelled in every
+  rule group, not only the default one (Shan's visarga).
+- Hakka tone sandhi is applied in translation, before the default tones, as
+  C does, so it shows in `-x` too.
+- Mandarin tone sandhi runs over the whole clause, including words in another
+  language and spelled letters; `214` + `214` no longer joins two separate
+  words (only a dictionary entry such as `你好` does).
+- A tone in the dictionary is written after its vowel's length mark (Shan
+  `s'i:2`).
+- German, Dutch and Afrikaans prefixes: a stressed prefix keeps the stem to a
+  secondary stress (`ungefähr` `_|'Ung@f,E:r`), and an unstressed one is
+  joined to a stem stressed on its own (Dutch `ongeveer` has no pause before
+  its first vowel).
+- A phoneme a program appends (Hindi `i` → `i;`) is the next phoneme's
+  `prevPh`, as in C's single pass.
+- A word read in another language takes the clause's word gaps, not its own
+  (Latin in Afrikaans).
+- Catalan keeps the middle dot inside a word (`col·legi`); a letter after a
+  non-letter mark starts a new word (Myanmar asat).
+- An explicit primary stress that a later `=` reduces stays reduced (Danish
+  `delfinarium`); a stressed prefix's stem is stressed with the whole word's
+  flags (Afrikaans `onomwonde $3`).
+- A clause pause inside a clause ends a tone group, as in C's intonation, so
+  the group after it gets a stress (Lojban `ijo poi`).
+- Vietnamese and other `vowel_pause` voices pause between two vowels across a
+  word break even after a tone (`s'i4_ 'i7`).
+- Letters are classified with C's Unicode data (`ucd_isalpha`), which is older
+  than Rust's: Shan tone marks end a word, as they do in C.
+- A word with a letter its rules don't cover is spelled in any script when C
+  would spell it (its "not the first letter, or an ASCII character follows"
+  test), letters with no name read as `TranslateLetter` reads them, and
+  runic and other unlisted scripts are tested for being unpronounceable.
+- After a letter of the Korean range that Korean can't read, the words after
+  it are stressed as C stresses them with Korean's phoneme table left
+  selected (English `x ꦄ y` reads `w'@`).
+- Symbols: `$brk` on a symbol pauses before it (French `&`), a symbol joins
+  multi-word entries (`a &`, `at & t`), a bracket inside a replacement pauses
+  before the next word (French `∞`), Thai tone marks in a replacement give
+  their tone to the vowel before, and a replacement whose first word the rules
+  send to another language is read there as a character (Mandarin `∑`).
+- Punctuation as C's `ReadClause` and `TranslateClause` treat it: a mark with
+  no letter or digit before it in the clause doesn't end it and is read as
+  running text (English ": x" says "colon", Czech "!" its name, a comma
+  nothing); `?!` and `...` are one mark (an ellipsis always breaks); a spaced
+  ` . ` is a word (`dɒt`, `kropka`); a spaced dash is a pause, never "minus";
+  a bracket's pause opens the next word at a clause start (`_:_:word`) and
+  pre-pauses combine by their largest, as C's do; `$pause` counts brackets
+  and symbols as words and waits two words after one.
+- A switched-out symbol on its own is spelled unless a letter of its alphabet
+  follows (Bulgarian "мир &" is `ampersand`), and isn't joined into an English
+  phrase; a symbol rule sees the number before it (Romanian `10%` is "la
+  sută"); a colon or dash between numbers falls back to its plain list entry
+  (Ukrainian "двокрапка").
+- Finnish consonant doubling stops at a clause boundary; a word whose prefix
+  is taken off keeps its `$alt` flags for the stem's rules (Dutch "gestage");
+  the pieces of a word read letter by letter keep the word's place in the
+  clause (French "aᵇ").
+- C's pass over a clause's unstressed vowels: every second one in a run is
+  diminished, across words. It decides which vowel takes the stress of a
+  clause that has none (German "ich habe" is `hA:b'@`, Russian "побыть подо
+  мочь" stresses "подо"), and the diminished vowels are shorter and quieter
+  in the audio (English SNR against C 12.4 → 13.0 dB).
+- A bracket or quote after a clause's last word: `$atend` entries no longer
+  apply (`"go to"` is `tU`), a spoken one runs into the word before it, as in
+  C (Ukrainian `"x"` ends `'Eks(uk)podv'i:jna l'apka`), and `( (` pauses
+  before the second; glued brackets (`((a))`) pause once. A `$pause` word
+  before a closing bracket is still the clause's last word.
+- German, Dutch, Maltese, Slovenian and Bulgarian lose a word-final devoicing
+  of the port's own on top of C's: `"ab" cd` keeps its `b`.
+- A dash after a symbol pauses (`/ - go`); a pause at the start of a clause
+  stays in that clause and opens its first word (`x. / - 12`, `; ? ( soweit`,
+  `" - $5`); a dash's pause before a switched word follows a number straight
+  after it (`12 - squaw`); a switched
+  English phrase followed by more of the clause has no clause-final word
+  (German "to 5" is `tU`), and its `$unstressend` sees the stresses of the
+  clause before it (Swedish "grep one" is `w,0n`).
+- The noun, verb and past-tense forms (`$noun`, `$verb`, `$past`) follow C's
+  `$nounf`, `$verbf`, `$verbsf` and `$pastf` flags, in every language, instead
+  of a list of English words: Portuguese "seu consolo" is `k,uNs'olU`, French
+  "tu as" is `ty 'a`.
+- Dotted letters: Czech `e.g` is the list's "například" when no dot is left
+  after it, and a series whose last dot stays takes in a single letter after
+  it (German `a.b. c` is one word). A `$dot` word removes a spaced dot after it
+  (Portuguese "mrs . hawking").
+- No vowel pause next to a switch of language (Italian "new ab" has no `_|`),
+  and `$combine` doesn't join a word of another alphabet (Bulgarian "със A").
+- Following upstream since `f0fb11a8`:
+  - IPA writes the length mark, a syllabic consonant's mark and a tone
+    through their own phoneme: Danish `ɑː` (was `ɑɑ`), Arabic `ʕ-` (was `ʕʕ`),
+    Mandarin tone letters (`ni˧˥χˈɑu˨˩˦`, was `niɜχˈɑu2`).
+  - Stylised Latin letters and digits (mathematical bold, italic, script,
+    fraktur, double-struck, sans-serif, monospace; the letterlike fill-ins;
+    full-width forms) are read as plain ASCII: `𝐇𝐞𝐥𝐥𝐨` is "hello".
+  - A decimal fraction of more than five digits is read in groups with their
+    scale words (`LookupDecimal`): Russian `0,123456789012`, Italian
+    `3,1415926535`.
+  - Kurmanji has a decimal comma: `1.502` is 1502, `2,5` is two and a half.
+- English diminishes the next unstressed vowel before its phoneme program
+  runs, as C does ("we am" is `wi:; 'a#m`); a multi-word entry's `$atend`
+  is checked at its last word (`(I am) %aIam $atend`).
+- A dot follows C's `ReadClause`: one with nothing said yet in its clause is
+  silent, and one before another mark ends the clause (`cat . . dog`,
+  `cat . ! dog`); Georgian, Xextan and `mto` end a sentence at a dot before a
+  lower-case word (`lowercaseSentence`).
+- A pause before a word cancels the word before's `$double` (Finnish "syödä
+  tai x").
+- C's `Unpronouncable2` for English, German and Spanish: the first letter's
+  start-of-word rules decide (`th` and `shh` are spelled, `st` is "saint");
+  Catalan, Interlingua, Aragonese and Papiamento keep the default test.
+- C's `FLAG_HAS_DOT` for `$hasdot` entries (Italian "Dr." is "dottor"), and a
+  clause ending in an abbreviation's dot gets no stress of its own (`St.`).
+- A dot after a number is the number's `_.`, in its word and stressed with it
+  (Vietnamese `3.5`, French `3.5`), or nothing without one (Portuguese); a dot
+  between words is its plain list entry or the rules' reading, or nothing
+  (German "cat.dog"); a word after punctuation starts a word of its own.
+- A sign glued to a symbol ("+$5", "-€10") is one word read by the rules and
+  C's `LookupLetter`, switched to English when it has the character.
+- `½` and the other fraction signs are symbols, read in English where the
+  language lacks them (`(en)a hˈɑːf`); a superscript or subscript letter is
+  read as its base letter would be (a Latin one in Russian is English).
+- In a language without the Latin alphabet, a short all-capitals word in a
+  lower-case clause is spelled before the switch (Russian "Louis XIV" is
+  `'Eks 'aI v'i:`), dotted letters are joined first (`eg`), a dot doesn't end
+  a switched phrase, a dash pauses between switches, and a clause-final
+  switched word gets its `$strend` stress.
+- Thai decimals are one rules word; `RULE_SPELLING` is matched as C writes it
+  after a non-final spelled letter (Portuguese `kg` is `kˌɐpɐɡˈe`).
+- The port's own text passes are removed and the text is read as C reads it:
+  decades (`80s` is `'eIti z`, from the rule `D_) s (`), units, `°C`/`°F`,
+  fractions, exponents (`x²` is "x two"), dimensions, abbreviations and the
+  keyword Roman numerals.  `-$5` is "dollar five".
+- Ordinals are C's: `_1o`/`_2Xo`/`_0Co`/`_ord`/`_ord20` and the spoken
+  `_#suffix` (English `2st` is `s'Ekst`, as in C), a suffix counts only when
+  the dictionary has it (French `2e` is the number and the letter, Catalan `º`
+  is a symbol), `(1 er)`-style dictionary entries are looked up with the
+  number, and a dot is an ordinal mark only for C's `NUM_ORDINAL_DOT`
+  languages (now Hungarian, Lule Sami and Latgalian too) and only before a
+  lower-case word.
+- Roman numerals are C's `TranslateRoman`, in every language that has
+  `NUM_ROMAN`: "Chapter IV" is `tS'apt3 r,oUm@n_ f'o@`, Italian `II` is
+  "secondo", Hungarian needs the dot.
+- Decimal fractions are C's `NUM_DFRACTION_*` modes, joined to the decimal
+  word as C joins them (`virgylzero s'E~k`); Malay and Indonesian read `.` as
+  the thousands separator (`NUM_DECIMAL_COMMA`).
+- Long digit strings pause after each pair of digits and read the thousands
+  separator between groups (Spanish "punto"); `007` is one word of zeros; a
+  short number written with a separator (`3,007`) pauses after the
+  thousands.
+- `:` and `-` between numbers are read by the language's rules with the
+  numbers round them (German `_L05) :` "Uhr", English "dash", Portuguese
+  "menos", silent elsewhere); `02:30` drops the zero; `x-5` pauses; `5-x` is
+  one word; a word after a hyphen loses its initial pause (`Ost-Abend`).
+- Single letters joined by dots: C's `(e . g .)` dictionary entries and
+  `CheckDottedAbbrev` (`u.s.a.` is `j,u:,Es'eI`, `i.e.` `,aI'i:`).
+- A spaced ` - ` or `--` is a pause before the next word (C's
+  `pre_pause_add`); an `a` before a number reads `a#` (C's extra space
+  before a number defeats `_) a (_D`); `'s` after a number is a word.
+- The syllabic marker `-` after a vowel leaves the vowel unstressed and is not
+  printed (Faroese `u-o`), as in C's `SetPlist`.
+- A replacement word whose rules return a bare language switch behaves as in
+  C: the switch stays in the phoneme string and the byte after it selects the
+  phoneme table the rest is read against (Mandarin `∞` is
+  `w'u35(fa)_| t_| fu33_| X_|`, Portuguese `©` `… dy(base) @@`), phonemes
+  that table lacks are dropped, and the CLI prints C's "Invalid phoneme code
+  N" lines for them on standard output
+  (`translate::take_invalid_phoneme_codes`).
+- A word read for another language's clause uses that clause's
+  `LOPT_REDUCE` in its stress conditions, as C does (an English `a` in a
+  Russian clause); Ukrainian has Russian's `LOPT_REDUCE`.
+- A switched word before a letter of its own alphabet is read as a word, not
+  a letter (`a ☺` in Hebrew is `a#`); Bopomofo goes to Mandarin in Arabic and
+  Cyrillic to Russian in Georgian, as their alphabets nominate.
 
 ## [0.2.0] - 2026-09-05
 
@@ -148,12 +370,10 @@ The high-level API (`EspeakNg`, `Translator`, `VoiceSpec`, the CLI) is unchanged
 - **`dicts/` dictionary layout accepted** (upstream #2261). `dict_path` tries
   the flat `<data>/<lang>_dict` first and then `<data>/dicts/<lang>_dict`, so a
   data refresh that adopts the new layout doesn't break every voice.
-- **Unicode compatibility (NFKC) folding of input** (upstream #2523), applied
-  only to the 183 characters this port would otherwise **drop** — squared units
-  (`㎏` → `kg`, `5㎏` → "five kilograms"), the remaining letterlike symbols,
-  enclosed forms and ligatures. Characters it already reads better than their
-  NFKC form (`™` → "trademark", `№` → "numero", circled digits, superscripts,
-  full-width letters) are deliberately not in the table.
+- Compatibility characters are read as C reads them: no NFKC, full-width,
+  stylised-letter or enclosed-number folding (`㎏` is "Chinese symbol", by its
+  CJK alphabet, `①` nothing, `𝐇` its character code). `translate::compat`
+  is kept but no longer applied.
 - **Fuzz-style parser robustness tests** (upstream #2441, which adds OSS-Fuzz
   dictionary targets). Every binary parser — `phontab`, `_dict`, `_phtrans`,
   `phondata` spectrum sequences — is fed random bytes, every truncation of a

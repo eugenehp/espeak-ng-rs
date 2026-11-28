@@ -47,16 +47,16 @@
 //
 use crate::bytes::Bounded;
 pub mod bytecode;
+mod calc_lengths;
 pub mod engine;
 pub mod envelopes;
 pub mod intonation;
-mod calc_lengths;
 pub mod klatt;
 pub mod lang_prosody;
-pub mod speech_player;
 pub mod phondata;
 pub mod sample;
 pub mod setlengths;
+pub mod speech_player;
 pub mod targets;
 pub mod tempo;
 pub mod wavegen;
@@ -201,6 +201,8 @@ pub struct VoiceParams {
     pub stress_lengths: Option<[u32; 8]>,
     /// The language's timing, loudness and tone options.
     pub prosody: lang_prosody::LangProsody,
+    /// Hakka's tone sandhi applies.
+    pub hakka_sandhi: bool,
     /// `langopts.intonation_group` — selects a row of `punct_to_tone`.
     pub intonation_group: usize,
     /// Formant frequency scale factor (100 = normal)
@@ -296,6 +298,7 @@ impl Default for VoiceParams {
             pitch_range_units: 3888.0, // espeak's default `pitch 82 118`
             stress_lengths: None,
             prosody: lang_prosody::LangProsody::default(),
+            hakka_sandhi: false,
             intonation_group: 1,
             pitch_range: 100,
             formant_scale: 100,
@@ -351,7 +354,10 @@ pub fn apply_echo(pcm: &mut [i16], delay: usize, amp: i32) {
     }
     for i in delay..pcm.len() {
         let echo = (pcm.at(i - delay) as i32 * amp) >> 8;
-        pcm.put(i, (pcm.at(i) as i32 + echo).clamp(i16::MIN as i32, i16::MAX as i32) as i16);
+        pcm.put(
+            i,
+            (pcm.at(i) as i32 + echo).clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+        );
     }
 }
 
@@ -448,7 +454,10 @@ impl Synthesizer {
     /// into `DoSample3`/`DoSpect2` for the same number.
     ///
     /// Feed the result to [`MbrolaTable::translate`](crate::mbrola::MbrolaTable::translate).
-    #[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "indices are bounded by the loops over these lists"
+    )]
     pub fn mbrola_phonemes(
         &self,
         codes: &[crate::translate::PhonemeCode],
@@ -463,12 +472,8 @@ impl Synthesizer {
         let wpm = setlengths::wpm_for_duration_factor(speed_factor);
         let annotated = annotate_codes(codes, phdata, setlengths::clause_pause_factor(wpm));
         let prosody = self.prosody();
-        let timings = calc_lengths::calc_lengths(
-            &annotated,
-            phdata,
-            &prosody,
-            setlengths::len_speeds(wpm),
-        );
+        let timings =
+            calc_lengths::calc_lengths(&annotated, phdata, &prosody, setlengths::len_speeds(wpm));
         let wav_factor = setlengths::wav_factor(wpm);
         let pause_factor = setlengths::pause_factor(wpm);
 
@@ -522,7 +527,11 @@ impl Synthesizer {
             let timing = timings.get(ann_ix).copied().unwrap_or_default();
             match ann {
                 AnnCode::Pause(d) | AnnCode::ClauseBoundary(d, _) => {
-                    let factor = if *d >= 200.0 { setlengths::clause_pause_factor(wpm) } else { pause_factor };
+                    let factor = if *d >= 200.0 {
+                        setlengths::clause_pause_factor(wpm)
+                    } else {
+                        pause_factor
+                    };
                     push_pause(&mut out, (d * factor).round() as u32);
                     newword = true;
                 }
@@ -535,7 +544,9 @@ impl Synthesizer {
                 AnnCode::Embedded(_) => {}
                 AnnCode::WordBoundary => {
                     // Close the word: every phoneme in it shares its top stress.
-                    let top = out.get(word_start..).unwrap_or_default()
+                    let top = out
+                        .get(word_start..)
+                        .unwrap_or_default()
                         .iter()
                         .map(|p| p.stress_level)
                         .max()
@@ -556,7 +567,10 @@ impl Synthesizer {
                     };
                     let syl = syllable.unwrap_or_default();
                     if timing.prepause > 0 {
-                        push_pause(&mut out, (f64::from(timing.prepause) * wav_factor).round() as u32);
+                        push_pause(
+                            &mut out,
+                            (f64::from(timing.prepause) * wav_factor).round() as u32,
+                        );
                     }
                     let ph = phdata.get(info.code);
                     let (samples, prepause) = match synthesize_phoneme_info(
@@ -573,8 +587,7 @@ impl Synthesizer {
                             trail_silence,
                             ..
                         } => (
-                            frames.iter().map(|f| f.duration()).sum::<usize>()
-                                + trail_silence,
+                            frames.iter().map(|f| f.duration()).sum::<usize>() + trail_silence,
                             lead_silence,
                         ),
                         PhonemeRender::Pcm(pcm) => (pcm.len(), 0),
@@ -608,7 +621,9 @@ impl Synthesizer {
                 }
             }
         }
-        let top = out.get(word_start..).unwrap_or_default()
+        let top = out
+            .get(word_start..)
+            .unwrap_or_default()
             .iter()
             .map(|p| p.stress_level)
             .max()
@@ -621,7 +636,10 @@ impl Synthesizer {
         // pause phoneme; ours adds it at render time, so put it back here or
         // MBROLA would cut the last phoneme off abruptly.
         if !out.is_empty() && !self.voice.no_final_pause {
-            push_pause(&mut out, (END_SILENCE_MS * setlengths::clause_pause_factor(wpm)).round() as u32);
+            push_pause(
+                &mut out,
+                (END_SILENCE_MS * setlengths::clause_pause_factor(wpm)).round() as u32,
+            );
         }
         out
     }
@@ -741,12 +759,8 @@ impl Synthesizer {
         let wpm = setlengths::wpm_for_duration_factor(speed_factor);
         let annotated = annotate_codes(codes, phdata, setlengths::clause_pause_factor(wpm));
         let prosody = self.prosody();
-        let mut timings = calc_lengths::calc_lengths(
-            &annotated,
-            phdata,
-            &prosody,
-            setlengths::len_speeds(wpm),
-        );
+        let mut timings =
+            calc_lengths::calc_lengths(&annotated, phdata, &prosody, setlengths::len_speeds(wpm));
         let mut wav_factor = setlengths::wav_factor(wpm);
         let mut pause_factor = setlengths::pause_factor(wpm);
         let mut clause_factor = setlengths::clause_pause_factor(wpm);
@@ -797,11 +811,50 @@ impl Synthesizer {
             None,
         );
         if prosody.tone_language {
-            let tones = annotated.iter().filter_map(|a| match a {
-                AnnCode::Phoneme(info) if info.ph_type == PH_VOWEL => Some(info.tone),
-                _ => None,
-            });
-            for (syllable, tone) in syllables.iter_mut().zip(tones) {
+            let mut tones: Vec<u8> = Vec::new();
+            // Hakka: a first tone before a first, fourth or sixth tone in the
+            // same word becomes the second (`CalcPitches_Tone`).
+            // (Now given in translation, where C's `-x` shows it too.)
+            let hakka = false && self.voice.hakka_sandhi;
+            let mnemonic = |code: u8| {
+                phdata
+                    .get(if code == 0 { 17 } else { code })
+                    .map(|ph| ph.mnemonic)
+            };
+            let second = phdata.lookup_phoneme("2");
+            let mut prev_in_word: Option<usize> = None;
+            for a in &annotated {
+                let AnnCode::Phoneme(info) = a else {
+                    if matches!(
+                        a,
+                        AnnCode::WordBoundary | AnnCode::Pause(_) | AnnCode::ClauseBoundary(..)
+                    ) {
+                        prev_in_word = None;
+                    }
+                    continue;
+                };
+                if info.this_wordstart {
+                    prev_in_word = None;
+                }
+                if info.ph_type != PH_VOWEL {
+                    continue;
+                }
+                if hakka && second != 0 {
+                    let this = mnemonic(info.tone);
+                    if let Some(p) = prev_in_word {
+                        let first = u32::from(b'1');
+                        let follows = [first, u32::from(b'4'), u32::from(b'6')];
+                        if mnemonic(tones.at(p)) == Some(first)
+                            && this.is_some_and(|m| follows.contains(&m))
+                        {
+                            tones.put(p, second);
+                        }
+                    }
+                }
+                prev_in_word = Some(tones.len());
+                tones.push(info.tone);
+            }
+            for (syllable, &tone) in syllables.iter_mut().zip(&tones) {
                 set_lexical_tone(syllable, tone, phdata);
             }
         }
@@ -913,7 +966,14 @@ impl Synthesizer {
                         &self.voice,
                         &mut wavephase,
                     );
-                    let n = sil_samples(*ms, if *ms >= 200.0 { clause_factor } else { pause_factor });
+                    let n = sil_samples(
+                        *ms,
+                        if *ms >= 200.0 {
+                            clause_factor
+                        } else {
+                            pause_factor
+                        },
+                    );
                     output_i16.extend(std::iter::repeat(0i16).take(n));
                 }
                 AnnCode::ClauseBoundary(ms, _) => {
@@ -932,7 +992,14 @@ impl Synthesizer {
                         &self.voice,
                         &mut wavephase,
                     );
-                    let n = sil_samples(*ms, if *ms >= 200.0 { clause_factor } else { pause_factor });
+                    let n = sil_samples(
+                        *ms,
+                        if *ms >= 200.0 {
+                            clause_factor
+                        } else {
+                            pause_factor
+                        },
+                    );
                     output_i16.extend(std::iter::repeat(0i16).take(n));
                     let start = flushed + output_i16.len();
                     sentence_marks.push(start);
@@ -1071,8 +1138,11 @@ impl Synthesizer {
                                     let last = (frames.len() - 1) as f64;
                                     let scale = flutter_factor(phoneme_idx, self.voice.flutter)
                                         * embed_pitch;
-                                    let total: f64 =
-                                        frames.iter().skip(env_from).map(|f| f.duration() as f64).sum();
+                                    let total: f64 = frames
+                                        .iter()
+                                        .skip(env_from)
+                                        .map(|f| f.duration() as f64)
+                                        .sum();
                                     let mut done = 0.0;
                                     for (i, frame) in frames.iter().enumerate() {
                                         // The envelope runs over the syllable's time.
@@ -1105,7 +1175,8 @@ impl Synthesizer {
                                     );
                                 }
                                 _ => {
-                                    run_pitch.extend(std::iter::repeat(ph_pitch).take(frames.len()));
+                                    run_pitch
+                                        .extend(std::iter::repeat(ph_pitch).take(frames.len()));
                                     sonorant_from = info.sonorant_vowel.map(|_| first_frame);
                                 }
                             }
@@ -1166,7 +1237,11 @@ impl Synthesizer {
         // had its own; `-z` makes it 10 ms.
         let ends_clause = matches!(annotated.last(), Some(AnnCode::ClauseBoundary(..)));
         if (!output_i16.is_empty() || flushed > 0) && !stopped && !ends_clause {
-            let ms = if self.voice.no_final_pause { 10.0 } else { END_SILENCE_MS };
+            let ms = if self.voice.no_final_pause {
+                10.0
+            } else {
+                END_SILENCE_MS
+            };
             output_i16.extend(std::iter::repeat(0i16).take(sil_samples(ms, clause_factor)));
         }
 
@@ -1333,7 +1408,10 @@ fn break_ms(cmd: crate::translate::EmbeddedCmd, speed_factor: f64) -> f64 {
 
 /// Pre-scan the code stream, resolving stress markers, word boundaries,
 /// and CalcLengths context for each phoneme.
-#[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "indices are bounded by the loops over these lists"
+)]
 fn annotate_codes(
     codes: &[crate::translate::PhonemeCode],
     phdata: &crate::phoneme::PhonemeData,
@@ -1364,11 +1442,18 @@ fn annotate_codes(
                 Some(crate::translate::CodeMarker::Embedded(cmd)) => {
                     pending_embedded.push((kept.len(), *cmd));
                 }
+                Some(crate::translate::CodeMarker::ClauseTone) => {
+                    if let Some(tone) = tones.last_mut() {
+                        *tone = c.code;
+                    }
+                }
                 Some(_) => {}
                 // A tone belongs to the vowel before it; it isn't in C's list.
                 None if c.code > 8
                     && !c.is_boundary
-                    && phdata.get(c.code).is_some_and(|ph| ph.typ == crate::phoneme::PH_STRESS) =>
+                    && phdata
+                        .get(c.code)
+                        .is_some_and(|ph| ph.typ == crate::phoneme::PH_STRESS) =>
                 {
                     if let Some(tone) = tones.last_mut() {
                         *tone = c.code;
@@ -1444,7 +1529,11 @@ fn annotate_codes(
             // Clause pause (sentence boundary)
             0 if is_boundary => {
                 let ms = clause_pause_ms(codes.get(i - 1).and_then(|c| c.clause_char));
-                let tonic = if pending_break_ms.is_some() { Tonic::Without } else { Tonic::With };
+                let tonic = if pending_break_ms.is_some() {
+                    Tonic::Without
+                } else {
+                    Tonic::With
+                };
                 result.push(AnnCode::ClauseBoundary(
                     pending_break_ms.take().unwrap_or(f64::from(ms)),
                     tonic,
@@ -1535,7 +1624,10 @@ fn annotate_codes(
                 // is a pause.
                 const PAUSE_GROUP: u8 = 1;
                 let clause_end = |from: usize, to: usize| {
-                    flat.get(from..to).unwrap_or_default().iter().any(|&(c, b)| b && c == 0)
+                    flat.get(from..to)
+                        .unwrap_or_default()
+                        .iter()
+                        .any(|&(c, b)| b && c == 0)
                 };
                 if next_code == 0 || clause_end(i, next_at) {
                     (next_lm, next2_lm) = (PAUSE_GROUP, PAUSE_GROUP);
@@ -1547,12 +1639,18 @@ fn annotate_codes(
 
                 // For EOC and more_syllables, scan forward in same word
                 // C: the last syllable of the last word, whatever follows its vowel.
-                let end_of_clause = flat.get(i..).unwrap_or_default()
+                let end_of_clause = flat
+                    .get(i..)
+                    .unwrap_or_default()
                     .iter()
                     .take_while(|&&(c, b)| !(b && c == 0))
-                    .all(|&(c, b)| b || c <= 8 || c == 15 || phdata.get(c).is_none_or(|ph| ph.typ != 2));
+                    .all(|&(c, b)| {
+                        b || c <= 8 || c == 15 || phdata.get(c).is_none_or(|ph| ph.typ != 2)
+                    });
                 // The vowels after this one before the end of the word.
-                let more_syllables = flat.get(i..).unwrap_or_default()
+                let more_syllables = flat
+                    .get(i..)
+                    .unwrap_or_default()
                     .iter()
                     .take_while(|&&(c, b)| !b && c != 0 && c != 15)
                     .filter(|&&(c, _)| c > 8 && phdata.get(c).is_some_and(|ph| ph.typ == 2))
@@ -1791,7 +1889,10 @@ fn set_frame_rms(fr: &mut phondata::SpectFrame, new_rms: i32) {
 /// `formant_factor` (×256) scales the F2 target for a voice pitched away from
 /// the default — a higher-pitched voice has a shorter vocal tract, so its
 /// formants sit higher.
-#[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "indices are bounded by the loops over these lists"
+)]
 fn adjust_formants(
     fr: &mut phondata::SpectFrame,
     target: i32,
@@ -1851,7 +1952,10 @@ fn adjust_formants(
 ///
 /// `formant_rate = {240,170,…}` at 22050 Hz; `length` is in STEPSIZE units so a
 /// segment's sample count is `length*64`.  Called per-syllable from `flush_run`.
-#[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "indices are bounded by the loops over these lists"
+)]
 fn smooth_spect(frames: &mut [phondata::SpectFrame], centre: usize) {
     const FORMANT_RATE: [i32; 6] = [240, 170, 170, 170, 170, 170];
     let n = frames.len();
@@ -1879,9 +1983,13 @@ fn smooth_spect(frames: &mut [phondata::SpectFrame], centre: usize) {
             allowed = allowed * FORMANT_RATE.at(pk) / 3000;
             allowed = allowed * len / 256;
             if diff > allowed {
-                frames[cur].ffreq.put(pk, (f1 + allowed).clamp(0, i16::MAX as i32) as i16);
+                frames[cur]
+                    .ffreq
+                    .put(pk, (f1 + allowed).clamp(0, i16::MAX as i32) as i16);
             } else if diff < -allowed {
-                frames[cur].ffreq.put(pk, (f1 - allowed).clamp(0, i16::MAX as i32) as i16);
+                frames[cur]
+                    .ffreq
+                    .put(pk, (f1 - allowed).clamp(0, i16::MAX as i32) as i16);
             }
         }
     };
@@ -1916,7 +2024,10 @@ fn smooth_spect(frames: &mut [phondata::SpectFrame], centre: usize) {
 /// Apply a vowel entry (`which=1`) or exit (`which=2`) formant transition using
 /// the adjacent consonant's `vowel_transition` data.  Core of `FormantTransition2`
 /// (the glottal-stop and vowel-colour edge cases are not yet ported).
-#[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "indices are bounded by the loops over these lists"
+)]
 fn apply_vowel_transition(
     frames: &mut Vec<phondata::SpectFrame>,
     data1: u32,
@@ -2013,7 +2124,10 @@ fn prevocalic_rise(pitch: &mut [f64], from: usize, end: usize) {
     }
 }
 
-#[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "indices are bounded by the loops over these lists"
+)]
 fn flush_run(
     run_frames: &mut Vec<phondata::SpectFrame>,
     run_amps: &mut Vec<f64>,
@@ -2088,7 +2202,10 @@ fn flush_run(
     run_centres.clear();
 }
 
-#[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "indices are bounded by the loops over these lists"
+)]
 fn synthesize_phoneme_info(
     info: &PhonemeInfo,
     phdata: &crate::phoneme::PhonemeData,
@@ -2339,10 +2456,14 @@ fn synthesize_phoneme_info(
                     } else {
                         VOWEL_FRONT_LENGTH
                     };
-                    let front = if std_ms < 130 { front * std_ms / 130 } else { front };
+                    let front = if std_ms < 130 {
+                        front * std_ms / 130
+                    } else {
+                        front
+                    };
                     first.length = front.clamp(1, 255) as u8;
                     first.frflags |= 0x4000; // FRFLAG_LEN_MOD2
-                    // …and with no transition it starts quietly (`RMS_START`).
+                                             // …and with no transition it starts quietly (`RMS_START`).
                     if (prev_vt[1] & 0x3f) == 0 {
                         set_frame_rms(first, 28);
                     }
@@ -2459,7 +2580,11 @@ fn synthesize_phoneme_info(
             if (body_start..body_last).contains(&i) && raw_sum > 0 {
                 ms = ms * (body_ms * 256 / raw_sum) / 256;
             }
-            let length_mod = if i < body_start { onset_length_mod } else { length_mod };
+            let length_mod = if i < body_start {
+                onset_length_mod
+            } else {
+                length_mod
+            };
             fr.samples = Some(frame_samples(ms, frame_length_mod(fr, length_mod)));
         }
     } else {
@@ -2502,8 +2627,13 @@ fn synthesize_phoneme_info(
         const LONG_VOWEL_THRESHOLD: u8 = 190 / 2;
         const PH_LONG: u32 = 1 << 21;
         let long = info.ph_type == crate::phoneme::PH_VOWEL
-            && (info.lengthen || ph_tab.std_length >= LONG_VOWEL_THRESHOLD || ph_flags & PH_LONG != 0);
-        lengthen_short_sequence(&mut seq.frames, if long { MIN_SEQUENCE * 2 } else { MIN_SEQUENCE });
+            && (info.lengthen
+                || ph_tab.std_length >= LONG_VOWEL_THRESHOLD
+                || ph_flags & PH_LONG != 0);
+        lengthen_short_sequence(
+            &mut seq.frames,
+            if long { MIN_SEQUENCE * 2 } else { MIN_SEQUENCE },
+        );
     }
 
     // Lengthen for consonants too (double middle frame)

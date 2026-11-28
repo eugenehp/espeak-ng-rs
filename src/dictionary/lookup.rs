@@ -89,6 +89,8 @@ pub struct LookupCtx {
     pub clause_terminator: u32,
     /// True if at end of clause (for FLAG_ATEND check)
     pub at_clause_end: bool,
+    /// The same for each of the next words, for an entry of several words.
+    pub at_end_after: [bool; 8],
     /// True if first word of clause (for FLAG_ATSTART)
     pub is_first_word: bool,
     /// The text after the word — the following words, each followed by a
@@ -282,7 +284,12 @@ pub fn lookup_dict2(
             pos = entry_end;
             continue;
         }
-        if flags2.contains(DictFlags2::ATEND) && !ctx.at_clause_end && !ctx.lookup_symbol {
+        // (For an entry of several words, at the end of its last one.)
+        let at_end = match skipwords.checked_sub(1) {
+            None => ctx.at_clause_end,
+            Some(k) => ctx.at_end_after.get(k).copied().unwrap_or(false),
+        };
+        if flags2.contains(DictFlags2::ATEND) && !at_end && !ctx.lookup_symbol {
             pos = entry_end;
             continue;
         }

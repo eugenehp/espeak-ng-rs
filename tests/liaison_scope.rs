@@ -13,7 +13,8 @@ fn hungarian_numbers_keep_final_consonant() {
         eprintln!("[SKIP] no hu data");
         return;
     };
-    let ipa = |s: &str| t.text_to_ipa(s).unwrap();
+    // (C starts a lone number with a space: its word begins with a pause.)
+    let ipa = |s: &str| t.text_to_ipa(s).unwrap().trim_start().to_string();
     // 5/6/7/15/25 all end in "t" and must keep it.
     assert_eq!(ipa("5"), "ˈøt", "hu 5 = öt");
     assert_eq!(ipa("6"), "hˈɑt", "hu 6 = hat");

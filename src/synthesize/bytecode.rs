@@ -215,7 +215,8 @@ pub fn select_vowel_start(program: u16, phonindex: &[u8], next_start_type: u8) -
     }
     let voweltype = voweltype as usize;
     let max_words = phonindex.len() / 2;
-    let word = |i: usize| -> u16 { u16::from_le_bytes([phonindex.at(i * 2), phonindex.at(i * 2 + 1)]) };
+    let word =
+        |i: usize| -> u16 { u16::from_le_bytes([phonindex.at(i * 2), phonindex.at(i * 2 + 1)]) };
     let mut pc = program as usize;
     let scan_limit = pc + 128;
     while pc < max_words && pc < scan_limit {
@@ -272,8 +273,10 @@ pub fn scan_phoneme(program: u16, phonindex: &[u8]) -> PhonemeExtract {
                 // i_FMT: followed by one address word.
                 // Address = ((instn & 0xf) << 18) | (next_word << 2)
                 if result.fmt_addr.is_none() && pc + 1 < max_words {
-                    let next =
-                        u16::from_le_bytes([phonindex.at((pc + 1) * 2), phonindex.at((pc + 1) * 2 + 1)]);
+                    let next = u16::from_le_bytes([
+                        phonindex.at((pc + 1) * 2),
+                        phonindex.at((pc + 1) * 2 + 1),
+                    ]);
                     let addr = ((instn & 0xf) as u32) << 18 | ((next as u32) << 2);
                     result.fmt_addr = Some(addr);
                     // The param is stored in bits 11-4 of the instruction, sign-extended.
@@ -283,8 +286,10 @@ pub fn scan_phoneme(program: u16, phonindex: &[u8]) -> PhonemeExtract {
                 // (VWLSTART selection is handled separately by
                 // `select_vowel_start`, which does its own bounded scan.)
                 if pc + 2 < max_words {
-                    let next2 =
-                        u16::from_le_bytes([phonindex.at((pc + 2) * 2), phonindex.at((pc + 2) * 2 + 1)]);
+                    let next2 = u16::from_le_bytes([
+                        phonindex.at((pc + 2) * 2),
+                        phonindex.at((pc + 2) * 2 + 1),
+                    ]);
                     if next2 >> 12 == 0xf {
                         pc += 2;
                         continue;
@@ -295,8 +300,10 @@ pub fn scan_phoneme(program: u16, phonindex: &[u8]) -> PhonemeExtract {
             0xc => {
                 // i_WAV: sampled waveform
                 if result.wav_addr.is_none() && pc + 1 < max_words {
-                    let next =
-                        u16::from_le_bytes([phonindex.at((pc + 1) * 2), phonindex.at((pc + 1) * 2 + 1)]);
+                    let next = u16::from_le_bytes([
+                        phonindex.at((pc + 1) * 2),
+                        phonindex.at((pc + 1) * 2 + 1),
+                    ]);
                     let addr = ((instn & 0xf) as u32) << 18 | ((next as u32) << 2);
                     result.wav_addr = Some(addr);
                     result.wav_param = ((instn >> 4) & 0xff) as i8;
@@ -306,8 +313,10 @@ pub fn scan_phoneme(program: u16, phonindex: &[u8]) -> PhonemeExtract {
             0xd => {
                 // i_VWLSTART
                 if result.vwlstart_addr.is_none() && pc + 1 < max_words {
-                    let next =
-                        u16::from_le_bytes([phonindex.at((pc + 1) * 2), phonindex.at((pc + 1) * 2 + 1)]);
+                    let next = u16::from_le_bytes([
+                        phonindex.at((pc + 1) * 2),
+                        phonindex.at((pc + 1) * 2 + 1),
+                    ]);
                     result.vwlstart_addr =
                         Some(((instn & 0xf) as u32) << 18 | ((next as u32) << 2));
                 }
@@ -317,8 +326,10 @@ pub fn scan_phoneme(program: u16, phonindex: &[u8]) -> PhonemeExtract {
             0xe => {
                 // i_VWLENDING
                 if result.vwlending_addr.is_none() && pc + 1 < max_words {
-                    let next =
-                        u16::from_le_bytes([phonindex.at((pc + 1) * 2), phonindex.at((pc + 1) * 2 + 1)]);
+                    let next = u16::from_le_bytes([
+                        phonindex.at((pc + 1) * 2),
+                        phonindex.at((pc + 1) * 2 + 1),
+                    ]);
                     result.vwlending_addr =
                         Some(((instn & 0xf) as u32) << 18 | ((next as u32) << 2));
                 }
@@ -328,8 +339,10 @@ pub fn scan_phoneme(program: u16, phonindex: &[u8]) -> PhonemeExtract {
             0xf => {
                 // i_WAVADD
                 if result.wav_addr.is_none() && pc + 1 < max_words {
-                    let next =
-                        u16::from_le_bytes([phonindex.at((pc + 1) * 2), phonindex.at((pc + 1) * 2 + 1)]);
+                    let next = u16::from_le_bytes([
+                        phonindex.at((pc + 1) * 2),
+                        phonindex.at((pc + 1) * 2 + 1),
+                    ]);
                     result.wav_addr = Some(((instn & 0xf) as u32) << 18 | ((next as u32) << 2));
                 }
                 // WAVADD after FMT → this was the last instruction
@@ -341,8 +354,10 @@ pub fn scan_phoneme(program: u16, phonindex: &[u8]) -> PhonemeExtract {
                 if instn2 == 1 && pc + 1 < max_words {
                     // i_CALLPH: the next word is the program index to call.
                     // data = ((instn & 0xf) << 16) | next_word
-                    let next =
-                        u16::from_le_bytes([phonindex.at((pc + 1) * 2), phonindex.at((pc + 1) * 2 + 1)]);
+                    let next = u16::from_le_bytes([
+                        phonindex.at((pc + 1) * 2),
+                        phonindex.at((pc + 1) * 2 + 1),
+                    ]);
                     let called_prog = ((((instn & 0xf) as u32) << 16) | next as u32) as usize;
                     // Recursively scan the called program and merge results.
                     if called_prog > 0 && called_prog < max_words {
@@ -388,8 +403,10 @@ pub fn scan_phoneme(program: u16, phonindex: &[u8]) -> PhonemeExtract {
                 //                        vt[k+1]=(prog2<<16)+prog3.
                 if pc + 3 < max_words {
                     let w = |o: usize| {
-                        u16::from_le_bytes([phonindex.at((pc + o) * 2), phonindex.at((pc + o) * 2 + 1)])
-                            as u32
+                        u16::from_le_bytes([
+                            phonindex.at((pc + o) * 2),
+                            phonindex.at((pc + o) * 2 + 1),
+                        ]) as u32
                     };
                     let t0 = ((instn as u32 & 0xff) << 16) | w(1);
                     let t1 = (w(2) << 16) | w(3);

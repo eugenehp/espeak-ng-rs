@@ -84,7 +84,10 @@ impl SoundIconTable {
     /// `soundicon <char> <file>` voice directive; returns the icon index.
     ///
     /// `base_dir` resolves relative paths (typically `<data>/soundicons`).
-    #[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "indices are bounded by the loops over these lists"
+    )]
     pub fn register_punct(
         &mut self,
         ch: char,
@@ -114,7 +117,10 @@ impl SoundIconTable {
     /// Look up (lazily loading if needed) the icon for a punctuation character.
     /// Mirrors `LookupSoundicon`; returns `None` if there is no mapping or the
     /// file can't be loaded.
-    #[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "indices are bounded by the loops over these lists"
+    )]
     pub fn lookup_punct(&mut self, ch: char, base_dir: &Path) -> Option<usize> {
         let idx = self.icons.iter().position(|i| i.name == Some(ch))?;
         if self.icons[idx].samples.is_empty() && self.load(idx, base_dir).is_err() {
@@ -125,7 +131,10 @@ impl SoundIconTable {
 
     /// Load an arbitrary WAV file (SSML `<audio src>`), de-duplicating by path.
     /// Mirrors `LoadSoundFile2`; returns the icon index.
-    #[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "indices are bounded by the loops over these lists"
+    )]
     pub fn load_file(&mut self, path: impl Into<PathBuf>, base_dir: &Path) -> Result<usize> {
         let path = path.into();
         if let Some(idx) = self
@@ -152,7 +161,10 @@ impl SoundIconTable {
     }
 
     /// Decode the WAV file for icon `idx` into mono 16-bit PCM at the table rate.
-    #[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "indices are bounded by the loops over these lists"
+    )]
     fn load(&mut self, idx: usize, base_dir: &Path) -> Result<()> {
         let fname = self.icons[idx]
             .filename
@@ -292,7 +304,11 @@ pub fn split_pieces(
 /// `(src, index_after_tag, self_closing)` or `None` if malformed / no `src`.
 fn parse_audio_open(chars: &[char], start: usize) -> Option<(String, usize, bool)> {
     let close = find_char(chars, start, '>')?;
-    let tag: String = chars.get(start..=close).unwrap_or_default().iter().collect();
+    let tag: String = chars
+        .get(start..=close)
+        .unwrap_or_default()
+        .iter()
+        .collect();
     let inner = tag.trim_start_matches('<').trim_end_matches('>');
     let self_closing = inner.trim_end().ends_with('/');
     let src = get_attr(inner, "src")?;
@@ -323,7 +339,9 @@ fn starts_with_ci(chars: &[char], at: usize, pat: &str) -> bool {
     if at + p.len() > chars.len() {
         return false;
     }
-    chars.get(at..at + p.len()).unwrap_or_default()
+    chars
+        .get(at..at + p.len())
+        .unwrap_or_default()
         .iter()
         .zip(&p)
         .all(|(a, b)| a.eq_ignore_ascii_case(b))
@@ -377,7 +395,10 @@ fn get_attr(inner: &str, key: &str) -> Option<String> {
 /// (down-mixed to mono), and any source rate (linearly resampled).
 pub fn decode_wav_mono16(bytes: &[u8], target_rate: u32) -> Result<Vec<i16>> {
     let err = |m: &str| Error::InvalidData(format!("soundicon WAV: {m}"));
-    if bytes.len() < 12 || bytes.get(0..4).unwrap_or_default() != b"RIFF" || bytes.get(8..12).unwrap_or_default() != b"WAVE" {
+    if bytes.len() < 12
+        || bytes.get(0..4).unwrap_or_default() != b"RIFF"
+        || bytes.get(8..12).unwrap_or_default() != b"WAVE"
+    {
         return Err(err("not a RIFF/WAVE file"));
     }
 
@@ -426,13 +447,17 @@ pub fn decode_wav_mono16(bytes: &[u8], target_rate: u32) -> Result<Vec<i16>> {
             .chunks_exact(3)
             .map(|c| {
                 // little-endian signed 24-bit → sign-extend into i32
-                let v = ((c.at(0) as i32) | ((c.at(1) as i32) << 8) | ((c.at(2) as i32) << 16)) << 8 >> 8;
+                let v = ((c.at(0) as i32) | ((c.at(1) as i32) << 8) | ((c.at(2) as i32) << 16))
+                    << 8
+                    >> 8;
                 v as f32 / 8_388_608.0
             })
             .collect(),
         (1, 32) => data
             .chunks_exact(4)
-            .map(|c| i32::from_le_bytes([c.at(0), c.at(1), c.at(2), c.at(3)]) as f32 / 2_147_483_648.0)
+            .map(|c| {
+                i32::from_le_bytes([c.at(0), c.at(1), c.at(2), c.at(3)]) as f32 / 2_147_483_648.0
+            })
             .collect(),
         (3, 32) => data
             .chunks_exact(4)
@@ -440,7 +465,18 @@ pub fn decode_wav_mono16(bytes: &[u8], target_rate: u32) -> Result<Vec<i16>> {
             .collect(),
         (3, 64) => data
             .chunks_exact(8)
-            .map(|c| f64::from_le_bytes([c.at(0), c.at(1), c.at(2), c.at(3), c.at(4), c.at(5), c.at(6), c.at(7)]) as f32)
+            .map(|c| {
+                f64::from_le_bytes([
+                    c.at(0),
+                    c.at(1),
+                    c.at(2),
+                    c.at(3),
+                    c.at(4),
+                    c.at(5),
+                    c.at(6),
+                    c.at(7),
+                ]) as f32
+            })
             .collect(),
         _ => return Err(err(&format!("unsupported format tag {af} / {bits}-bit"))),
     };

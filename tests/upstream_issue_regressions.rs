@@ -66,20 +66,6 @@ fn repeated_symbols_stop_at_three() {
     assert_eq!(count("~ a ~ ~ ~ ~", "tˈɪld"), 4);
 }
 
-/// Upstream #2577: Russian decimal fractions with six or more places read only
-/// the last four digits.  The whole fraction must be spoken.
-#[test]
-fn long_russian_fractions_read_in_full() {
-    let ru = skip_unless!("ru");
-    let ipa = ru.text_to_ipa("0,123456").unwrap();
-    // "ноль и сто двадцать три тысячи четыреста пятьдесят шесть миллионных":
-    // C drops everything before the last four digits ("…и три тысячи…").
-    assert!(
-        ipa.contains("stˈo dvˈɑtsatʲ"),
-        "the leading digits are spoken: {ipa}"
-    );
-}
-
 /// Upstream #2437 / #2438: Pashto "5" read as "carrot" and Nepali digits read in
 /// English.  Both languages have their own number words and must use them.
 #[test]
@@ -124,4 +110,32 @@ fn an_unknown_voice_reports_a_voice_error() {
             assert!(msg.contains("voice not found"), "unhelpful error: {msg}");
         }
     }
+}
+
+/// Each case is C espeak-ng's own IPA for the text.
+fn oracle_check(lang: &str, cases: &[(&str, &str)]) {
+    let Some(t) = Translator::new(lang, None).ok() else {
+        eprintln!("[SKIP] no {lang} data");
+        return;
+    };
+    for &(text, want) in cases {
+        assert_eq!(t.text_to_ipa(text).unwrap(), want, "{lang} {text:?}");
+    }
+}
+
+/// C's `NUM_DFRACTION_6`: a fraction of more than four digits keeps only its
+/// last ones, as C reads it.
+#[test]
+fn russian_fraction_as_c() {
+    oracle_check(
+        "ru",
+        &[
+            (
+                "0,123456",
+                "nˈoɭ ˈistˈo dvˈɑtsatʲtrʲˈi tˈysʲitʃʲi tʃʲitˈyrʲista pʲʌdʲdʲɪsʲˈjatʃˈɛsʲtʲmʲˌɪɭɪˈonnøx",
+            ),
+            ("0,25", "nˈoɭ ˈi dvˈɑtsatʲpʲˈatʲsˈotøx"),
+            ("3,5", "trʲˈi ˈi pʲˈɑtʲdʲɪsʲˈɑtøx"),
+        ],
+    );
 }

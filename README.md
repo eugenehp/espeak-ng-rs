@@ -35,7 +35,7 @@ The C library is used as an oracle: the Rust implementation must produce
 
 ## Upgrading from 0.2
 
-The next release changes the lower-level API; see [`MIGRATION.md`](MIGRATION.md).
+0.3.0 changes the lower-level API; see [`MIGRATION.md`](MIGRATION.md).
 
 ## Quick start
 
@@ -238,7 +238,7 @@ The crate reads compiled eSpeak NG data files at runtime.  The data resolution o
 4. `/usr/share/espeak-ng-data` (system installation)
 
 A complete copy of the compiled data directory, built from upstream eSpeak NG
-`master` (`f0fb11a8`, 1.53.0-dev), is bundled at `espeak-ng-data/` in this
+`master` (`ee9fa7cc`, 1.53.0-dev), is bundled at `espeak-ng-data/` in this
 repository. This makes the crate fully self-contained without requiring a system
 eSpeak NG installation.
 

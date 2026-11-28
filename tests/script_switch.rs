@@ -57,26 +57,20 @@ fn al_words_scripts_switch_translator() {
     }
 }
 
-/// A script with no letter names in this language (Han, Hebrew) can't be
-/// spelled, so it falls back to the script's own voice rather than being
-/// dropped — a deliberate divergence: upstream says "Chinese letter".
+/// A script this language has no letter names for is spelled as C spells it:
+/// each letter is a word, named by its alphabet and then said as a letter
+/// ("Chinese letter"), or by its own name when the dictionary has one.
 #[test]
-fn unspellable_scripts_fall_back_to_a_voice() {
+fn unspellable_scripts_are_spelled_as_upstream() {
     let Some(en) = tr("en") else { return };
-    if tr("cmn").is_some() {
-        let out = en.text_to_ipa("你好").unwrap();
-        assert!(
-            out.contains("(cmn)"),
-            "Han should fall back to a voice: {out}"
-        );
-    }
-    if tr("he").is_some() {
-        let out = en.text_to_ipa("שלום").unwrap();
-        assert!(
-            out.contains("(he)"),
-            "Hebrew should fall back to a voice: {out}"
-        );
-    }
+    assert_eq!(
+        en.text_to_ipa("你好").unwrap(),
+        "tʃˈaɪniːzlˌɛtə tʃˈaɪniːzlˌɛtə"
+    );
+    assert_eq!(
+        en.text_to_ipa("שלום").unwrap(),
+        "hˈiːbɹuːʃin hˈiːbɹuːlˈamed hˈiːbɹuːvˈav hˈiːbɹuːmˈem"
+    );
 }
 
 #[test]

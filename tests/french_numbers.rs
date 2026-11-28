@@ -17,21 +17,6 @@ fn tr(lang: &str) -> Option<Translator> {
 }
 
 #[test]
-fn ordinal_zero_reads_zeroth() {
-    if let Some(t) = tr("en") {
-        // "0th" previously dropped the number, leaving just "θ".
-        let z = t.text_to_ipa("0th").unwrap();
-        assert!(
-            z.contains("zˈiəɹəʊ") && z.ends_with("θ"),
-            "0th should be zeroth: {z}"
-        );
-        // Regression: other ordinals (incl. scale) still render.
-        assert!(t.text_to_ipa("1st").unwrap().contains("fˈɜːst"));
-        assert!(t.text_to_ipa("1000000th").unwrap().contains("mˈɪliənθ"));
-    }
-}
-
-#[test]
 fn german_and_russian_omit_one_before_hundred_thousand() {
     if let Some(t) = tr("de") {
         // "hundert"/"tausend", not "eins hundert"/"eins tausend".
@@ -166,85 +151,6 @@ fn round_thousands_use_thousand_not_hundreds() {
             "de 2000 → zweitausend"
         );
     }
-}
-
-#[test]
-fn french_letter_suffix_ordinals() {
-    let Some(t) = fr() else {
-        eprintln!("[SKIP] no fr data");
-        return;
-    };
-    let ipa = |s: &str| t.text_to_ipa(s).unwrap();
-    // A written ordinal (1er, 2e, 21e…) reads as the ordinal *word*, identical
-    // to typing that word — the fr dict has no `_No` entries, so this is
-    // generated + pronounced by the French rules.
-    let cases: &[(&str, &str)] = &[
-        ("1er", "premier"),
-        ("1re", "première"),
-        ("2e", "deuxième"),
-        ("2nd", "second"),
-        ("3e", "troisième"),
-        ("5e", "cinquième"),
-        ("9e", "neuvième"),
-        ("20e", "vingtième"),
-        ("21e", "vingt et unième"),
-        ("71e", "soixante et onzième"),
-        ("80e", "quatre-vingtième"),
-        ("100e", "centième"),
-        ("1000e", "millième"),
-    ];
-    for (digit, word) in cases {
-        // The written form joins its hyphenated parts into one word
-        // ("quatre-vingtième" → `kˈatʁvɛ̃tjˈɛm`) while the composed number keeps
-        // them separate, so compare the phonemes rather than the spacing.
-        assert_eq!(
-            ipa(digit).replace(' ', ""),
-            ipa(word).replace(' ', ""),
-            "fr {digit:?} should read as {word:?}"
-        );
-    }
-    // In-sentence: "le 1er janvier" == "le premier janvier".
-    assert_eq!(ipa("le 1er janvier"), ipa("le premier janvier"));
-    // Not an ordinal: a plain decimal is untouched.
-    assert!(
-        ipa("3,5").contains("viʁɡyl"),
-        "fr 3,5 decimal: {}",
-        ipa("3,5")
-    );
-}
-
-#[test]
-fn italian_irregular_ordinals() {
-    let Some(t) = tr("it") else {
-        eprintln!("[SKIP] no it data");
-        return;
-    };
-    let ipa = |s: &str| t.text_to_ipa(s).unwrap();
-    // 1º…10º are irregular (primo…decimo); the dict lacks them, so the regular
-    // "-esimo" fallback used to give wrong words ("unesimo" for primo).
-    let cases: &[(&str, &str)] = &[
-        ("1º", "primo"),
-        ("2º", "secondo"),
-        ("3º", "terzo"),
-        ("4º", "quarto"),
-        ("5º", "quinto"),
-        ("6º", "sesto"),
-        ("7º", "settimo"),
-        ("8º", "ottavo"),
-        ("9º", "nono"),
-        ("10º", "decimo"),
-        ("1ª", "prima"),
-        ("3ª", "terza"), // feminine
-    ];
-    for (ord, word) in cases {
-        assert_eq!(ipa(ord), ipa(word), "it {ord} should read as {word}");
-    }
-    // 11+ keep the regular -esimo form (undicesimo, ventesimo).
-    assert!(
-        ipa("11º").contains("zimo"),
-        "it 11º stays -esimo: {}",
-        ipa("11º")
-    );
 }
 
 #[test]
@@ -437,4 +343,72 @@ fn french_vigesimal_70s_and_90s() {
     assert!(ipa("80").contains("katʁ"), "80: {}", ipa("80"));
     // A full number composes correctly (1999 = mille neuf cent quatre-vingt-dix-neuf).
     assert!(ipa("1999").contains("katʁ"), "1999 tail: {}", ipa("1999"));
+}
+
+fn check(lang: &str, cases: &[(&str, &str)]) {
+    let Some(t) = tr(lang) else {
+        eprintln!("[SKIP] no {lang} data");
+        return;
+    };
+    for &(text, want) in cases {
+        assert_eq!(t.text_to_ipa(text).unwrap(), want, "{lang} {text:?}");
+    }
+}
+
+// Each case is C espeak-ng's own IPA.
+/// "0th" is "zeroth"; scale ordinals keep their suffix.
+#[test]
+fn english_zero_and_scale_ordinals() {
+    check(
+        "en",
+        &[
+            ("0th", "zˈiəɹəʊθ"),
+            ("1st", "fˈɜːst"),
+            ("1000000th", "wˈɒn mˈɪliən θ"),
+        ],
+    );
+}
+
+/// French has no `_#` suffixes, so only the dictionary's `(1 er)` entries
+/// make an ordinal; "2e" is the number and the letter, as in C.
+#[test]
+fn french_suffix_ordinals() {
+    check(
+        "fr",
+        &[
+            ("1er", "pʁəmjˈe"),
+            ("1re", "ˈœ\u{303} ʁə-"),
+            ("2e", "dˈø ˈə"),
+            ("2nd", "dˈøz ˌɛndˈe"),
+            ("3e", "tʁwˈa ˈə"),
+            ("21e", "vɛ\u{303}teˈœ\u{303} ˈə"),
+            ("100e", "sˈɑ\u{303} ˈə"),
+            ("le 1er janvier", "lə- pʁəmjˈe ʒɑ\u{303}vjˈe"),
+            ("3,5", "tʁwa viʁɡyl sˈɛ\u{303}k"),
+        ],
+    );
+}
+
+/// Italian ordinals: `_4ox` for a number on its own, `_ord` after the rest.
+#[test]
+fn italian_ordinals() {
+    check(
+        "it",
+        &[
+            ("1º", "prˈimo"),
+            ("2º", "sekˈondo"),
+            ("3º", "tˈɛrtso"),
+            ("4º", "kwˈaːrto"),
+            ("5º", "kwˈinto"),
+            ("6º", "sˈɛsto"),
+            ("7º", "sˈɛtːimo"),
+            ("8º", "otːˈavo"),
+            ("9º", "nˈono"),
+            ("10º", "dˈɛtʃimo"),
+            ("1ª", "prˈima"),
+            ("3ª", "tˈɛrtsa"),
+            ("11º", "ʊnditʃˈɛzimo"),
+            ("21º", "vˈentʊnˈɛzimo"),
+        ],
+    );
 }

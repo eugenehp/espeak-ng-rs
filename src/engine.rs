@@ -755,7 +755,13 @@ impl EspeakNg {
         )
         .map_err(|_| Error::VoiceNotFound(self.voice_spec.effective_lang().to_string()))?;
 
-        let codes = translator.translate_to_codes(text)?;
+        let mut codes = translator.translate_to_codes(text)?;
+        crate::translate::lend_switched_phonemes(
+            &mut codes,
+            &mut phdata,
+            &self.data_dir,
+            &translator.options.lang,
+        );
         // Inline embedded commands (`\x01…P/S/A`) adjust the utterance levels.
         let voice = self.make_voice_params_levels(self.rate, self.pitch, self.volume);
         let synth = Synthesizer::new(voice);
@@ -915,7 +921,13 @@ impl EspeakNg {
             self.voice_spec.effective_lang(),
         )
         .map_err(|_| Error::VoiceNotFound(self.voice_spec.effective_lang().to_string()))?;
-        let codes = translator.translate_to_codes(text)?;
+        let mut codes = translator.translate_to_codes(text)?;
+        crate::translate::lend_switched_phonemes(
+            &mut codes,
+            &mut phdata,
+            &self.data_dir,
+            &translator.options.lang,
+        );
         let synth =
             Synthesizer::new(self.make_voice_params_levels(self.rate, self.pitch, self.volume));
 
@@ -995,7 +1007,13 @@ impl EspeakNg {
         )
         .map_err(|_| Error::VoiceNotFound(self.voice_spec.effective_lang().to_string()))?;
 
-        let codes = translator.translate_to_codes(text)?;
+        let mut codes = translator.translate_to_codes(text)?;
+        crate::translate::lend_switched_phonemes(
+            &mut codes,
+            &mut phdata,
+            &self.data_dir,
+            &translator.options.lang,
+        );
         let synth =
             Synthesizer::new(self.make_voice_params_levels(self.rate, self.pitch, self.volume));
         synth.synthesize_codes_streaming(&codes, &phdata, &mut callback)?;
@@ -1014,7 +1032,13 @@ impl EspeakNg {
         )
         .map_err(|_| Error::VoiceNotFound(self.voice_spec.effective_lang().to_string()))?;
 
-        let codes = translator.translate_to_codes(text)?;
+        let mut codes = translator.translate_to_codes(text)?;
+        crate::translate::lend_switched_phonemes(
+            &mut codes,
+            &mut phdata,
+            &self.data_dir,
+            &translator.options.lang,
+        );
         let voice = self.make_voice_params_levels(self.rate, self.pitch, self.volume);
         let synth = Synthesizer::new(voice);
         synth.synthesize_codes_with_marks(&codes, &phdata)
@@ -1066,13 +1090,17 @@ impl EspeakNg {
             .variant
             .as_ref()
             .and_then(|name| crate::voices::load_variant(&self.data_dir, name));
-        let language = crate::voices::voice_acoustics(&self.data_dir, self.voice_spec.effective_lang());
+        let language =
+            crate::voices::voice_acoustics(&self.data_dir, self.voice_spec.effective_lang());
         // Map rate (wpm) to `speed_percent` through upstream's `speed_lookup`
         // curve rather than linearly: `175 / wpm` over-stretched below ~100 wpm,
         // where upstream's curve flattens towards its 80 wpm floor.  A larger
         // duration factor means a *smaller* `speed_percent`.
         // The voice's own `speed <percent>` scales the rate.
-        let speed = variant.as_ref().or(language.as_ref()).and_then(|vp| vp.speed);
+        let speed = variant
+            .as_ref()
+            .or(language.as_ref())
+            .and_then(|vp| vp.speed);
         let rate_spoken = rate.saturating_mul(speed.filter(|&s| s > 0).unwrap_or(100)) / 100;
         let speed_percent = {
             let f = crate::synthesize::setlengths::speed_duration_factor(rate_spoken);
@@ -1161,7 +1189,9 @@ impl EspeakNg {
                 }
             }
             klatt = vp.klatt.filter(|source| (1..=6).contains(source));
-            voicing = vp.voicing.map_or(64, |percent| percent.clamp(0, 1000) * 64 / 100);
+            voicing = vp
+                .voicing
+                .map_or(64, |percent| percent.clamp(0, 1000) * 64 / 100);
             if let Some(flutter) = vp.flutter {
                 flutter_amp = flutter.clamp(0, 1000) * 32;
             }
@@ -1185,25 +1215,23 @@ impl EspeakNg {
         // Map volume (0–200) to amplitude (0–100)
         let amplitude = (volume / 2).clamp(0, 100);
 
-        let stress_lengths = crate::voices::voice_stress_length(
-                &self.data_dir,
-                self.voice_spec.effective_lang(),
-            )
-            .and_then(|v| {
-                let mut out = [0u32; 8];
-                // C reads eight values; a short list leaves the rest at the
-                // English default rather than at zero.
-                out.copy_from_slice(&crate::synthesize::setlengths::STRESS_LENGTHS_EN);
-                for (to, &x) in out.iter_mut().zip(&v) {
-                    *to = x.max(0) as u32;
-                }
-                (v.len() >= 8).then_some(out)
-            })
-            .or_else(|| {
-                crate::synthesize::setlengths::stress_lengths_for(
-                    self.voice_spec.effective_lang(),
-                )
-            });
+        let stress_lengths =
+            crate::voices::voice_stress_length(&self.data_dir, self.voice_spec.effective_lang())
+                .and_then(|v| {
+                    let mut out = [0u32; 8];
+                    // C reads eight values; a short list leaves the rest at the
+                    // English default rather than at zero.
+                    out.copy_from_slice(&crate::synthesize::setlengths::STRESS_LENGTHS_EN);
+                    for (to, &x) in out.iter_mut().zip(&v) {
+                        *to = x.max(0) as u32;
+                    }
+                    (v.len() >= 8).then_some(out)
+                })
+                .or_else(|| {
+                    crate::synthesize::setlengths::stress_lengths_for(
+                        self.voice_spec.effective_lang(),
+                    )
+                });
         // A variant's `stressLength` replaces entries, `stressAdd` adds to them.
         let stress_lengths = if stress_length.is_empty() && stress_add == [0; 8] {
             stress_lengths
@@ -1236,6 +1264,7 @@ impl EspeakNg {
             prosody: crate::synthesize::lang_prosody::LangProsody::for_lang(
                 self.voice_spec.effective_lang(),
             ),
+            hakka_sandhi: self.voice_spec.effective_lang().split('-').next() == Some("hak"),
             // `intonation <n>` from the language's voice file, when it sets one
             // (upstream #1466: read the language configuration from data).
             // `intonation <n>` from the language's voice file, when it sets one

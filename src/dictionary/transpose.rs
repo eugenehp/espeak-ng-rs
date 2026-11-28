@@ -182,7 +182,16 @@ impl TransposeConfig {
     /// in sync with `Dictionary::from_bytes`.
     pub fn for_lang(lang: &str) -> Self {
         match lang {
-            "ru" | "bg" | "tt" | "uk" | "be" => Self::CYRILLIC,
+            "ru" | "bg" | "tt" | "uk" => Self::CYRILLIC,
+            // Belarusian moves the range to Cyrillic (to `ў`) but keeps the
+            // Latin map: C sets `transpose_min`/`max` and never resets
+            // `transpose_map`, and its dictionary is compiled that way, so
+            // most words are stored as plain UTF-8.
+            "be" => TransposeConfig {
+                transpose_min: 0x430,
+                transpose_max: 0x45e,
+                ..Self::LATIN
+            },
             "ar" => Self::ARABIC,
             "fa" => Self::PERSIAN,
             _ => Self::LATIN,

@@ -44,6 +44,7 @@ fn glide_where_french_has_it() {
 fn vowel_kept_after_a_cluster_and_across_words() {
     assert_eq!(refined("cruel"), "kʁyˈɛl");
     assert_eq!(refined("gluant"), "ɡlyˈɑ̃");
-    assert_eq!(refined("tu as"), "ty ˈas");
+    // (`tu` is `$verbf`, so `as` is the verb, `a`, as in C.)
+    assert_eq!(refined("tu as"), "ty ˈa");
     assert_eq!(refined("une rue"), text_to_ipa("fr", "une rue").unwrap());
 }

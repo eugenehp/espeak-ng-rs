@@ -63,7 +63,9 @@ pub fn encode_phonemes(input: &str, phdata: &PhonemeData) -> (Vec<u8>, Option<St
             // Unrecognised phoneme
             let bstart = i;
             let bend = next_char_boundary(bytes, i);
-            bad = Some(String::from_utf8_lossy(bytes.get(bstart..bend).unwrap_or_default()).into_owned());
+            bad = Some(
+                String::from_utf8_lossy(bytes.get(bstart..bend).unwrap_or_default()).into_owned(),
+            );
             out.push(0); // C writes a 0 byte
             i += 1;
         } else {

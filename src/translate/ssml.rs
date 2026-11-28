@@ -785,8 +785,11 @@ fn find_seq(chars: &[char], from: usize, pat: &str) -> Option<usize> {
     if pc.is_empty() || from >= chars.len() {
         return None;
     }
-    (from..=chars.len().saturating_sub(pc.len()))
-        .find(|&k| pc.iter().enumerate().all(|(j, p)| chars.get(k + j) == Some(p)))
+    (from..=chars.len().saturating_sub(pc.len())).find(|&k| {
+        pc.iter()
+            .enumerate()
+            .all(|(j, p)| chars.get(k + j) == Some(p))
+    })
 }
 
 // ===========================================================================

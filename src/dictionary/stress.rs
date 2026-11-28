@@ -217,9 +217,9 @@ impl Default for StressOpts {
 /// dozen others do), which `for_lang_in` applies afterwards.
 fn stress_rule_for(lang: &str) -> u8 {
     match lang {
-        "af" | "am" | "as" | "be" | "bn" | "bpy" | "bs" | "cs" | "da" | "de" | "en"
-        | "ga" | "gd" | "hr" | "hu" | "is" | "ka" | "kn" | "ltg" | "lv" | "mn" | "nb" | "nl"
-        | "si" | "sk" | "smj" | "sr" | "sv" | "ta" | "te" | "vi" => STRESSPOSN_1L,
+        "af" | "am" | "as" | "be" | "bn" | "bpy" | "bs" | "cs" | "da" | "de" | "en" | "ga"
+        | "gd" | "hr" | "hu" | "is" | "ka" | "kn" | "ltg" | "lv" | "mn" | "nb" | "nl" | "si"
+        | "sk" | "smj" | "sr" | "sv" | "ta" | "te" | "vi" => STRESSPOSN_1L,
         "cmn" | "fr" | "ht" | "hy" | "pap" | "pt" | "ro" | "rup" | "sq" | "tt" | "yue" | "zh" => {
             STRESSPOSN_1R
         }
@@ -324,10 +324,11 @@ impl StressOpts {
         opts.stress_flags = stress_flags_for(primary);
         // `LOPT_REDUCE`.  Italian is the only language that sets bit 0
         // ("reduce vowels even if phonemes are specified in it_list");
-        // Bulgarian, Icelandic and Russian set bit 1.
+        // Bulgarian, Icelandic and Russian set bit 1 (Ukrainian too: it is
+        // `Translator_Russian`).
         opts.reduce = match primary {
             "it" => 1,
-            "bg" | "is" | "ru" => 2,
+            "bg" | "is" | "ru" | "uk" => 2,
             _ => 0,
         };
 
@@ -401,16 +402,13 @@ impl StressOpts {
             // word-final devoicing, which predates this transcription.
             "af" | "sq" => opts.word_final_devoicing = true,
             "de" | "nl" | "mt" => {
-                opts.word_final_devoicing = true;
                 opts.regressive_voicing = 0x100;
             }
             "sl" => {
-                opts.word_final_devoicing = true;
                 opts.regressive_voicing = 0x103;
                 opts.alt_attributes = true; // `LOPT_ALT = 2`, as for it/pt
             }
             "bg" => {
-                opts.word_final_devoicing = true;
                 opts.regressive_voicing = 0x107;
             }
             // `case L('r','u'): case L('s','k'): case L('c','s'):` share one arm.
@@ -711,11 +709,14 @@ pub fn get_vowel_stress(
                 // rather than leaving it secondary — C's
                 // `stress_flags & S_PRIORITY_STRESS` branch, which was noted
                 // here but never implemented.
-                vowel_stress.put(ix as usize, if stress_flags & S_PRIORITY_STRESS != 0 {
-                    STRESS_IS_UNSTRESSED
-                } else {
-                    STRESS_IS_SECONDARY
-                });
+                vowel_stress.put(
+                    ix as usize,
+                    if stress_flags & S_PRIORITY_STRESS != 0 {
+                        STRESS_IS_UNSTRESSED
+                    } else {
+                        STRESS_IS_SECONDARY
+                    },
+                );
             }
             if vowel_stress.at(ix as usize) == STRESS_IS_PRIORITY {
                 vowel_stress.put(ix as usize, STRESS_IS_PRIMARY);
@@ -798,13 +799,14 @@ pub fn set_word_stress(
     // `END_WORD` separators — is exempt: the citation stresses baked into its
     // parts must not fix the whole word's stress (Turkish "on"+"bir" is stressed
     // on the last syllable).
+    // (Only a position the dictionary gave is forced to primary: a detected
+    // one may since have been reduced by a later `=` — Danish
+    // "delfinarium", where `ium`'s `=` moves the primary onto `AR`.)
+    let from_dict = stressed_syllable > 0;
     if stressed_syllable == 0 && detected_primary > 0 {
         stressed_syllable = detected_primary;
     }
-    // After get_vowel_stress, stressed_syllable is set via primary_posn,
-    // but here we override from dflags
-    // Re-apply dict-specified stressed syllable
-    if stressed_syllable > 0 {
+    if from_dict {
         let sc = stressed_syllable.min(vowel_count - 1);
         vowel_stress.put(sc as usize, STRESS_IS_PRIMARY);
         max_stress = STRESS_IS_PRIMARY as i32;
@@ -892,8 +894,11 @@ pub fn set_word_stress(
                             FinalConsonant::NotS => !s || ph2_type != PH_VOWEL,
                             // -ns keeps the stress on the syllable before.
                             FinalConsonant::Spanish => {
-                                let nasal = phdata.get(final_ph).is_some_and(|p| p.typ == crate::phoneme::PH_NASAL);
-                                !(s && ph2_type == crate::phoneme::PH_NASAL) && (!(nasal || s) || ph2_type != PH_VOWEL)
+                                let nasal = phdata
+                                    .get(final_ph)
+                                    .is_some_and(|p| p.typ == crate::phoneme::PH_NASAL);
+                                !(s && ph2_type == crate::phoneme::PH_NASAL)
+                                    && (!(nasal || s) || ph2_type != PH_VOWEL)
                             }
                         };
                         if last {

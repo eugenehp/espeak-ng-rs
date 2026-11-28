@@ -101,7 +101,11 @@ pub use translate::ipa_table;
 /// Links `libespeak-ng` via FFI and exposes the original C functions
 /// alongside equivalent Rust implementations for A/B comparison.
 #[cfg(feature = "c-oracle")]
-#[allow(clippy::unwrap_used, clippy::indexing_slicing, reason = "development tool")]
+#[allow(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    reason = "development tool"
+)]
 pub mod oracle;
 
 /// Basic PCM/WAV analysis for verifying synthesis output.
@@ -112,7 +116,11 @@ pub mod oracle;
 /// a reference WAV (prosody, durations, sound icons) without needing bit-exact
 /// PCM.
 #[cfg(feature = "wav-analysis")]
-#[allow(clippy::unwrap_used, clippy::indexing_slicing, reason = "development tool")]
+#[allow(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    reason = "development tool"
+)]
 pub mod analysis;
 
 // ---------------------------------------------------------------------------

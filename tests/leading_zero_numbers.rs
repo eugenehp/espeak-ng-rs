@@ -7,31 +7,32 @@
 
 use espeak_ng::Translator;
 
-#[test]
-fn leading_zero_numbers_spell_the_zeros() {
-    let Some(t) = Translator::new("en", None).ok() else {
-        eprintln!("[SKIP] no en data");
+/// Each case is C espeak-ng's own IPA for the text.
+fn oracle_check(lang: &str, cases: &[(&str, &str)]) {
+    let Some(t) = Translator::new(lang, None).ok() else {
+        eprintln!("[SKIP] no {lang} data");
         return;
     };
-    let ipa = |s: &str| t.text_to_ipa(s).unwrap();
-    let zero = ipa("0");
-    let seven = ipa("7");
+    for &(text, want) in cases {
+        assert_eq!(t.text_to_ipa(text).unwrap(), want, "{lang} {text:?}");
+    }
+}
 
-    // ≤3 digits: leading zeros, then the number.
-    assert_eq!(ipa("007"), format!("{zero} {zero} {seven}"));
-    assert_eq!(ipa("05"), format!("{zero} {}", ipa("5")));
-    assert_eq!(ipa("000"), format!("{zero} {zero} {zero}"));
-
-    // >3 digits with a leading zero: every digit individually, as one word.
-    assert_eq!(ipa("0800"), format!("{zero}{}{zero}{zero}", ipa("8")));
-
-    // Unaffected: a lone 0, ordinary numbers, and decimals.
-    assert_eq!(ipa("0"), zero);
-    assert_eq!(ipa("7"), seven);
-    assert_eq!(ipa("42"), "fˈɔːti tˈuː");
-    assert!(
-        ipa("0.5").starts_with(&zero),
-        "0.5 keeps 'zero point five': {}",
-        ipa("0.5")
+/// The zeros of a short number are one word before it (C's `ph_zeros`); a
+/// longer one is read digit by digit, a pause after each pair.
+#[test]
+fn leading_zeros_as_c() {
+    oracle_check(
+        "en",
+        &[
+            ("007", "zˈiəɹəʊzˈiəɹəʊ sˈɛvən"),
+            ("05", "zˈiəɹəʊ fˈaɪv"),
+            ("000", "zˈiəɹəʊzˈiəɹəʊ zˈiəɹəʊ"),
+            ("0800", "zˈiəɹəʊˈeɪtzˈiəɹəʊzˈiəɹəʊ"),
+            ("0", "zˈiəɹəʊ"),
+            ("7", "sˈɛvən"),
+            ("42", "fˈɔːti tˈuː"),
+            ("0.5", "zˈiəɹəʊ pɔɪnt fˈaɪv"),
+        ],
     );
 }

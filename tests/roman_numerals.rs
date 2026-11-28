@@ -12,31 +12,6 @@ fn en() -> Option<Translator> {
 }
 
 #[test]
-fn keyword_roman_numerals_read_as_cardinals() {
-    let Some(t) = en() else {
-        eprintln!("[SKIP] no en data");
-        return;
-    };
-    let ipa = |s: &str| t.text_to_ipa(s).unwrap();
-    // "Chapter IV" reads the numeral as the spelled cardinal.
-    assert_eq!(
-        ipa("Chapter IV"),
-        ipa("Chapter 4"),
-        "Chapter IV → Chapter 4"
-    );
-    assert_eq!(ipa("World War II"), ipa("World War 2"), "World War II → 2");
-    assert_eq!(ipa("Part III"), ipa("Part 3"));
-    assert_eq!(ipa("Type II"), ipa("Type 2"));
-    assert_eq!(ipa("Chapter I"), ipa("Chapter 1"));
-    // The numeral genuinely became a number (contains the word, not letters).
-    assert!(
-        ipa("Section VII").contains("sˈɛvən"),
-        "Section VII → seven: {}",
-        ipa("Section VII")
-    );
-}
-
-#[test]
 fn non_keyword_roman_letters_are_left_alone() {
     let Some(t) = en() else { return };
     let ipa = |s: &str| t.text_to_ipa(s).unwrap();
@@ -53,5 +28,34 @@ fn non_keyword_roman_letters_are_left_alone() {
     assert!(
         !ipa("Section A").contains("nˈʌmbə"),
         "Section A stays a letter"
+    );
+}
+
+/// Each case is C espeak-ng's own IPA for the text.
+fn oracle_check(lang: &str, cases: &[(&str, &str)]) {
+    let Some(t) = Translator::new(lang, None).ok() else {
+        eprintln!("[SKIP] no {lang} data");
+        return;
+    };
+    for &(text, want) in cases {
+        assert_eq!(t.text_to_ipa(text).unwrap(), want, "{lang} {text:?}");
+    }
+}
+
+/// C's `TranslateRoman`: "roman" (`_roman`) and the number.
+#[test]
+fn roman_numerals_as_c() {
+    oracle_check(
+        "en",
+        &[
+            ("Chapter IV", "tʃˈaptə ɹˌəʊmən fˈɔː"),
+            ("World War II", "wˈɜːld wˈɔː ɹˌəʊmən tˈuː"),
+            ("Part III", "pˈɑːt ɹˌəʊmən θɹˈiː"),
+            ("Type II", "tˈaɪp ɹˌəʊmən tˈuː"),
+            ("Chapter I", "tʃˈaptəɹ ˈaɪ"),
+            ("Section VII", "sˈɛkʃən ɹˌəʊmən sˈɛvən"),
+            ("Louis XIV", "lˈuːi ɹˌəʊmən fˈɔːtiːn"),
+            ("Henry VIII", "hˈɛnɹi ɹˌəʊmən ˈeɪt"),
+        ],
     );
 }

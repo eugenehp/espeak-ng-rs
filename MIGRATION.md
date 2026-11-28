@@ -1,7 +1,7 @@
 # Migrating from 0.2 to 0.3
 
-The next release breaks the public API, so it has to be 0.3.0, not 0.2.1.
-`cargo semver-checks` against the 0.2.0 release lists the breaks given below.
+0.3.0 breaks the public API, which is why it isn't 0.2.1. `cargo semver-checks`
+against the 0.2.0 release lists the breaks given below.
 
 **If you only use the high-level API, nothing changes.** That means
 `EspeakNg`, its builder, `Translator::new` / `text_to_ipa` /
@@ -55,8 +55,9 @@ These structs gained fields. Code that builds one with a struct literal has to
 add them. Most have a `Default`, so ending the literal with
 `..Default::default()` keeps working:
 
-- `synthesize::VoiceParams`: `prosody`, `klatt_source`, `voicing`, `formants`,
-  `roughness`, `flutter_amp`, `breath`, `breathw`, `consonant_amp`
+- `synthesize::VoiceParams`: `prosody`, `hakka_sandhi`, `klatt_source`,
+  `voicing`, `formants`, `roughness`, `flutter_amp`, `breath`, `breathw`,
+  `consonant_amp`
 - `synthesize::phondata::SpectFrame`: `modulation`, `samples`
 - `synthesize::intonation::Syllable`: `tone_env`
 - `synthesize::bytecode::Neighbours`: `after_stress`, `prev2`, `next3`,
@@ -65,22 +66,36 @@ add them. Most have a `Default`, so ending the literal with
 - `synthesize::bytecode::PhonemeExtract`: `vwlstart_param`, `vwlending_param`
 - `dictionary::stress::StressOpts`: `alt_attributes`, `final_consonant`,
   `prefix_stress`
-- `dictionary::lookup::LookupCtx`: `word2`; `dictionary::rules::RuleContext`:
-  `word_start`
+- `dictionary::lookup::LookupCtx`: `word2`, `at_end_after`; `dictionary::rules::RuleContext`:
+  `word_start`, `letter_lists`
 - `voices::VariantParams`: `klatt`, `speed`, `stress_length`;
   `voices::VariantFormant`: `freq_add`; `voices::VoiceEntry`: `brackets`,
   `brackets_announced`
 - `translate::LangOptions`: `bracket_pause`, `ipa_separator`, `ipa_tie`
 - `translate::PosExpect`: `following`, `hyphen_after`, `hyphen_before`,
-  `prev_letters`; `translate::WordResult`: `skipwords`
+  `prev_letters`, `prev_word`, `in_sentence`, `verb_s`, `at_end_after`; `translate::WordResult`:
+  `skipwords`
+- `translate::NumberGrammar`: `year_1900`, `apostrophe`, `middle_dot_in_word`, `single_stress`,
+  `dict_symbols`, `ordinal_suffixes`, `powers_as_digits`, `digits_only`, `feminine_scales`,
+  `and_hundred`, `max_digits`, `break_numbers`, `lakh` (it can't be built
+  with a literal anyway; see below)
 
 `translate::NumberGrammar` also has a **private** field now: the C number
 options it was built for. Code outside the crate can't build one with a
 literal any more. Use `LangOptions::for_lang(lang).number_grammar` and change
 fields on that.
 
-`translate::Token` has a new variant, `Operator(char)`. A `match` on it needs
-an arm for it or a wildcard.
+`translate::Token` has new variants, `Operator(char)` and `Dot` (a silent dot
+after a Roman numeral or a single letter, which C's ordinal and abbreviation
+checks see), and
+`translate::CodeMarker` has `ClauseTone`: a tone of the clause's own phoneme
+table on a vowel of a word in another language (the code is in
+`PhonemeCode::code`). A `match` on either needs an arm for it or a wildcard.
+
+Code that synthesizes `translate_to_codes` output itself should call
+`translate::lend_switched_phonemes(&mut codes, &mut phdata, data_dir, lang)`
+first, as the engine does: it lets words in another language be played with
+their own phoneme table.
 
 ## Behaviour
 
@@ -94,7 +109,7 @@ These need no code changes, but tests that pin the output will notice them:
   `roughness`, `flutter`, `stressLength`, `stressAdd`, `klatt` and `echo` lines
   now take effect. So do the same lines in a language's own file: Swedish's
   `speed 155` is one.
-- **Text.** The bundled data is espeak-ng master `f0fb11a8`. Numbers use C's
+- **Text.** The bundled data is espeak-ng master `ee9fa7cc`. Numbers use C's
   own routines for each language, and many words and stress patterns match C
   where they didn't. `CHANGELOG.md` has the list.
 - **Input.** Invalid UTF-8 is replaced instead of rejected.

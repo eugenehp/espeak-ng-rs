@@ -36,37 +36,6 @@ fn leading_minus_before_number_reads_minus() {
 }
 
 #[test]
-fn leading_minus_before_currency_reads_minus() {
-    let Some(t) = Translator::new("en", None).ok() else {
-        eprintln!("[SKIP] no en data");
-        return;
-    };
-    let ipa = |s: &str| t.text_to_ipa(s).unwrap();
-
-    // A minus before a currency amount is a negative amount ("-$5" = minus
-    // dollar five).  Previously the sign was dropped ("-$5" → "five dollars").
-    assert_eq!(ipa("-$5"), "mˈaɪnəs dˈɒlə fˈaɪv");
-    assert!(ipa("-€10").starts_with("mˈaɪnəs"), "{}", ipa("-€10"));
-    assert!(ipa("-£5").starts_with("mˈaɪnəs"), "{}", ipa("-£5"));
-    assert!(
-        ipa("was -$5").contains("mˈaɪnəs dˈɒlə fˈaɪv"),
-        "{}",
-        ipa("was -$5")
-    );
-    // The `+`/`$` positive form is unchanged.
-    assert_eq!(ipa("+$5"), "plˈʌs dˈɒlə fˈaɪv");
-    assert_eq!(ipa("$5"), "dˈɒlə fˈaɪv");
-    // A hyphen after a word/number before a currency symbol is NOT a minus.
-    for s in ["US-$5", "5-$3", "price-$5"] {
-        assert!(
-            !ipa(s).contains("mˈaɪnəs"),
-            "{s:?} should not read a minus: {}",
-            ipa(s)
-        );
-    }
-}
-
-#[test]
 fn hyphen_after_word_or_number_is_not_a_minus() {
     let Some(t) = Translator::new("en", None).ok() else {
         eprintln!("[SKIP] no en data");
@@ -156,4 +125,33 @@ fn leading_minus_reads_the_sign_across_languages() {
             "{lang} '+5' dropped the sign: {plus5:?} (5={five:?})"
         );
     }
+}
+
+/// Each case is C espeak-ng's own IPA for the text.
+fn oracle_check(lang: &str, cases: &[(&str, &str)]) {
+    let Some(t) = Translator::new(lang, None).ok() else {
+        eprintln!("[SKIP] no {lang} data");
+        return;
+    };
+    for &(text, want) in cases {
+        assert_eq!(t.text_to_ipa(text).unwrap(), want, "{lang} {text:?}");
+    }
+}
+
+/// C reads a minus only straight before a digit: "-$5" is "dollar five".
+#[test]
+fn minus_before_currency_as_c() {
+    oracle_check(
+        "en",
+        &[
+            ("-$5", "dˈɒlə fˈaɪv"),
+            ("-€10", "jˈʊəɹəʊz tˈɛn"),
+            ("-£5", "pˈaʊnd fˈaɪv"),
+            ("was -$5", "wɒz dˈɒlə fˈaɪv"),
+            ("$5", "dˈɒlə fˈaɪv"),
+            ("US-$5", "jˌuːˈɛs dˈɒlə fˈaɪv"),
+            ("5-$3", "fˈaɪv dˈɒlə θɹˈiː"),
+            ("price-$5", "pɹˈaɪs dˈɒlə fˈaɪv"),
+        ],
+    );
 }

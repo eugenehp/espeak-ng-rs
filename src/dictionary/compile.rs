@@ -19,10 +19,10 @@
 //! through to letter rules).  No `_rules`/`_list` sources ship with the port, so
 //! the compiler is verified by **round-trip** against the reader.
 
-use crate::bytes::Bounded;
 use super::lookup::hash_word;
 use super::transpose::{transpose_alphabet, TransposeConfig};
 use super::{N_HASH_DICT, RULE_GROUP_END, RULE_GROUP_START, RULE_PHONEMES};
+use crate::bytes::Bounded;
 use crate::phoneme::load::PhonemeData;
 
 /// Parse `<lang>_list` DSL source text into [`ListEntry`]s — the source-reader
@@ -718,7 +718,10 @@ fn encode_context(s: &str, reverse: bool) -> Vec<u8> {
 ///
 /// Layout: for each group `RULE_GROUP_START`, the name bytes, `0`, then each
 /// rule (`<match letters> RULE_PHONEMES <phonemes> 0`), then `RULE_GROUP_END`.
-#[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "indices are bounded by the loops over these lists"
+)]
 pub fn compile_rules(groups: &[RuleGroup]) -> Vec<u8> {
     let mut out = Vec::new();
     // Letter-group definitions come first, so a rule referring to one is
@@ -900,7 +903,10 @@ fn compile_replace_section(pairs: &[(String, String)], rules_offset: usize) -> V
 /// [`compile_dict_with_rules`] plus a `.replace` table (emitted first in the
 /// rules section, correctly aligned).  Empty `replace` reproduces the plain
 /// behaviour.
-#[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "indices are bounded by the loops over these lists"
+)]
 pub fn compile_dict_full(
     entries: &[ListEntry],
     transpose: &TransposeConfig,

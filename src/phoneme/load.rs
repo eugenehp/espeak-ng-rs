@@ -82,9 +82,7 @@ impl PhonemeData {
             DEFAULT_SAMPLE_RATE
         } else {
             // A present but truncated header is still a genuine error.
-            let (Some(version), Some(rate)) =
-                (u32_at(&phondata, 0), u32_at(&phondata, 4))
-            else {
+            let (Some(version), Some(rate)) = (u32_at(&phondata, 0), u32_at(&phondata, 4)) else {
                 return Err(Error::InvalidData("phondata too short".into()));
             };
             if version != VERSION_PHDATA {
@@ -165,6 +163,38 @@ impl PhonemeData {
             .ok_or_else(|| Error::InvalidData(format!("phoneme table '{name}' not found")))
     }
 
+    /// Make `table`'s phoneme `code` playable under the active table, for a
+    /// word in another language: C keeps a pointer to the right table's
+    /// phoneme on each list item, where a code alone names a phoneme of the
+    /// active table.  Returns the code that now names it — the same code when
+    /// both tables share the phoneme, otherwise a free slot.
+    pub fn lend_phoneme(&mut self, table: usize, code: u8) -> Option<u8> {
+        let mut t = table;
+        let found = loop {
+            let tab = self.tables.get(t)?;
+            if let Some(entry) = tab.phonemes.iter().position(|ph| ph.code == code) {
+                break (t, entry);
+            }
+            let base = usize::from(tab.includes);
+            if base == 0 || base > t {
+                return None;
+            }
+            t = base - 1;
+        };
+        if *self.active.get(usize::from(code))? == Some(found) {
+            return Some(code);
+        }
+        if let Some(slot) = self.active.iter().position(|&s| s == Some(found)) {
+            return u8::try_from(slot).ok();
+        }
+        // The highest free slot: low codes are the shared control phonemes.
+        let slot = (9..N_PHONEME_TAB)
+            .rev()
+            .find(|&i| self.active.get(i).is_some_and(Option::is_none))?;
+        *self.active.get_mut(slot)? = Some(found);
+        u8::try_from(slot).ok()
+    }
+
     // Recursive: first install any base table, then overlay this table.
     fn setup_table_recursive(&mut self, idx: usize) {
         // A base table always precedes the ones built on it; refusing anything
@@ -195,13 +225,16 @@ impl PhonemeData {
     ///
     /// Mirrors `PhonemeCode(mnem)`.  Returns 0 if not found.
     pub fn phoneme_code(&self, mnem: u32) -> u8 {
-        for slot in self.active.iter().flatten() {
-            let (table_idx, entry_idx) = *slot;
+        for (code, slot) in self.active.iter().enumerate() {
+            let Some((table_idx, entry_idx)) = *slot else {
+                continue;
+            };
             let table = self.tables.get(table_idx);
             let Some(ph) = table.and_then(|t| t.phonemes.get(entry_idx)) else {
                 continue;
             };
-            if ph.mnemonic == mnem {
+            // (A phoneme lent from another table isn't this table's.)
+            if ph.mnemonic == mnem && usize::from(ph.code) == code {
                 return ph.code;
             }
         }
@@ -323,7 +356,9 @@ impl PhonemeData {
                 let fires = if instn2 == STRESS_IS_PRIMARY {
                     is_stressed
                 } else if (instn2 as usize) < CONDITION_LEVEL.len() {
-                    CONDITION_LEVEL.get(instn2 as usize).is_some_and(|&l| stress_level < l)
+                    CONDITION_LEVEL
+                        .get(instn2 as usize)
+                        .is_some_and(|&l| stress_level < l)
                 } else {
                     false
                 };
@@ -433,8 +468,7 @@ impl PhonemeData {
         if first_offset + 2 > phonindex.len() {
             return None;
         }
-        let first_instn =
-            u16_at(phonindex, first_offset).unwrap_or(0);
+        let first_instn = u16_at(phonindex, first_offset).unwrap_or(0);
 
         // Synthesis-only phonemes (i_FMT=0xb000+, i_WAV=0xc000+, etc.) have no
         // conditional IPA logic — scanning forward would bleed into adjacent phoneme

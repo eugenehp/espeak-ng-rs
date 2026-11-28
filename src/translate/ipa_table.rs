@@ -56,7 +56,8 @@ pub const IPA1: [u32; 96] = [
 /// Returns the Unicode codepoint.
 pub fn ipa1_char(c: u8) -> u32 {
     if c >= 0x20 && c < 0x80 {
-        IPA1.get(usize::from(c - 0x20)).map_or(u32::from(c), |&ipa| ipa.into())
+        IPA1.get(usize::from(c - 0x20))
+            .map_or(u32::from(c), |&ipa| ipa.into())
     } else {
         c as u32
     }

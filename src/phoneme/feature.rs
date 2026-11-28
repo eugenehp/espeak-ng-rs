@@ -6,7 +6,6 @@
 //! [`PhonemeFeature::from_str`] mirrors `phoneme_feature_from_string()`.
 //! [`PhonemeTab::apply_feature`] mirrors `phoneme_add_feature()`.
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::indexing_slicing))]
-
 // The 70+ associated constants on PhonemeFeature are 3-letter IPA tags.
 // Their names are self-explanatory given the standard IPA feature nomenclature,
 // so missing_docs is suppressed for the impl block.

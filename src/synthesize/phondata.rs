@@ -177,7 +177,8 @@ impl SpectFrame {
 
     /// The samples to the next frame, at the rate they were timed for.
     pub fn duration(&self) -> usize {
-        self.samples.map_or(usize::from(self.length) * 64, |n| n as usize)
+        self.samples
+            .map_or(usize::from(self.length) * 64, |n| n as usize)
     }
 
     /// Return duration in samples at 22050 Hz (STEPSIZE = 64 samples).

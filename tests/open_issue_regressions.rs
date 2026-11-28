@@ -21,7 +21,10 @@ fn check(lang: &str, cases: &[(&str, &str)]) {
 
 #[test]
 fn issue_7_english_initial_x() {
-    check("en", &[("xa", "zˈɑː"), ("xoab", "zˈəʊab"), ("xaiph", "zˈeɪf")]);
+    check(
+        "en",
+        &[("xa", "zˈɑː"), ("xoab", "zˈəʊab"), ("xaiph", "zˈeɪf")],
+    );
 }
 
 #[test]
@@ -31,7 +34,10 @@ fn issue_8_kurdish_and_before_hundreds() {
 
 #[test]
 fn issue_9_arabic_syllabic_ain() {
-    check("ar", &[("7", "sˈabʕʕˌa"), ("307", "θalˈaːθumˌiʔawa sˈabʕʕˌa")]);
+    check(
+        "ar",
+        &[("7", "sˈabʕ-ˌa"), ("307", "θalˈaːθumˌiʔawa sˈabʕ-ˌa")],
+    );
 }
 
 #[test]
@@ -49,23 +55,54 @@ fn issue_11_switched_words_keep_their_voicing() {
 
 #[test]
 fn issues_12_13_14_german_and_dutch_rules() {
-    check("de", &[("florian", "flˈoːriːˌɑːn"), ("monat", "mˈoːnɑːt"), ("sagt", "zˈɑːkt")]);
-    check("nl", &[("nasaal", "naːzˈaːl"), ("hebt", "hˈɛpt"), ("schrompel", "sxrˈɔmpəl")]);
+    check(
+        "de",
+        &[
+            ("florian", "flˈoːriːˌɑːn"),
+            ("monat", "mˈoːnɑːt"),
+            ("sagt", "zˈɑːkt"),
+        ],
+    );
+    check(
+        "nl",
+        &[
+            ("nasaal", "naːzˈaːl"),
+            ("hebt", "hˈɛpt"),
+            ("schrompel", "sxrˈɔmpəl"),
+        ],
+    );
 }
 
 #[test]
 fn issue_15_italian_single_primary() {
-    check("it", &[("invalidano", "invˈalidano"), ("oper", "ˈɔper"), ("lumache", "lʊmˈake")]);
+    check(
+        "it",
+        &[
+            ("invalidano", "invˈalidano"),
+            ("oper", "ˈɔper"),
+            ("lumache", "lʊmˈake"),
+        ],
+    );
 }
 
 #[test]
 fn issue_17_whole_word_flags_place_prefix_stress() {
-    check("en", &[("output", "ˈaʊtpʊt"), ("hyperspace", "hˈaɪpəspˌeɪs"), ("torment", "tˈɔːmɛnt")]);
+    check(
+        "en",
+        &[
+            ("output", "ˈaʊtpʊt"),
+            ("hyperspace", "hˈaɪpəspˌeɪs"),
+            ("torment", "tˈɔːmɛnt"),
+        ],
+    );
 }
 
 #[test]
 fn issue_18_french_acronyms() {
-    check("fr", &[("ac", "ˌasˈe"), ("USA", "ˌyˌɛsˈa"), ("cia", "sˌejˈa")]);
+    check(
+        "fr",
+        &[("ac", "ˌasˈe"), ("USA", "ˌyˌɛsˈa"), ("cia", "sˌejˈa")],
+    );
 }
 
 #[test]
@@ -145,25 +182,38 @@ fn issue_9_arabic_thousands() {
         "ar",
         &[
             ("2026", "ʔalfˈaːn wa sˈitːawˌaʕiʃrˈuːn"),
-            ("3074", "θalˈaːθatˌu ʔaːlˈaːf wa ʔˈarbaʕʕˌawasˌabʕʕˈuːn"),
+            ("3074", "θalˈaːθatˌu ʔaːlˈaːf wa ʔˈarbaʕ-ˌawasˌabʕ-ˈuːn"),
         ],
     );
 }
 
 #[test]
 fn issue_19_symbols_and_accented_letters() {
-    check("fr", &[("²", "pyisˈɑ̃s dˈø"), ("½", "œ̃dəmˈi"), ("ç", "sˌesedˈij")]);
+    check(
+        "fr",
+        &[("²", "pyisˈɑ̃s dˈø"), ("½", "œ̃dəmˈi"), ("ç", "sˌesedˈij")],
+    );
     check("es", &[("²", "dˈos"), ("ç", "θˌeθeðˈiʝa")]);
 }
 
 #[test]
 fn issue_26_suffix_added_after_stress() {
-    check("es", &[("kg", "kˌiloɣɾˈamo"), ("aprox", "ˌapɾoksimˈaðamˈente")]);
+    check(
+        "es",
+        &[("kg", "kˌiloɣɾˈamo"), ("aprox", "ˌapɾoksimˈaðamˈente")],
+    );
 }
 
 #[test]
 fn issue_16_foreign_letters_name_their_alphabet() {
-    check("en", &[("د", "ˈaɹəbɪk(ar)dˈaːl(en)"), ("ר", "hˈiːbɹuːrˈeʃ"), ("ڈ", "ˈaɹəbɪkdˈe")]);
+    check(
+        "en",
+        &[
+            ("د", "ˈaɹəbɪk(ar)dˈaːl(en)"),
+            ("ר", "hˈiːbɹuːrˈeʃ"),
+            ("ڈ", "ˈaɹəbɪkdˈe"),
+        ],
+    );
     check("de", &[("د", "arˈɑbɪʃ(ar)dˈaːl(de)")]);
 }
 
@@ -185,7 +235,10 @@ fn issues_22_23_47_portuguese() {
 #[test]
 fn issue_27_clause_breaks_before_quotes() {
     check("en", &[("He said: \"hello\"", "hiː sˈɛd\nhəlˈəʊ")]);
-    check("ku", &[("Wî ji min re got: \"were\".", "wi ʒɪ mˈɪn rɛ ɡot\nwɛɾˈɛ")]);
+    check(
+        "ku",
+        &[("Wî ji min re got: \"were\".", "wi ʒɪ mˈɪn rɛ ɡot\nwɛɾˈɛ")],
+    );
 }
 
 #[test]
@@ -231,9 +284,9 @@ fn issue_29_malformed_dictionary_flags_do_not_panic() {
 
 #[test]
 fn issue_29_phoneme_table_including_itself_does_not_recurse() {
-    let Ok(mut phdata) = espeak_ng::phoneme::load::PhonemeData::load(std::path::Path::new(
-        "espeak-ng-data",
-    )) else {
+    let Ok(mut phdata) =
+        espeak_ng::phoneme::load::PhonemeData::load(std::path::Path::new("espeak-ng-data"))
+    else {
         return;
     };
     let n = phdata.tables.len() as u8;
@@ -261,7 +314,9 @@ fn klatt_variants_use_their_own_glottal_source() {
         let _ = std::fs::remove_file(&path);
         bytes
     };
-    let voices = ["klatt", "klatt2", "klatt3", "klatt4", "klatt5", "klatt6", "m1"];
+    let voices = [
+        "klatt", "klatt2", "klatt3", "klatt4", "klatt5", "klatt6", "m1",
+    ];
     let audio: Vec<_> = voices.iter().map(|v| wav(v)).collect();
     for (i, a) in audio.iter().enumerate() {
         for (j, b) in audio.iter().enumerate().skip(i + 1) {
@@ -283,8 +338,13 @@ fn a_loud_echo_is_capped() {
     assert!(status.success());
     let bytes = std::fs::read(&path).unwrap();
     let _ = std::fs::remove_file(&path);
-    let samples = bytes[44..].chunks_exact(2).map(|b| i16::from_le_bytes([b[0], b[1]]));
-    let clipped = samples.clone().filter(|s| s.unsigned_abs() >= 32767).count();
+    let samples = bytes[44..]
+        .chunks_exact(2)
+        .map(|b| i16::from_le_bytes([b[0], b[1]]));
+    let clipped = samples
+        .clone()
+        .filter(|s| s.unsigned_abs() >= 32767)
+        .count();
     assert!(clipped * 100 < samples.count(), "{clipped} samples clip");
 }
 
@@ -303,6 +363,10 @@ fn numbers_agree_with_their_scale_words() {
             .args(["-q", "-x", "-v", lang, text])
             .output()
             .unwrap();
-        assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), expected, "{lang} {text}");
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout).trim(),
+            expected,
+            "{lang} {text}"
+        );
     }
 }

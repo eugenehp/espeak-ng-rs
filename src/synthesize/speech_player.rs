@@ -213,7 +213,10 @@ impl Generator {
 
     fn sample(&mut self, frame: &Frame) -> i32 {
         self.cycle = (frame.voice_pitch / self.rate + self.cycle) % 1.0;
-        self.noise_seed = self.noise_seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+        self.noise_seed = self
+            .noise_seed
+            .wrapping_mul(1_103_515_245)
+            .wrapping_add(12_345);
         let white = f64::from((self.noise_seed >> 16) & 0x7fff) / f64::from(0x7fff);
         self.noise = white + 0.75 * self.noise;
 

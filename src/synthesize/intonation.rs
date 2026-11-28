@@ -21,8 +21,8 @@
 //! declination across the whole utterance with a rising tail for questions —
 //! which had no notion of syllables, stress or tunes.
 
-use crate::bytes::Bounded;
 use super::envelopes::ENVELOPE_DATA;
+use crate::bytes::Bounded;
 
 /// Stress levels, as `intonation.c` uses them.
 const SECONDARY: u8 = 3;
@@ -390,7 +390,9 @@ pub struct Tune {
 pub fn parse_tunes(data: &[u8]) -> Vec<Tune> {
     data.chunks_exact(68)
         .map(|t| Tune {
-            name: t.get(..12).unwrap_or_default()
+            name: t
+                .get(..12)
+                .unwrap_or_default()
                 .iter()
                 .take_while(|&&b| b != 0)
                 .map(|&b| b as char)
@@ -449,7 +451,10 @@ impl Syllable {
     /// endpoints low-first (`SetPitch2` swaps them) so envelope 0 is the bottom
     /// of the span and 255 the top — `env_fall` therefore starts at 255 and ends
     /// at 0, giving a falling contour.
-    #[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "indices are bounded by the loops over these lists"
+    )]
     pub fn pitch_at(&self, t: f64) -> f64 {
         let env = match &self.tone_env {
             Some(env) => env,
@@ -494,7 +499,10 @@ struct Layout {
 }
 
 /// `count_pitch_vowels()`.
-#[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "indices are bounded by the loops over these lists"
+)]
 fn count_pitch_vowels(
     syls: &mut [Syllable],
     start: usize,
@@ -578,7 +586,10 @@ fn count_unstressed(syls: &[Syllable], start: usize, end: usize, limit: u8) -> i
 
 /// `SetPitchGradient()` — a linear pitch change over a run of syllables, used
 /// for the pre-head, the unstressed syllables in the body, and the tail.
-#[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "indices are bounded by the loops over these lists"
+)]
 fn set_pitch_gradient(
     syls: &mut [Syllable],
     start_ix: usize,
@@ -617,7 +628,10 @@ fn set_pitch_gradient(
 
 /// `SetHeadIntonation()` — the clause body, stepping the pitch once per primary
 /// stress and falling back to the tune's overflow table when the steps run out.
-#[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "indices are bounded by the loops over these lists"
+)]
 fn set_head_intonation(
     syls: &mut [Syllable],
     tune: &Tune,
@@ -705,7 +719,8 @@ fn set_head_intonation(
             set_pitch(&mut syls[syl_ix], pitch / 256, drops.at(stress as usize));
         } else {
             let unstressed_inc = if n_unstressed > 1 {
-                (tune.unstr_end.at(stage) as i32 - tune.unstr_start.at(stage) as i32) / (n_unstressed - 1)
+                (tune.unstr_end.at(stage) as i32 - tune.unstr_start.at(stage) as i32)
+                    / (n_unstressed - 1)
             } else {
                 0
             };
@@ -722,7 +737,10 @@ fn set_head_intonation(
 
 /// `calc_pitch_segment()` — the body when using the built-in tone tables.
 #[allow(clippy::too_many_arguments)]
-#[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "indices are bounded by the loops over these lists"
+)]
 fn calc_pitch_segment(
     syls: &mut [Syllable],
     mut ix: usize,
@@ -797,7 +815,10 @@ fn calc_pitch_segment(
 }
 
 /// `calc_pitches2()` — assign pitches using a `TUNE` from the data file.
-#[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "indices are bounded by the loops over these lists"
+)]
 fn calc_pitches_tune(
     syls: &mut [Syllable],
     start: usize,
@@ -848,7 +869,10 @@ fn calc_pitches_tune(
 }
 
 /// `calc_pitches()` with `control != 0` — the built-in tone head/nucleus tables.
-#[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "indices are bounded by the loops over these lists"
+)]
 fn calc_pitches_table(
     syls: &mut [Syllable],
     start: usize,

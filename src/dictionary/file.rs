@@ -12,8 +12,8 @@
 
 #![deny(clippy::cast_possible_truncation)]
 
-use crate::bytes::Bounded;
 use crate::bytes::u32_at;
+use crate::bytes::Bounded;
 use std::path::Path;
 
 use super::transpose::TransposeConfig;
@@ -425,7 +425,10 @@ fn decode_replace_table(data: &[u8], offset: usize) -> Vec<(Vec<char>, String)> 
 
     let mut pairs = Vec::new();
     let mut pos = offset;
-    while data.get(pos..pos + 4).is_some_and(|b| b.iter().any(|&b| b != 0)) {
+    while data
+        .get(pos..pos + 4)
+        .is_some_and(|b| b.iter().any(|&b| b != 0))
+    {
         let from = String::from_utf8_lossy(read_cstr(&mut pos)).into_owned();
         let to = String::from_utf8_lossy(read_cstr(&mut pos)).into_owned();
         if from.is_empty() {
@@ -440,7 +443,10 @@ fn decode_replace_table(data: &[u8], offset: usize) -> Vec<(Vec<char>, String)> 
 // InitGroups — build the rule-group index
 // ─────────────────────────────────────────────────────────────────────────────
 
-#[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "indices are bounded by the loops over these lists"
+)]
 fn build_groups(data: &[u8], rules_offset: usize) -> Result<Groups, Error> {
     let mut g = Groups::default();
     let mut n_groups2 = 0usize;
@@ -507,7 +513,11 @@ fn build_groups(data: &[u8], rules_offset: usize) -> Result<Groups, Error> {
             }
             let name_len = pos - name_start;
             let c = at(name_start).unwrap_or(0); // first byte of group name
-            let c2 = if name_len >= 2 { at(name_start + 1).unwrap_or(0) } else { 0 };
+            let c2 = if name_len >= 2 {
+                at(name_start + 1).unwrap_or(0)
+            } else {
+                0
+            };
             pos += 1; // skip the \0
             if pos > rules.len() {
                 return Err(truncated());
@@ -533,7 +543,8 @@ fn build_groups(data: &[u8], rules_offset: usize) -> Result<Groups, Error> {
                 _ => {
                     // Two-letter group
                     if g.groups2_start.at(c as usize) == 255 {
-                        g.groups2_start.put(c as usize, u8::try_from(n_groups2).unwrap_or(u8::MAX));
+                        g.groups2_start
+                            .put(c as usize, u8::try_from(n_groups2).unwrap_or(u8::MAX));
                     }
                     g.groups2_count[c as usize] = g.groups2_count.at(c as usize).saturating_add(1);
                     let key = (c as u16) | ((c2 as u16) << 8);
@@ -575,13 +586,34 @@ fn build_groups(data: &[u8], rules_offset: usize) -> Result<Groups, Error> {
 ///
 /// Letter group data mirrors `SetCyrillicLetters()` / `SetLetterBits()` in
 /// `tr_languages.c`.
-#[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "indices are bounded by the loops over these lists"
+)]
 fn build_letter_bits(lang: &str) -> Box<[u8; 256]> {
     let mut bits = Box::new([0u8; 256]);
 
     match lang {
-        "ru" | "bg" | "uk" | "be" | "tt" | "mk" | "mn" | "kk" | "ky" | "ba" | "cv" | "tg"
-        | "os" | "cu" => {
+        // Belarusian sets only its own vowels and consonants.
+        "be" => {
+            const VOWELS_BE: &[usize] =
+                &[0x10, 0x15, 0x31, 0x1e, 0x23, 0x2b, 0x2d, 0x2e, 0x2f, 0x36];
+            const CONSONANTS_BE: &[usize] = &[
+                0x11, 0x12, 0x13, 0x14, 0x16, 0x17, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1f, 0x20, 0x21,
+                0x22, 0x24, 0x25, 0x26, 0x27, 0x28, 0x3e,
+            ];
+            for (list, groups) in [(VOWELS_BE, [0u8, 7]), (CONSONANTS_BE, [2, 2])] {
+                for &ix in list {
+                    for g in groups {
+                        if let Some(b) = bits.get_mut(ix) {
+                            *b |= 1 << g;
+                        }
+                    }
+                }
+            }
+        }
+        "ru" | "bg" | "uk" | "tt" | "mk" | "mn" | "kk" | "ky" | "ba" | "cv" | "tg" | "os"
+        | "cu" => {
             // Cyrillic letter groups — `letter_bits_offset = OFFSET_CYRILLIC = 0x420`
             // Indices are (codepoint - 0x420); stored at that index in bits[].
 
@@ -614,7 +646,10 @@ fn build_letter_bits(lang: &str) -> Box<[u8; 256]> {
             //   (`zdr'av;ej` for `zdr'avej`).
             const RU_EXTRA_IVOWELS: &[usize] = &[0x15, 0x18, 0x34, 0x37];
 
-            #[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
+            #[expect(
+                clippy::indexing_slicing,
+                reason = "indices are bounded by the loops over these lists"
+            )]
             fn set_bits(bits: &mut [u8; 256], indices: &[usize], group: u8) {
                 for &idx in indices {
                     if idx < 256 {
@@ -644,7 +679,10 @@ fn build_letter_bits(lang: &str) -> Box<[u8; 256]> {
             // `LETTERGP_Y` — the front vowels — is what `el_rules`' `κ (Y  c`
             // needs: Greek palatalises /k/ to /c/ before them, so without the
             // group "κόκκινη" read `k'okin,i` instead of `k'ocin,i`.
-            #[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
+            #[expect(
+                clippy::indexing_slicing,
+                reason = "indices are bounded by the loops over these lists"
+            )]
             fn set(bits: &mut [u8; 256], offsets: &[usize], group: u8) {
                 for &idx in offsets {
                     bits[idx] |= 1 << group;

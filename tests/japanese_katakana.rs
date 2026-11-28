@@ -27,8 +27,8 @@ fn katakana_reads_identically_to_hiragana() {
     }
     // The prolonged-sound mark ー lengthens the preceding vowel (ハート).
     let haato = ipa("ハート");
-    // (C writes a vowel that has an IPA name of its own twice.)
-    assert_eq!(haato, "hˈääto̞", "ハート should carry a long vowel");
+    // (C writes the length mark through its own phoneme: `ː`.)
+    assert_eq!(haato, "hˈäːto̞", "ハート should carry a long vowel");
     // A longer loanword with several ー marks still reads.
     assert!(
         !ipa("コンピューター").trim().is_empty(),
@@ -77,20 +77,19 @@ fn voiced_and_semivoiced_kana_are_pronounced() {
 }
 
 #[test]
-fn katakana_emoji_descriptions_are_spoken() {
+fn katakana_emoji_descriptions_read_as_upstream() {
     // #2464: emoji whose Japanese CLDR name is katakana used to be silent.
     let Some(t) = ja() else {
         eprintln!("[SKIP] no ja data");
         return;
     };
     let ipa = |s: &str| t.text_to_ipa(s).unwrap();
-    // ⭐ "スター", 👍 "サムズアップ" — katakana descriptions now produce phonemes.
+    // ⭐ "スター", 👍 "サムズアップ": upstream's rules read hiragana, and the
+    // `.replace` table that turns katakana into it only applies to input
+    // text, not to a replacement, so these are silent there and here.
     for emo in ["⭐", "👍"] {
-        assert!(
-            !ipa(emo).trim().is_empty(),
-            "ja {emo} should be spoken, not silent"
-        );
+        assert_eq!(ipa(emo), "", "ja {emo}");
     }
-    // A hiragana description (😀 → にっこり…) was and still is spoken.
-    assert!(!ipa("😀").trim().is_empty(), "ja 😀 should be spoken");
+    // 😀's description mixes in kanji, which the rules can't read either.
+    assert_eq!(ipa("😀"), "", "ja 😀");
 }

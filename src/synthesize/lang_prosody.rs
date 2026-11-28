@@ -94,9 +94,11 @@ fn table(lang: &str) -> Option<LangProsody> {
             stress_amps: [17, 17, 20, 20, 20, 22, 22, 21],
             ..default
         },
-        "ca-ba" | "ca-nw" | "ca-va" | "chr-US-Qaaa-x-west" | "cmn-latn-pinyin" | "en-029" | "en-gb" | "en-gb-scotland" | "en-gb-x-gbclan" | "en-gb-x-gbcwmd" | "en-gb-x-rp" | "en-shaw" | "en-us" | "en-us-nyc" | "es-419" | "es-mx" | "fr-be" | "fr-ch" | "fr-fr" | "hy-arevela" | "hy-arevmda" | "pt-br" | "pt-pt" | "ru-cl" | "ru-lv" | "vi-vn-x-central" | "vi-vn-x-south" | "zh-cmn" | "zh-yue" => LangProsody {
-            ..default
-        },
+        "ca-ba" | "ca-nw" | "ca-va" | "chr-US-Qaaa-x-west" | "cmn-latn-pinyin" | "en-029"
+        | "en-gb" | "en-gb-scotland" | "en-gb-x-gbclan" | "en-gb-x-gbcwmd" | "en-gb-x-rp"
+        | "en-shaw" | "en-us" | "en-us-nyc" | "es-419" | "es-mx" | "fr-be" | "fr-ch" | "fr-fr"
+        | "hy-arevela" | "hy-arevmda" | "pt-br" | "pt-pt" | "ru-cl" | "ru-lv"
+        | "vi-vn-x-central" | "vi-vn-x-south" | "zh-cmn" | "zh-yue" => LangProsody { ..default },
         "cmn" | "yue" | "zh" => LangProsody {
             same_length_mods: true,
             tone_language: true,

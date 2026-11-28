@@ -1,6 +1,6 @@
 [package]
 name        = "espeak-ng-data-dicts"
-version     = "0.2.0"
+version     = "0.3.0"
 edition     = "2021"
 description = "Language dictionaries for eSpeak NG (120 languages) — embedded data for espeak-ng-rs"
 license     = "GPL-3.0-or-later"

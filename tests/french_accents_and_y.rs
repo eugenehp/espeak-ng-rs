@@ -54,7 +54,13 @@ fn y_is_a_vowel() {
 
 #[test]
 fn letters_with_rules_are_unchanged() {
-    check(&[("pâte", "pˈaːt"), ("hôtel", "otˈɛl"), ("maïs", "maˈis"), ("Noël", "nɔˈɛl"), ("été", "etˈe")]);
+    check(&[
+        ("pâte", "pˈaːt"),
+        ("hôtel", "otˈɛl"),
+        ("maïs", "maˈis"),
+        ("Noël", "nɔˈɛl"),
+        ("été", "etˈe"),
+    ]);
 }
 
 /// Multi-word dictionary entries, C's hyphen flags, and the stress that moves
@@ -78,7 +84,11 @@ fn multi_word_entries_and_hyphens() {
 
 #[test]
 fn a_vowel_turned_glide_loses_its_stress() {
-    check(&[("demi-heure", "dəmjˈœʁ"), ("semi-auto", "səmjotˈo"), ("joues", "ʒw")]);
+    check(&[
+        ("demi-heure", "dəmjˈœʁ"),
+        ("semi-auto", "səmjotˈo"),
+        ("joues", "ʒw"),
+    ]);
 }
 
 #[test]

@@ -19,8 +19,9 @@ use crate::bytes::Bounded;
 use std::path::Path;
 
 use crate::phoneme::{
-    PhonemeData, PHON_END_WORD, PHON_LENGTHEN, PHON_STRESS_2, PHON_STRESS_3, PHON_STRESS_D, PHON_STRESS_P,
-    PHON_STRESS_P2, PHON_STRESS_PREV, PHON_STRESS_TONIC, PHON_STRESS_U, PHON_SYLLABIC,
+    PhonemeData, PHON_END_WORD, PHON_LENGTHEN, PHON_STRESS_2, PHON_STRESS_3, PHON_STRESS_D,
+    PHON_STRESS_P, PHON_STRESS_P2, PHON_STRESS_PREV, PHON_STRESS_TONIC, PHON_STRESS_U,
+    PHON_SYLLABIC,
 };
 use crate::synthesize::bytecode::{interpret_phoneme, Neighbours};
 
@@ -178,6 +179,9 @@ pub fn codes_to_ipa_opts(
     let mut out = String::new();
     // The table the codes that follow belong to; `None` = the clause's own.
     let mut switched: Option<PhonemeData> = None;
+    // What the phoneme programs see, as when the list was built: an `ipa`
+    // chosen by `nextVowel(isStressed)` needs the real stress levels.
+    let context = super::ProgramContext::new(codes, phdata);
     let mut straight_quote_open = false;
     // `--sep` bookkeeping: whether a phoneme has been written in this clause,
     // whether a word break has just happened (no separator straight after one,
@@ -187,7 +191,6 @@ pub fn codes_to_ipa_opts(
     let mut after_word_break = true;
     let mut pending_stress = String::new();
     // The last sound written, for the markers that modify it.
-    let mut last_sound: Option<usize> = None;
 
     for (i, pc) in codes.iter().enumerate() {
         if let Some(CodeMarker::Punctuation(c)) = &pc.marker {
@@ -258,6 +261,7 @@ pub fn codes_to_ipa_opts(
             };
             continue;
         }
+        let clause_phdata = phdata;
         let phdata: &PhonemeData = switched.as_ref().unwrap_or(phdata);
 
         if pc.is_boundary || pc.code == PHON_END_WORD {
@@ -305,22 +309,28 @@ pub fn codes_to_ipa_opts(
                         continue;
                     }
                 }
-                let nb = neighbours_at(codes, &real, &starts, rank.at(i), phdata);
-                let mut name = write_ph_mnemonic_ipa(phdata, code, &nb);
-                // C writes the syllabic marker and the lengthener through their
-                // phoneme's list entry, so a phoneme with an IPA name of its own
-                // is written twice: Arabic `A-` is "ʕʕ", Danish `A:` "ɑɑ".
-                if code == PHON_SYLLABIC || code == PHON_LENGTHEN {
-                    if let Some(n) = last_sound {
-                        let marked = codes.get(real.at(n)).map_or(0, |c| c.code);
-                        let nb = neighbours_at(codes, &real, &starts, n, phdata);
-                        if has_ipa_name(phdata, marked, &nb) {
-                            name = write_ph_mnemonic_ipa(phdata, marked, &nb);
-                        }
-                    }
-                } else {
-                    last_sound = Some(rank.at(i)).filter(|&n| n != usize::MAX);
+                // A pause has no IPA, but it stands where `-x` writes its name,
+                // so the spaces either side of it aren't one.
+                if phdata.get(code).is_some_and(|ph| ph.typ == 0) {
+                    out.push(PAUSE_MARK);
                 }
+                let nb = if switched.is_none() && rank.at(i) != usize::MAX {
+                    context.neighbours(codes, phdata, rank.at(i), false, 0)
+                } else {
+                    neighbours_at(codes, &real, &starts, rank.at(i), phdata)
+                };
+                // A tone, the lengthener and the syllabic marker are written
+                // through their own phoneme, without the sound's context
+                // (`InterpretPhoneme2WithData`): Danish `A:` is "ɑː", and a
+                // Mandarin tone the IPA its table gives it.
+                let clause_tone = matches!(pc.marker, Some(CodeMarker::ClauseTone));
+                let own = if clause_tone { clause_phdata } else { phdata };
+                let tone = own.get(code).filter(|ph| ph.typ == 1 && ph.program != 0);
+                let name = if tone.is_some() || code == PHON_SYLLABIC || code == PHON_LENGTHEN {
+                    write_ph_mnemonic_ipa(own, code, &nb)
+                } else {
+                    write_ph_mnemonic_ipa(phdata, code, &nb)
+                };
                 if let Some(sep) = sep {
                     // Not before the clause's first phoneme, not straight after
                     // a word break, and not before a modifier letter.
@@ -356,21 +366,15 @@ pub fn codes_to_ipa_opts(
     }
     let _ = straight_quote_open;
     out.split('\n')
-        .map(str::trim)
+        .map(|line| line.trim_matches(' ').replace(PAUSE_MARK, ""))
         .collect::<Vec<_>>()
         .join("\n")
-        .trim_end()
+        .trim_end_matches([' ', '\n'])
         .to_string()
 }
 
-/// Whether the phoneme's program gives it an IPA name.
-fn has_ipa_name(phdata: &PhonemeData, code: u8, nb: &Neighbours) -> bool {
-    phdata.get(code).filter(|ph| ph.program != 0).is_some_and(|ph| {
-        interpret_phoneme(ph.program, &phdata.phonindex, nb, |c| phdata.get(c).cloned())
-            .ipa_string
-            .is_some_and(|s| !s.is_empty())
-    })
-}
+/// Where a pause stands in the IPA, until the spaces are tidied.
+const PAUSE_MARK: char = '\u{1}';
 
 /// The neighbour context for the phoneme that is `real[n]`, built the same way
 /// the code-list phoneme-program pass builds it.
@@ -387,13 +391,17 @@ fn neighbours_at(
     let i = real.at(n);
     let at = |k: Option<&usize>| k.and_then(|&k| codes.get(k)).map_or(0, |c| c.code);
     let next_wordstart = real.get(n + 1).is_some_and(|&k| {
-        codes.get(i + 1..k).unwrap_or_default()
+        codes
+            .get(i + 1..k)
+            .unwrap_or_default()
             .iter()
             .any(|c| c.is_boundary || c.code == PHON_END_WORD)
     });
     // Stress level of the syllable this phoneme belongs to, for programs that
     // condition on it.
-    let stress = codes.get(..i).unwrap_or_default()
+    let stress = codes
+        .get(..i)
+        .unwrap_or_default()
         .iter()
         .rev()
         .take_while(|c| !c.is_boundary)

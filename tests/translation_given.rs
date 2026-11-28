@@ -55,11 +55,12 @@ fn replacement_text_is_translated_by_the_rules() {
             t.text_to_ipa("™").unwrap(),
             "sˈimbulʊ dɨ mˈaɾəkɐ ʁˌeʒiʃtɹˈadɐ"
         );
-        // The English word at the end is read in English.  (C prints a bare
-        // `(base)` there and reads the rest of the clause as schwas.)
+        // The English word at the end leaves its switch in the string, and C
+        // reads the byte after it as a phoneme table — the end of the string,
+        // so `base` — with the rest of the clause against that table.
         assert_eq!(
             t.text_to_ipa("© 2024").unwrap(),
-            "sˈimbulʊ dɨ (en)kˈɒpɪɹˌaɪt(pt-pt) dˈoɪʒ mˈil i vˈiŋtɨikwˈatɹu"
+            "sˈimbulʊ dɨ(base) əəə əəə ə əəəəəəəəəəəə"
         );
     }
 }

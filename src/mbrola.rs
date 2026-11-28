@@ -165,9 +165,7 @@ impl MbrolaTable {
         if bytes.len() < 4 {
             return Err(Error::InvalidData("mbrola phtrans: file too short".into()));
         }
-        let rd = |o: usize| -> u32 {
-            crate::bytes::u32_at(bytes, o).unwrap_or(0)
-        };
+        let rd = |o: usize| -> u32 { crate::bytes::u32_at(bytes, o).unwrap_or(0) };
         let mut table = MbrolaTable {
             volume: rd(0),
             entries: Vec::new(),
@@ -504,7 +502,10 @@ pub struct MbrPhoneme {
 /// the first half of a split vowel, negative for the second.  With `final_only`
 /// the phoneme gets a single target at 100% (used for a nasal or liquid that
 /// runs into a pause).
-#[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "indices are bounded by the loops over these lists"
+)]
 pub fn write_pitch(p: &MbrPhoneme, split: i32, final_only: bool) -> Vec<(i32, i32)> {
     // Apply the pitch change only over this proportion of the phoneme.
     const ENV100: i32 = 80;

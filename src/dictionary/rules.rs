@@ -13,7 +13,6 @@
 //! ```
 //! A rule string ends with `0x00`; `RULE_GROUP_END` marks the end of a group.
 
-use crate::bytes::Bounded;
 use super::file::Dictionary;
 use super::{
     BITNUM_FLAG_ALT, DOLLAR_LIST, DOLLAR_NOPREFIX, DOLLAR_UNPR, FLAG_FIRST_UPPER, FLAG_HYPHEN,
@@ -23,8 +22,9 @@ use super::{
     RULE_GROUP_END, RULE_IFVERB, RULE_INC_SCORE, RULE_LAST_RULE, RULE_LETTERGP, RULE_LETTERGP2,
     RULE_LINENUM, RULE_NONALPHA, RULE_NOTVOWEL, RULE_NOVOWELS, RULE_NO_SUFFIX, RULE_PHONEMES,
     RULE_PH_COMMON, RULE_POST, RULE_PRE, RULE_PRE_ATSTART, RULE_SKIPCHARS, RULE_SPACE,
-    RULE_SPELLING, RULE_STRESSED, RULE_SYLLABLE, SUFX_P, SUFX_UNPRON,
+    RULE_STRESSED, RULE_SYLLABLE, SUFX_P, SUFX_UNPRON,
 };
+use crate::bytes::Bounded;
 // ─────────────────────────────────────────────────────────────────────────────
 // IsLetter / IsAlpha  (letter_bits based)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -224,7 +224,8 @@ pub fn is_letter_group(
             // Match the entry at text_pos backwards (entry is forward-oriented)
             text_pos + 1 >= n && text.get(text_pos + 1 - n..=text_pos).unwrap_or_default() == entry
         } else {
-            text_pos + n <= text.len() && text.get(text_pos..text_pos + n).unwrap_or_default() == entry
+            text_pos + n <= text.len()
+                && text.get(text_pos..text_pos + n).unwrap_or_default() == entry
         };
 
         if matches {
@@ -326,6 +327,19 @@ pub struct RuleContext<'a> {
     pub expect_verb: bool,
 
     pub suffix_option: u32, // tr->langopts.param[LOPT_SUFFIX]
+    /// The language's own letters for a group (`tr->letter_groups`), in place
+    /// of `letter_bits`.
+    pub letter_lists: [Option<&'static [u32]>; 8],
+}
+
+impl RuleContext<'_> {
+    /// C's `IsLetter`.
+    fn is_letter(&self, wc: u32, group: usize) -> bool {
+        match self.letter_lists.get(group).copied().flatten() {
+            Some(list) => list.contains(&wc),
+            None => is_letter_wc(self.letter_bits, wc, self.letter_bits_offset, group),
+        }
+    }
 }
 
 /// `$list` and `$p_alt<n>` — C's `DollarRule` (dictionary.c).
@@ -577,7 +591,7 @@ pub fn match_rule(
                     match rb {
                         RULE_LETTERGP => {
                             let lg = letter_group_no(&mut r_pos, rules);
-                            if is_letter_wc(ctx.letter_bits, letter_w, ctx.letter_bits_offset, lg) {
+                            if ctx.is_letter(letter_w, lg) {
                                 let lg_pts = if lg == LETTERGP_C { 19 } else { 20 };
                                 add_points = lg_pts - distance_right;
                                 post_ptr += xbytes;
@@ -596,13 +610,9 @@ pub fn match_rule(
                             }
                         }
                         RULE_NOTVOWEL => {
-                            if is_letter_wc(
-                                ctx.letter_bits,
-                                letter_w,
-                                ctx.letter_bits_offset,
-                                LETTERGP_VOWEL2,
-                            ) || (letter_w == RULE_SPACE as u32
-                                && word_flags & FLAG_SUFFIX_VOWEL != 0)
+                            if ctx.is_letter(letter_w, LETTERGP_VOWEL2)
+                                || (letter_w == RULE_SPACE as u32
+                                    && word_flags & FLAG_SUFFIX_VOWEL != 0)
                             {
                                 failed = 1;
                             } else {
@@ -681,22 +691,10 @@ pub fn match_rule(
                             let mut lw = letter_w;
                             let mut vowel_flag = false;
                             while lw != RULE_SPACE as u32 && lw != 0 {
-                                if !vowel_flag
-                                    && is_letter_wc(
-                                        ctx.letter_bits,
-                                        lw,
-                                        ctx.letter_bits_offset,
-                                        LETTERGP_VOWEL2,
-                                    )
-                                {
+                                if !vowel_flag && ctx.is_letter(lw, LETTERGP_VOWEL2) {
                                     vowel_count += 1;
                                 }
-                                vowel_flag = is_letter_wc(
-                                    ctx.letter_bits,
-                                    lw,
-                                    ctx.letter_bits_offset,
-                                    LETTERGP_VOWEL2,
-                                );
+                                vowel_flag = ctx.is_letter(lw, LETTERGP_VOWEL2);
                                 let (nw, _) = utf8_decode(word, p2);
                                 lw = nw;
                                 p2 += 1;
@@ -717,12 +715,7 @@ pub fn match_rule(
                                 if lw == RULE_SPACE as u32 || lw == 0 {
                                     break;
                                 }
-                                if is_letter_wc(
-                                    ctx.letter_bits,
-                                    lw,
-                                    ctx.letter_bits_offset,
-                                    LETTERGP_VOWEL2,
-                                ) {
+                                if ctx.is_letter(lw, LETTERGP_VOWEL2) {
                                     failed = 1;
                                     break;
                                 }
@@ -804,9 +797,8 @@ pub fn match_rule(
                                 add_points = 1;
                             }
                         }
-                        RULE_SPELLING => {
-                            // language-specific; just advance past
-                        }
+                        // (`RULE_SPELLING` is matched as it is: C's `LookupLetter`
+                        // puts the byte after a letter that more letters follow.)
                         _ => {
                             // literal char match in post-context
                             if letter == rb {
@@ -850,7 +842,7 @@ pub fn match_rule(
                     match rb {
                         RULE_LETTERGP => {
                             let lg = letter_group_no(&mut r_pos, rules);
-                            if is_letter_wc(ctx.letter_bits, letter_w, ctx.letter_bits_offset, lg) {
+                            if ctx.is_letter(letter_w, lg) {
                                 let lg_pts = if lg == LETTERGP_C { 19 } else { 20 };
                                 add_points = lg_pts - distance_left;
                                 pre_ptr = pre_ptr.saturating_sub(xbytes);
@@ -869,12 +861,7 @@ pub fn match_rule(
                             }
                         }
                         RULE_NOTVOWEL => {
-                            if !is_letter_wc(
-                                ctx.letter_bits,
-                                letter_w,
-                                ctx.letter_bits_offset,
-                                LETTERGP_VOWEL2,
-                            ) {
+                            if !ctx.is_letter(letter_w, LETTERGP_VOWEL2) {
                                 add_points = 20 - distance_left;
                                 pre_ptr = pre_ptr.saturating_sub(xbytes);
                             } else {
@@ -954,12 +941,7 @@ pub fn match_rule(
                                 if lw2 == RULE_SPACE as u32 {
                                     break;
                                 }
-                                if is_letter_wc(
-                                    ctx.letter_bits,
-                                    lw2,
-                                    ctx.letter_bits_offset,
-                                    LETTERGP_VOWEL2,
-                                ) {
+                                if ctx.is_letter(lw2, LETTERGP_VOWEL2) {
                                     failed = 1;
                                     break;
                                 }
@@ -1086,7 +1068,9 @@ pub fn match_rule(
                 if match_.points >= best.points {
                     if std::env::var("ESPEAK_DEBUG_RULES").is_ok() {
                         let ph_off = match_.phonemes_offset;
-                        let rule_end = rules.get(_rule_start..).unwrap_or_default()
+                        let rule_end = rules
+                            .get(_rule_start..)
+                            .unwrap_or_default()
                             .iter()
                             .position(|&b| b == 0)
                             .map(|rel| _rule_start + rel)
@@ -1110,7 +1094,9 @@ pub fn match_rule(
                 // exactly where C's `option_phonemes & espeakPHONEMES_TRACE`
                 // block sits.
                 if trace_enabled() && match_.points > 0 {
-                    let rule_end = rules.get(_rule_start..).unwrap_or_default()
+                    let rule_end = rules
+                        .get(_rule_start..)
+                        .unwrap_or_default()
                         .iter()
                         .position(|&b| b == 0)
                         .map(|rel| _rule_start + rel)
@@ -1119,7 +1105,10 @@ pub fn match_rule(
                         Vec::new()
                     } else {
                         let start = match_.phonemes_offset;
-                        let end = dict.data.get(start..).unwrap_or_default()
+                        let end = dict
+                            .data
+                            .get(start..)
+                            .unwrap_or_default()
                             .iter()
                             .position(|&b| b == 0)
                             .map(|rel| start + rel)
@@ -1292,6 +1281,9 @@ pub fn translate_rules_ext(
 
     let rules_abs_base = dict.rules_offset;
 
+    let mut group2_miss = false;
+    // C's `any_alpha`: the letters met so far, this one included.
+    let mut any_alpha = 0usize;
     while pos < word_buf.len() {
         let c = word_buf.at(pos);
         if c == 0 || c == b' ' {
@@ -1299,6 +1291,17 @@ pub fn translate_rules_ext(
         }
 
         let (wc, wc_bytes) = utf8_decode(word_buf, pos);
+        if is_alpha(wc) {
+            any_alpha += 1;
+        }
+        // C spells the word for an unknown letter when it isn't the first
+        // letter, or when an ASCII character follows it: its test
+        // `p[wc_bytes-1] > ' '` is on a signed `char`, so a UTF-8 byte after
+        // it never passes (Russian reads `његов`, skipping the `њ`).
+        let spell_here = any_alpha > 1
+            || word_buf
+                .get(pos + wc_bytes + 1)
+                .is_some_and(|&b| b > b' ' && b < 0x80);
 
         // ── groups3 lookup (multi-byte / non-Latin scripts) ───────────────
         //
@@ -1310,6 +1313,19 @@ pub fn translate_rules_ext(
         //   c2 = (wc - letter_bits_offset) + 1  (1-indexed)
         // so  groups3[c2 - 1] = groups3[wc - letter_bits_offset].
         let mut found = false;
+        // A `groups3` group exists for this letter, whether or not a rule in
+        // it matched (Russian `ь` before a consonant isn't spelled; Shan's
+        // visarga, in a two-byte group, is).
+        let mut in_group = false;
+        // Found through a two-byte group (C's `groups2`).
+        let mut in_group2 = false;
+        // After a letter its two-byte group had no rule for, C's scan is no
+        // longer at a character boundary, and the next letter it meets marks
+        // the word to be spelled: Shan `းမူၺ` is spelled, though `း` alone
+        // is read.
+        if std::mem::take(&mut group2_miss) && is_alpha(wc) && spell_here {
+            spellword = true;
+        }
         let mut match1 = MatchRecord::empty_best();
         let mut next_pos1 = pos + 1;
 
@@ -1335,9 +1351,10 @@ pub fn translate_rules_ext(
             if g3_idx < 128 {
                 let c2 = (g3_idx + 1) as u8; // c2 used for groups3[c2-1]
                 if let Some(g3_rules) = dict.group3(c2) {
+                    in_group = true;
                     let g3_abs = dict.groups.groups3.at(g3_idx).unwrap_or(0);
                     // Use total bytes (group_length_total) to match C's group_length
-                    let ctx = make_ctx(
+                    let mut ctx = make_ctx(
                         word_buf,
                         pos,
                         word_start,
@@ -1350,6 +1367,8 @@ pub fn translate_rules_ext(
                         *word_vowel_count,
                         *word_stressed_count,
                     );
+                    ctx.suffix_option = suffix_option(&dict.lang);
+                    ctx.letter_lists = letter_lists(&dict.lang);
                     let mut np = pos;
                     match1 = match_rule(dict, &ctx, g3_rules, g3_abs, &mut np);
                     next_pos1 = np;
@@ -1369,8 +1388,9 @@ pub fn translate_rules_ext(
             for g in g1..g_end {
                 if let Some(entry) = dict.groups.groups2.get(g).filter(|e| e.key == key) {
                     found = true;
+                    in_group2 = true;
                     let g2_rules = dict.data.get(entry.offset..).unwrap_or_default();
-                    let ctx2 = make_ctx(
+                    let mut ctx2 = make_ctx(
                         word_buf,
                         pos,
                         word_start,
@@ -1383,6 +1403,8 @@ pub fn translate_rules_ext(
                         *word_vowel_count,
                         *word_stressed_count,
                     );
+                    ctx2.suffix_option = suffix_option(&dict.lang);
+                    ctx2.letter_lists = letter_lists(&dict.lang);
                     let mut np2 = pos;
                     let mut m2 = match_rule(dict, &ctx2, g2_rules, entry.offset, &mut np2);
                     if m2.points > 0 {
@@ -1390,7 +1412,7 @@ pub fn translate_rules_ext(
                     }
 
                     // Also try single-letter chain
-                    let ctx1 = make_ctx(
+                    let mut ctx1 = make_ctx(
                         word_buf,
                         pos,
                         word_start,
@@ -1403,6 +1425,8 @@ pub fn translate_rules_ext(
                         *word_vowel_count,
                         *word_stressed_count,
                     );
+                    ctx1.suffix_option = suffix_option(&dict.lang);
+                    ctx1.letter_lists = letter_lists(&dict.lang);
                     if let Some(g1_rules) = dict.group1(c) {
                         let g1_abs = dict.groups.groups1.at(c as usize).unwrap_or(rules_abs_base);
                         let mut np1 = pos;
@@ -1423,7 +1447,7 @@ pub fn translate_rules_ext(
             // Single-letter chain
             if let Some(g1_rules) = dict.group1(c) {
                 let g1_abs = dict.groups.groups1.at(c as usize).unwrap_or(rules_abs_base);
-                let ctx = make_ctx(
+                let mut ctx = make_ctx(
                     word_buf,
                     pos,
                     word_start,
@@ -1436,6 +1460,8 @@ pub fn translate_rules_ext(
                     *word_vowel_count,
                     *word_stressed_count,
                 );
+                ctx.suffix_option = suffix_option(&dict.lang);
+                ctx.letter_lists = letter_lists(&dict.lang);
                 let mut np = pos;
                 match1 = match_rule(dict, &ctx, g1_rules, g1_abs, &mut np);
                 next_pos1 = np;
@@ -1443,7 +1469,7 @@ pub fn translate_rules_ext(
                 // Default group
                 if let Some(def_rules) = dict.group1(0) {
                     let def_abs = dict.groups.groups1[0].unwrap_or(rules_abs_base);
-                    let ctx = make_ctx(
+                    let mut ctx = make_ctx(
                         word_buf,
                         pos,
                         word_start,
@@ -1456,6 +1482,8 @@ pub fn translate_rules_ext(
                         *word_vowel_count,
                         *word_stressed_count,
                     );
+                    ctx.suffix_option = suffix_option(&dict.lang);
+                    ctx.letter_lists = letter_lists(&dict.lang);
                     let mut np = pos;
                     match1 = match_rule(dict, &ctx, def_rules, def_abs, &mut np);
                     next_pos1 = np;
@@ -1472,17 +1500,24 @@ pub fn translate_rules_ext(
                 // longer one (`№` is E2 84 96) the bytes decode as a bogus
                 // letter (U+0116 Ė), which would turn "№" into "e".
                 let at_lead = wc_bytes == 1 && (0xc0..0xe0).contains(&word_buf.at(pos));
-                if match1.points == 0 && at_lead && (0xc0..0xc0 + REMOVE_ACCENT.len() as u32).contains(&wc) {
+                if match1.points == 0
+                    && at_lead
+                    && (0xc0..0xc0 + REMOVE_ACCENT.len() as u32).contains(&wc)
+                {
                     let base = REMOVE_ACCENT.at((wc - 0xc0) as usize);
                     let n = wc_bytes + 1; // the letter's length in bytes
-                    let before_space = pos == word_start || word_buf.get(pos.wrapping_sub(1)).is_none_or(|b| *b == b' ');
+                    let before_space = pos == word_start
+                        || word_buf.get(pos.wrapping_sub(1)).is_none_or(|b| *b == b' ');
                     let after_space = word_buf.get(pos + n).is_none_or(|b| *b == b' ' || *b == 0);
                     if base != 0 && !(before_space && after_space) {
                         // The base letter in its place, the rest moved up, and
                         // spaces where the extra bytes were: the replacement is
                         // never longer than the original.
                         let mut end = pos + n;
-                        while end < word_buf.len() && word_buf.at(end) != b' ' && word_buf.at(end) != 0 {
+                        while end < word_buf.len()
+                            && word_buf.at(end) != b' '
+                            && word_buf.at(end) != 0
+                        {
                             end += 1;
                         }
                         let mut rewritten = word_buf.to_vec();
@@ -1516,13 +1551,45 @@ pub fn translate_rules_ext(
                     // rules don't cover.  Abandoning the word here dropped the
                     // whole thing, and under a *switching* voice left the bare
                     // `phonSWITCH` marker behind (upstream #2555).
-                    spellword = true;
+                    if spell_here {
+                        spellword = true;
+                    }
                     pos += wc_bytes + 1;
                     continue;
                 }
             }
         }
 
+        // A letter the first-byte and default groups have no rule for: C flags
+        // the word to be spelled (`FLAG_SPELLWORD`).  Not a lone letter, nor a
+        // combining accent, nor one with a group of its own (`groups3`:
+        // Russian `ь`) or a two-byte group (above).
+        if match1.points == 0 && in_group2 && is_alpha(wc) {
+            group2_miss = true;
+        }
+        if match1.points == 0
+            && !in_group
+            && !in_group2
+            && is_alpha(wc)
+            && !(0x300..=0x36f).contains(&wc)
+        {
+            if spell_here {
+                spellword = true;
+            }
+        }
+
+        if word_flags & FLAG_UNPRON_TEST != 0 {
+            // C's test is decided by the first letter: a rule that matches it
+            // returns `match1.end_type | 1`, and none spells the word.
+            return RulesResult {
+                end_type: if match1.points > 0 {
+                    match1.end_type | 1
+                } else {
+                    0
+                },
+                ..RulesResult::default()
+            };
+        }
         if match1.points > 0 {
             // Append phonemes from best match
             if match1.phonemes_offset != MatchRecord::NONE {
@@ -1540,7 +1607,8 @@ pub fn translate_rules_ext(
                 // (`de Copyright` → `k'o:py:r_^_t`).
                 if dict.data.at(ph_start) == crate::phoneme::PHON_SWITCH {
                     out_phonemes.clear();
-                    out_phonemes.extend_from_slice(dict.data.get(ph_start..ph_end).unwrap_or_default());
+                    out_phonemes
+                        .extend_from_slice(dict.data.get(ph_start..ph_end).unwrap_or_default());
                     out_end_phonemes.clear();
                     out_end_type = 0;
                     out_suffix_start = 0;
@@ -1587,7 +1655,8 @@ pub fn translate_rules_ext(
                 {
                     out_stem_ph_len = before_len;
                     out_end_phonemes.clear();
-                    out_end_phonemes.extend_from_slice(out_phonemes.get(before_len..).unwrap_or_default());
+                    out_end_phonemes
+                        .extend_from_slice(out_phonemes.get(before_len..).unwrap_or_default());
                 }
             }
             if match1.end_type != 0 && want_ending {
@@ -1609,8 +1678,9 @@ pub fn translate_rules_ext(
 
         // Advance position.
 
-        // Advance
-        if next_pos1 <= pos {
+        // Advance (past just this character when no rule matched: a failed
+        // match can leave `next_pos1` inside the next word).
+        if next_pos1 <= pos || match1.points == 0 {
             // Avoid infinite loop
             let (_, adv) = utf8_decode(word_buf, pos);
             pos += adv + 1;
@@ -1667,7 +1737,42 @@ fn make_ctx<'a>(
         unpron_test: word_flags & FLAG_UNPRON_TEST != 0,
         expect_verb: false,
         suffix_option: 0,
+        letter_lists: [None; 8],
     }
+}
+
+/// `tr->letter_groups`: the letters a language lists for a group itself.
+fn letter_lists(lang: &str) -> [Option<&'static [u32]>; 8] {
+    const VOWELS_VI: &[u32] = &[
+        0x61, 0xe0, 0xe1, 0x1ea3, 0xe3, 0x1ea1, 0x103, 0x1eb1, 0x1eaf, 0x1eb3, 0x1eb5, 0x1eb7,
+        0xe2, 0x1ea7, 0x1ea5, 0x1ea9, 0x1eab, 0x1ead, 0x65, 0xe8, 0xe9, 0x1ebb, 0x1ebd, 0x1eb9,
+        0xea, 0x1ec1, 0x1ebf, 0x1ec3, 0x1ec5, 0x1ec7, 0x69, 0xec, 0xed, 0x1ec9, 0x129, 0x1ecb,
+        0x6f, 0xf2, 0xf3, 0x1ecf, 0xf5, 0x1ecd, 0xf4, 0x1ed3, 0x1ed1, 0x1ed5, 0x1ed7, 0x1ed9,
+        0x1a1, 0x1edd, 0x1edb, 0x1edf, 0x1ee1, 0x1ee3, 0x75, 0xf9, 0xfa, 0x1ee7, 0x169, 0x1ee5,
+        0x1b0, 0x1eeb, 0x1ee9, 0x1eed, 0x1eef, 0x1ef1, 0x79, 0x1ef3, 0xfd, 0x1ef7, 0x1ef9, 0x1ef5,
+    ];
+    // Macedonian (and `р`, which can be syllabic).
+    const VOWELS_MK: &[u32] = &[
+        0x440, 0x430, 0x435, 0x438, 0x439, 0x43e, 0x443, 0x44b, 0x44d, 0x44e, 0x44f, 0x450, 0x451,
+        0x456, 0x457, 0x45d, 0x45e,
+    ];
+    // Icelandic voiceless consonants.
+    const GROUP_B_IS: &[u32] = &[0x63, 0x66, 0x68, 0x6b, 0x70, 0x74, 0x78, 0xfe];
+    let mut lists = [None; 8];
+    match lang.split(['-', '_']).next().unwrap_or(lang) {
+        "vi" => (lists[0], lists[7]) = (Some(VOWELS_VI), Some(VOWELS_VI)),
+        "mk" => (lists[0], lists[7]) = (Some(VOWELS_MK), Some(VOWELS_MK)),
+        "is" => lists[1] = Some(GROUP_B_IS),
+        _ => {}
+    }
+    lists
+}
+
+/// `langopts.param[LOPT_SUFFIX]`: bit 0 keeps a suffix rule from matching a
+/// word with no vowel before it.
+fn suffix_option(lang: &str) -> u32 {
+    let lang = lang.split(['-', '_']).next().unwrap_or(lang);
+    u32::from(matches!(lang, "az" | "eu" | "kk" | "mn" | "tr"))
 }
 
 /// Decode a UTF-8 codepoint starting at `buf[pos]`.
@@ -1993,6 +2098,15 @@ pub fn decode_dict_flags(flags: [u32; 2]) -> String {
             out.push_str(name);
         }
     }
+    out
+}
+
+/// Run `f` without recording into the trace: a translation C doesn't trace
+/// (checking whether the rules can read a word at all).
+pub fn untraced<T>(f: impl FnOnce() -> T) -> T {
+    let saved = TRACE.with(|t| t.borrow_mut().take());
+    let out = f();
+    TRACE.with(|t| *t.borrow_mut() = saved);
     out
 }
 

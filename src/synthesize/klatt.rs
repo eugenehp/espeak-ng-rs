@@ -463,22 +463,22 @@ static NATURAL_SAMPLES: [i16; 100] = [
 ];
 
 static NATURAL_SAMPLES2: [i16; 256] = [
-    2583, 2516, 2450, 2384, 2319, 2254, 2191, 2127, 2067, 2005, 1946, 1890, 1832, 1779, 1726,
-    1675, 1626, 1579, 1533, 1491, 1449, 1409, 1372, 1336, 1302, 1271, 1239, 1211, 1184, 1158,
-    1134, 1111, 1089, 1069, 1049, 1031, 1013, 996, 980, 965, 950, 936, 921, 909, 895, 881, 869,
-    855, 843, 830, 818, 804, 792, 779, 766, 754, 740, 728, 715, 702, 689, 676, 663, 651, 637, 626,
-    612, 601, 588, 576, 564, 552, 540, 530, 517, 507, 496, 485, 475, 464, 454, 443, 434, 424, 414,
-    404, 394, 385, 375, 366, 355, 347, 336, 328, 317, 308, 299, 288, 280, 269, 260, 250, 240, 231,
-    220, 212, 200, 192, 181, 172, 161, 152, 142, 133, 123, 113, 105, 94, 86, 76, 67, 57, 49, 39,
-    30, 22, 11, 4, -5, -14, -23, -32, -41, -50, -60, -69, -78, -87, -96, -107, -115, -126, -134,
-    -144, -154, -164, -174, -183, -193, -203, -213, -222, -233, -242, -252, -262, -271, -281,
-    -291, -301, -310, -320, -330, -339, -349, -357, -368, -377, -387, -397, -406, -417, -426,
-    -436, -446, -456, -467, -477, -487, -499, -509, -521, -532, -543, -555, -567, -579, -591,
-    -603, -616, -628, -641, -653, -666, -679, -692, -705, -717, -732, -743, -758, -769, -783,
-    -795, -808, -820, -834, -845, -860, -872, -885, -898, -911, -926, -939, -955, -968, -986,
-    -999, -1018, -1034, -1054, -1072, -1094, -1115, -1138, -1162, -1188, -1215, -1244, -1274,
-    -1307, -1340, -1377, -1415, -1453, -1496, -1538, -1584, -1631, -1680, -1732, -1783, -1839,
-    -1894, -1952, -2010, -2072, -2133, -2196, -2260, -2325, -2390, -2456, -2522, -2589,
+    2583, 2516, 2450, 2384, 2319, 2254, 2191, 2127, 2067, 2005, 1946, 1890, 1832, 1779, 1726, 1675,
+    1626, 1579, 1533, 1491, 1449, 1409, 1372, 1336, 1302, 1271, 1239, 1211, 1184, 1158, 1134, 1111,
+    1089, 1069, 1049, 1031, 1013, 996, 980, 965, 950, 936, 921, 909, 895, 881, 869, 855, 843, 830,
+    818, 804, 792, 779, 766, 754, 740, 728, 715, 702, 689, 676, 663, 651, 637, 626, 612, 601, 588,
+    576, 564, 552, 540, 530, 517, 507, 496, 485, 475, 464, 454, 443, 434, 424, 414, 404, 394, 385,
+    375, 366, 355, 347, 336, 328, 317, 308, 299, 288, 280, 269, 260, 250, 240, 231, 220, 212, 200,
+    192, 181, 172, 161, 152, 142, 133, 123, 113, 105, 94, 86, 76, 67, 57, 49, 39, 30, 22, 11, 4,
+    -5, -14, -23, -32, -41, -50, -60, -69, -78, -87, -96, -107, -115, -126, -134, -144, -154, -164,
+    -174, -183, -193, -203, -213, -222, -233, -242, -252, -262, -271, -281, -291, -301, -310, -320,
+    -330, -339, -349, -357, -368, -377, -387, -397, -406, -417, -426, -436, -446, -456, -467, -477,
+    -487, -499, -509, -521, -532, -543, -555, -567, -579, -591, -603, -616, -628, -641, -653, -666,
+    -679, -692, -705, -717, -732, -743, -758, -769, -783, -795, -808, -820, -834, -845, -860, -872,
+    -885, -898, -911, -926, -939, -955, -968, -986, -999, -1018, -1034, -1054, -1072, -1094, -1115,
+    -1138, -1162, -1188, -1215, -1244, -1274, -1307, -1340, -1377, -1415, -1453, -1496, -1538,
+    -1584, -1631, -1680, -1732, -1783, -1839, -1894, -1952, -2010, -2072, -2133, -2196, -2260,
+    -2325, -2390, -2456, -2522, -2589,
 ];
 
 /// `DBtoLIN` — a dB value in 0..=87 to a linear amplitude.
@@ -680,7 +680,10 @@ impl Klatt {
     }
 
     /// `setabc` at the synthesizer's own sample rate.
-    #[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "indices are bounded by the loops over these lists"
+    )]
     fn set_abc(&mut self, ix: usize, f: i32, bw: i32) {
         let r = (self.minus_pi_t * bw as f64).exp();
         self.rsn[ix].c = -(r * r);
@@ -694,7 +697,10 @@ impl Klatt {
     }
 
     /// `setzeroabc` — an ordinary resonator at `-f`, then inverted.
-    #[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "indices are bounded by the loops over these lists"
+    )]
     fn set_zero_abc(&mut self, ix: usize, f: i32, bw: i32) {
         self.set_abc(ix, -f, bw);
         let r = &mut self.rsn[ix];
@@ -708,7 +714,10 @@ impl Klatt {
     }
 
     /// `frame_init` — derive per-block amplitudes and resonator coefficients.
-    #[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "indices are bounded by the loops over these lists"
+    )]
     fn frame_init(&mut self, frame: &mut KtFrame) {
         const AMP_PAR_FACTOR: [f64; 7] = [0.6, 0.4, 0.15, 0.06, 0.04, 0.022, 0.03];
 
@@ -1023,7 +1032,10 @@ const N_KLATTP: usize = 10;
 ///     `amp_voice == DBtoLIN(-7) == 0`).  Here such a frame falls back to the
 ///     `KlattInit` defaults and the frame's own `rms`, so a Klatt voice with
 ///     non-Klatt phoneme data still speaks.
-#[expect(clippy::indexing_slicing, reason = "indices are bounded by the loops over these lists")]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "indices are bounded by the loops over these lists"
+)]
 pub fn synthesize_frames_klatt(
     frames: &[super::phondata::SpectFrame],
     amps: &[f64],
@@ -1069,21 +1081,27 @@ pub fn synthesize_frames_klatt(
             } else {
                 klattp.put(ix, fr.klattp.at(ix) as i32);
                 klattp1.put(ix, klattp.at(ix) as f64);
-                klattp_inc.put(ix, (next.klattp.at(ix) as i32 - klattp.at(ix)) as f64 * step_over_len);
+                klattp_inc.put(
+                    ix,
+                    (next.klattp.at(ix) as i32 - klattp.at(ix)) as f64 * step_over_len,
+                );
             }
         }
 
         for ix in 1..6 {
             peaks[ix].freq1 = scale.freq(ix, fr.ffreq.at(ix)) as f64 / 256.0;
             peaks[ix].freq = peaks.at(ix).freq1 as i32;
-            peaks[ix].freq_inc = (scale.freq(ix, next.ffreq.at(ix)) as f64 / 256.0 - peaks.at(ix).freq1) * step_over_len;
+            peaks[ix].freq_inc = (scale.freq(ix, next.ffreq.at(ix)) as f64 / 256.0
+                - peaks.at(ix).freq1)
+                * step_over_len;
 
             if ix < 4 {
                 // Klatt bandwidth for F1..F3; the rest are fixed.
                 let width = f64::from(scale.width.at(ix)) / 256.0;
                 peaks[ix].bw1 = fr.bw.at(ix) as f64 * 2.0 * width;
                 peaks[ix].bw = peaks.at(ix).bw1 as i32;
-                peaks[ix].bw_inc = (next.bw.at(ix) as f64 * 2.0 * width - peaks.at(ix).bw1) * step_over_len;
+                peaks[ix].bw_inc =
+                    (next.bw.at(ix) as f64 * 2.0 * width - peaks.at(ix).bw1) * step_over_len;
             }
         }
 
@@ -1107,7 +1125,8 @@ pub fn synthesize_frames_klatt(
             for ix in 1..7 {
                 peaks[ix].bp1 = fr.klatt_bp.at(ix) as f64 * 4.0;
                 peaks[ix].bp = peaks.at(ix).bp1 as i32;
-                peaks[ix].bp_inc = (next.klatt_bp.at(ix) as f64 * 4.0 - peaks.at(ix).bp1) * step_over_len;
+                peaks[ix].bp_inc =
+                    (next.klatt_bp.at(ix) as f64 * 4.0 - peaks.at(ix).bp1) * step_over_len;
 
                 peaks[ix].ap1 = fr.klatt_ap.at(ix) as f64;
                 peaks[ix].ap = peaks.at(ix).ap1 as i32;

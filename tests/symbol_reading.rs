@@ -76,29 +76,10 @@ fn math_and_degree_symbols_are_spoken() {
         t.text_to_ipa("x≤5").unwrap().contains("ɔːɹ ˈiːkwəl"),
         "≤ → less than or equal"
     );
-    // Temperature symbols (multi-word readings).
-    let cel = t.text_to_ipa("20℃").unwrap();
-    assert!(
-        cel.contains("dɪɡɹˈiːz") && cel.contains("sˈɛlsɪəs"),
-        "℃ → degrees celsius: {cel}"
-    );
-    let fah = t.text_to_ipa("72℉").unwrap();
-    assert!(
-        fah.contains("dɪɡɹˈiːz") && fah.contains("fˈaɹənhˌaɪt"),
-        "℉ → degrees fahrenheit: {fah}"
-    );
-    // The two-character forms °C / °F read the same as the single-char ℃ / ℉
-    // (the trailing letter is the scale, not a stray "see"/"eff").
-    assert_eq!(
-        t.text_to_ipa("20°C").unwrap(),
-        t.text_to_ipa("20℃").unwrap(),
-        "°C == ℃"
-    );
-    assert_eq!(
-        t.text_to_ipa("72°F").unwrap(),
-        t.text_to_ipa("72℉").unwrap(),
-        "°F == ℉"
-    );
+    // The single-character temperature signs have no English reading in
+    // the data, so upstream says nothing for them.
+    assert_eq!(t.text_to_ipa("20℃").unwrap(), "twˈɛnti");
+    assert_eq!(t.text_to_ipa("72℉").unwrap(), "sˈɛvənti tˈuː");
     // A bare degree (an angle) stays just "degrees".
     let ang = t.text_to_ipa("90°").unwrap();
     assert!(
@@ -122,54 +103,39 @@ fn math_and_degree_symbols_are_spoken() {
         t.text_to_ipa("Windows®").unwrap().contains("ɹˈɛdʒɪstəd"),
         "® → registered"
     );
-    // Per-mille / per-ten-thousand (previously dropped).
-    assert_eq!(
-        t.text_to_ipa("5‰").unwrap(),
-        t.text_to_ipa("5 per thousand").unwrap(),
-        "‰"
-    );
-    assert_eq!(
-        t.text_to_ipa("50‱").unwrap(),
-        t.text_to_ipa("50 per ten thousand").unwrap(),
-        "‱"
-    );
+    // Per-mille / per-ten-thousand: no reading in the data, silent upstream.
+    assert_eq!(t.text_to_ipa("5‰").unwrap(), "fˈaɪv");
+    assert_eq!(t.text_to_ipa("50‱").unwrap(), "fˈɪfti");
 }
 
 #[test]
 fn arithmetic_and_degree_symbols_read_in_other_languages() {
-    // Previously `+ − °` fell to the dictionary character-name spell-out for
-    // non-English voices, which produced garbage letters (German `+` →
-    // "ˈɪːɜˌaʊɐ", `°` → "r.ˈʊʑç").  Now they read the proper word — the one the
-    // language's own `*_emoji` data gives, so all but the `es ×` case below
-    // (upstream drops that one) are byte-identical to upstream.
+    // Byte-identical to upstream (a C build of the same data) for each case;
+    // where C's data has no reading the symbol is silent.
     let cases: &[(&str, &str, &str)] = &[
-        ("de", "5+3", "plˈʊs"),          // plus
-        ("de", "5−2", "mˈiːnʊs"),        // minus
-        ("de", "20°", "ɡɾˈɑːt"),         // grad
-        ("fr", "5+3", "plˈys"),          // plus
-        ("fr", "20°", "dəɡʁ"),           // degrés
-        ("es", "5+3", "mˈas"),           // más
-        ("es", "20°", "ɣɾˈaðos"),        // grados
-        ("it", "20°", "ɡrˈaːdɪ"),        // gradi (the dictionary's own reading)
-        ("nl", "20°", "ɣrˈaːdən"),       // graden (long vowel: the plural restores it)
-        ("de", "5×3", "mˈɑːl"),          // mal (times)
-        ("fr", "5×3", "myltipliˈepˈaʁ"), // multiplié par (fr_emoji; "fois" was the hardcoded table)
-        ("es", "5×3", "poɾ"),            // por
-        ("de", "6÷2", "ɡətˈaɪlt"),       // geteilt durch
-        ("fr", "6÷2", "divizˈe"),        // divisé par
-        ("ru", "50%", "prʌtsˈɛnt"),      // процент (was garbage "f")
-        ("bg", "50%", "protsˈent"),
+        ("de", "5+3", "fˈʏnf plˈʊs dɾˈaɪ"),
+        ("de", "5−2", "fˈʏnf mˈiːnʊs tsvˈaɪ"),
+        ("de", "20°", "tsvˈantsɪç ɡɾˈɑːt"),
+        ("fr", "5+3", "sˈɛ̃k plˈys tʁwˈa"),
+        ("fr", "20°", "vˈɛ̃ dəɡʁˈe"),
+        ("es", "5+3", "θˈinko mˈas tɾˈes"),
+        ("es", "20°", "bˈeɪnte ɣɾˈaðos"),
+        ("it", "20°", "vˈentɪ ɡrˈaːdɪ"),
+        ("nl", "20°", "tʋˈɪntəx ɣrˈaːdən"),
+        ("de", "5×3", "fˈʏnf mˈɑːl dɾˈaɪ"),
+        ("fr", "5×3", "sˈɛ̃k myltipliˈepˈaʁ tʁwˈa"),
+        ("es", "5×3", "θˈinko tɾˈes"),
+        ("de", "6÷2", "zˈɛks ɡətˈaɪlt dʊɐç tsvˈaɪ"),
+        ("fr", "6÷2", "sˈi divizˈepˈaʁ dˈø"),
+        ("ru", "50%", "pʲʌdʲdʲɪsʲˈjat prʌtsˈɛnt"),
+        ("bg", "50%", "pˌeddesˈet protsˈent"),
     ];
     for (lang, text, want) in cases {
         let Some(t) = Translator::new(lang, None).ok() else {
             eprintln!("[SKIP] no {lang} data");
             continue;
         };
-        let ipa = t.text_to_ipa(text).unwrap();
-        assert!(
-            ipa.contains(want),
-            "{lang} {text:?} → want {want:?}, got {ipa:?}"
-        );
+        assert_eq!(t.text_to_ipa(text).unwrap(), *want, "{lang} {text:?}");
     }
 }
 
@@ -194,213 +160,6 @@ fn currency_symbols_are_read_in_place() {
         };
         assert_eq!(&t.text_to_ipa(text).unwrap(), want, "{lang} {text}");
     }
-}
-
-#[test]
-fn stylized_letters_normalize_to_ascii() {
-    let Some(t) = en() else {
-        eprintln!("[SKIP] no en data");
-        return;
-    };
-    let ipa = |s: &str| t.text_to_ipa(s).unwrap();
-    let hello = ipa("Hello");
-    // Every mathematical / circled style of "Hello" reads the same as plain ASCII.
-    for styled in ["𝐇𝐞𝐥𝐥𝐨", "𝐻𝑒𝑙𝑙𝑜", "𝓗𝓮𝓵𝓵𝓸", "𝕳𝖊𝖑𝖑𝖔", "𝙷𝚎𝚕𝚕𝚘", "Ⓗⓔⓛⓛⓞ"]
-    {
-        assert_eq!(ipa(styled), hello, "{styled} should read as Hello");
-    }
-    // Stylized digits normalise too.
-    assert_eq!(ipa("𝟏𝟐𝟑"), ipa("123"), "bold digits → 123");
-}
-
-#[test]
-fn no_abbreviation_reads_number() {
-    let Some(t) = en() else {
-        eprintln!("[SKIP] no en data");
-        return;
-    };
-    let ipa = |s: &str| t.text_to_ipa(s).unwrap();
-    // "No." before a number reads "number" (a port convenience; the `№` sign
-    // instead reads "numero", matching espeak-ng — the two are not the same).
-    assert_eq!(ipa("No. 5"), ipa("number 5"), "No. 5 → number 5");
-    assert_eq!(ipa("issue No. 42"), ipa("issue number 42"));
-    // The word "no" is left alone when no number follows.
-    assert!(ipa("No way").contains("nˈəʊ"), "No way stays 'no'");
-    assert!(
-        ipa("No. I refuse").contains("nˈəʊ"),
-        "No. I refuse stays 'no'"
-    );
-}
-
-#[test]
-fn dimension_x_reads_by() {
-    let Some(t) = en() else {
-        eprintln!("[SKIP] no en data");
-        return;
-    };
-    let ipa = |s: &str| t.text_to_ipa(s).unwrap();
-    // A lowercase x between two numbers is a dimension: "8x10" → "eight by ten".
-    for (dim, spelled) in [("8x10", "8 by 10"), ("2x4", "2 by 4"), ("5 x 7", "5 by 7")] {
-        assert_eq!(ipa(dim), ipa(spelled), "{dim} → {spelled}");
-    }
-    // With no number after the x (algebra, multipliers) it stays the letter.
-    assert!(
-        ipa("2x=4").contains("ˈɛks"),
-        "2x= stays letter x: {}",
-        ipa("2x=4")
-    );
-    assert!(
-        ipa("3x faster").contains("ˈɛks"),
-        "3x faster stays letter x"
-    );
-    // A `0` side means it's not a dimension (hex literal `0x1F`).
-    assert!(
-        ipa("0x1F").contains("ˈɛks"),
-        "0x1F stays letter x (hex): {}",
-        ipa("0x1F")
-    );
-}
-
-#[test]
-fn common_abbreviations_expand() {
-    let Some(t) = en() else {
-        eprintln!("[SKIP] no en data");
-        return;
-    };
-    let ipa = |s: &str| t.text_to_ipa(s).unwrap();
-    // Abbreviations that otherwise read as unpronounceable clusters expand to the
-    // full word (case-insensitive, period-tolerant).
-    let cases: &[(&str, &str)] = &[
-        ("vs", "versus"),
-        ("govt", "government"),
-        ("Blvd", "boulevard"),
-        ("Sgt", "sergeant"),
-        ("Rd", "road"),
-        ("Prof", "professor"),
-        ("approx", "approximately"),
-    ];
-    for (abbr, word) in cases {
-        assert_eq!(ipa(abbr), ipa(word), "{abbr} should expand to {word}");
-    }
-    // Ordinals ending in "rd" are NOT the abbreviation (3rd = "third", not "road").
-    assert!(
-        ipa("3rd").contains("θˈɜːd"),
-        "3rd stays third: {}",
-        ipa("3rd")
-    );
-    // A real word matching nothing is untouched.
-    assert!(ipa("road").contains("ɹˈəʊd"), "road unchanged");
-}
-
-#[test]
-fn superscript_powers_read_squared_cubed() {
-    let Some(t) = en() else {
-        eprintln!("[SKIP] no en data");
-        return;
-    };
-    let ipa = |s: &str| t.text_to_ipa(s).unwrap();
-    // Superscript ² / ³ are powers, not the digit "two"/"three".
-    assert_eq!(ipa("5²"), ipa("5 squared"), "5² → five squared");
-    assert_eq!(ipa("x³"), ipa("x cubed"), "x³ → x cubed");
-    assert_eq!(ipa("E=mc²"), ipa("E = mc squared"), "E=mc² → …mc squared");
-    // Subscripts stay digits (chemical formulae): H₂O → "H two O".
-    assert!(
-        ipa("H₂O").contains("tˈuː"),
-        "H₂O keeps the digit: {}",
-        ipa("H₂O")
-    );
-    assert!(!ipa("H₂O").contains("skwˈeəd"), "H₂O is not 'squared'");
-}
-
-#[test]
-fn unit_abbreviations_are_spelled_out() {
-    let Some(t) = en() else {
-        eprintln!("[SKIP] no en data");
-        return;
-    };
-    let ipa = |s: &str| t.text_to_ipa(s).unwrap();
-    // A unit after a number reads as the full word (British spelling), pluralised
-    // unless the amount is one.  The abbreviation may abut the number or not.
-    let cases: &[(&str, &str)] = &[
-        ("5km", "5 kilometres"),
-        ("1km", "1 kilometre"), // singular
-        ("10 kg", "10 kilograms"),
-        ("500ml", "500 millilitres"),
-        ("20MB", "20 megabytes"),
-        ("100Hz", "100 hertz"), // invariant plural
-        ("2.5km", "2.5 kilometres"),
-    ];
-    for (abbr, spelled) in cases {
-        assert_eq!(ipa(abbr), ipa(spelled), "{abbr} should read as {spelled}");
-    }
-    // A non-unit word after a number, or a unit with no number, is untouched.
-    assert!(ipa("5 cats").contains("kˈats"), "5 cats unchanged");
-    // A bare "km" has no vowel, so it is spelled out ("kay em") — upstream reads
-    // it the same way.
-    assert_eq!(ipa("km"), "kˌeɪˈɛm", "bare km is spelled");
-}
-
-#[test]
-fn units_in_other_languages() {
-    // The metric units read in the language's own words (de Kilometer, fr
-    // kilomètres, es kilómetros, it chilometri).
-    let cases: &[(&str, &str, &str)] = &[
-        ("de", "5km", "5 kilometer"),
-        ("de", "10kg", "10 kilogramm"),
-        ("fr", "5km", "5 kilomètres"),
-        ("fr", "1km", "1 kilomètre"),
-        ("es", "5km", "5 kilómetros"),
-        ("it", "5km", "5 chilometri"),
-    ];
-    for (lang, abbr, spelled) in cases {
-        let Some(t) = Translator::new(lang, None).ok() else {
-            eprintln!("[SKIP] no {lang} data");
-            continue;
-        };
-        assert_eq!(
-            t.text_to_ipa(abbr).unwrap(),
-            t.text_to_ipa(spelled).unwrap(),
-            "{lang} {abbr} → {spelled}"
-        );
-    }
-}
-
-#[test]
-fn decades_read_as_plurals() {
-    let Some(t) = en() else {
-        eprintln!("[SKIP] no en data");
-        return;
-    };
-    let ipa = |s: &str| t.text_to_ipa(s).unwrap();
-    // "1980s" used to read "…eighty ess"; now it's a spoken decade.
-    let cases: &[(&str, &str)] = &[
-        ("1980s", "nineteen eighties"),
-        ("1990s", "nineteen nineties"),
-        ("1900s", "nineteen hundreds"),
-        ("1850s", "eighteen fifties"),
-        ("80s", "eighties"),
-        ("90s", "nineties"),
-        ("20s", "twenties"),
-        // The possessive-apostrophe spelling is also a decade.
-        ("1990's", "nineteen nineties"),
-        ("80's", "eighties"),
-    ];
-    for (digit, word) in cases {
-        assert_eq!(ipa(digit), ipa(word), "{digit} should read as {word}");
-    }
-    // Not a decade: a non-round number keeps its normal reading + trailing 's'.
-    assert_eq!(ipa("1985"), ipa("1985"), "sanity");
-    assert!(
-        ipa("5s").contains("ˈɛs"),
-        "5s stays 'five ess': {}",
-        ipa("5s")
-    );
-    // 2000s are ambiguous and deliberately left alone.
-    assert!(
-        ipa("2000s").contains("ˈɛs"),
-        "2000s left alone: {}",
-        ipa("2000s")
-    );
 }
 
 #[test]
@@ -527,73 +286,65 @@ fn percent_after_number() {
 
 #[test]
 fn numero_sign_reads_number_word() {
-    // № is read as each language's own "numero" word, but only where espeak-ng
-    // defines one.  In these languages the sign is spoken, so "№5" differs from
-    // a bare "5".  (Values follow the C oracle.)
-    for lang in ["en", "de", "it", "pt", "nl", "ru", "bg", "cs"] {
+    // Byte-identical to upstream (a C build of the same data) for each case;
+    // where C's data has no reading the symbol is silent.
+    let cases: &[(&str, &str, &str)] = &[
+        ("en", "№5", "njˈuːməɹˌəʊ fˈaɪv"),
+        ("de", "№5", "nˈuːmeːrˌoː fˈʏnf"),
+        ("it", "№5", "nˈuːmero tʃˈinkwe"),
+        ("pt", "№5", "nˈũmeɾʊ sˈiŋku"),
+        ("nl", "№5", "nˈɵmər vˈɛɪf"),
+        ("ru", "№5", "nˈomʲir pʲˈɑtʲ"),
+        ("bg", "№5", "nˈomer pˈet"),
+        ("cs", "№5", "tʃˈiːslo pjˈet"),
+        ("fr", "№5", "sˈɛ̃k"),
+        ("es", "№5", "θˈinko"),
+        ("uk", "№5", "pjˈat"),
+        ("pl", "№5", "pʲˈɛɲtɕ"),
+    ];
+    for (lang, text, want) in cases {
         let Some(t) = Translator::new(lang, None).ok() else {
             eprintln!("[SKIP] no {lang} data");
             continue;
         };
-        let n = t.text_to_ipa("№5").unwrap();
-        let bare = t.text_to_ipa("5").unwrap();
-        assert!(
-            !n.is_empty() && n != bare,
-            "{lang} №5 dropped the numero sign: {n:?} (bare {bare:?})"
-        );
-    }
-    // English reads "numero" (matching espeak-ng), not "number".
-    if let Some(t) = en() {
-        assert!(
-            t.text_to_ipa("№5").unwrap().contains("njˈuːmə"),
-            "en №5 = numero five"
-        );
-    }
-    // Other languages have no numero word of their own, so the character is
-    // named in the default voice — C's `LookupCharName` fallback, which it
-    // reaches as well, though its switch then loses the English reading
-    // (`$textmode`) and leaves nothing.  See GAPS.md §3c #62.
-    for lang in ["fr", "es", "uk", "pl"] {
-        let Some(t) = Translator::new(lang, None).ok() else {
-            eprintln!("[SKIP] no {lang} data");
-            continue;
-        };
-        let got = t.text_to_ipa("№5").unwrap();
-        assert!(
-            got.contains("(en)") && got.contains("njˈuːmə"),
-            "{lang} №5: {got}"
-        );
+        assert_eq!(t.text_to_ipa(text).unwrap(), *want, "{lang} {text:?}");
     }
 }
 
 #[test]
 fn multiply_and_divide_read_across_languages() {
-    // × and ÷ were dropped (silent) outside en/de/fr/es/it/nl; each language
-    // now reads its own operator word, so "2×3" / "10÷2" differ from the bare
-    // digit sequence (the operator is spoken, not dropped).
-    for lang in [
-        "pt", "pl", "cs", "ro", "sv", "da", "nb", "tr", "ru", "uk", "bg",
-    ] {
+    // Byte-identical to upstream (a C build of the same data) for each case;
+    // where C's data has no reading the symbol is silent.
+    let cases: &[(&str, &str, &str)] = &[
+        ("pt", "2×3", "dˈoɪʒ vˈezɨʃ tɹˈeʃ"),
+        ("pt", "10÷2", "dˈɛʒ dˌividˈidʊpˈor dˈoɪʃ"),
+        ("pl", "2×3", "dvˈa rˈazɨ tʃˈɨ"),
+        ("pl", "10÷2", "dʑˈɛɕɛɲdʑ dʑɛlˈɛɲʲɛ dvˈa"),
+        ("cs", "2×3", "dvˈa krˈaːt tr̝̊ˈi"),
+        ("cs", "10÷2", "dˈesed ɟˈeleno dvˈa"),
+        ("ro", "2×3", "dˈoɪ trˈeɪ"),
+        ("ro", "10÷2", "zˈetʃe dˈoɪ"),
+        ("sv", "2×3", "tvˈoː ɡˈɔŋər trˈeː"),
+        ("sv", "10÷2", "tˈiːuː dˈeːlat meːd tvˈoː"),
+        ("da", "2×3", "tˈo ɡˈaŋe tʁˈʔe"),
+        ("da", "10÷2", "tˈʔi dˌiʋidˈeʁʌð mˌɛð tˈo"),
+        ("nb", "2×3", "tˈuː trˈeː"),
+        ("nb", "10÷2", "tˈiː tˈuː"),
+        ("tr", "2×3", "icˈi ˈytʃ"),
+        ("tr", "10÷2", "ˈon icˈi"),
+        ("ru", "2×3", "dvˈɑ trʲˈi"),
+        ("ru", "10÷2", "dʲˈesʲɪtʲ dvˈɑ"),
+        ("uk", "2×3", "dβˈa trˈɪ"),
+        ("uk", "10÷2", "dˈɛsjat dβˈa"),
+        ("bg", "2×3", "dvˈe trˈi"),
+        ("bg", "10÷2", "dˈeset dvˈe"),
+    ];
+    for (lang, text, want) in cases {
         let Some(t) = Translator::new(lang, None).ok() else {
             eprintln!("[SKIP] no {lang} data");
             continue;
         };
-        let times = t.text_to_ipa("2×3").unwrap();
-        let divide = t.text_to_ipa("10÷2").unwrap();
-        let two_three = format!(
-            "{} {}",
-            t.text_to_ipa("2").unwrap(),
-            t.text_to_ipa("3").unwrap()
-        );
-        assert_ne!(
-            times.replace(' ', ""),
-            two_three.replace(' ', ""),
-            "{lang} 2×3 dropped the ×: {times:?}"
-        );
-        assert!(
-            divide.split_whitespace().count() >= 3,
-            "{lang} 10÷2 dropped the ÷: {divide:?}"
-        );
+        assert_eq!(t.text_to_ipa(text).unwrap(), *want, "{lang} {text:?}");
     }
 }
 
@@ -619,78 +370,134 @@ fn plus_minus_sign_reads_across_languages() {
 
 #[test]
 fn hebrew_and_ukrainian_operators() {
-    // Hebrew: + − × ÷ ° were dropped; now read (via niqqud-pointed words that
-    // espeak-Hebrew can pronounce).  Ukrainian: ° was dropped.
-    if let Some(he) = Translator::new("he", None).ok() {
-        let two_three = format!(
-            "{} {}",
-            he.text_to_ipa("2").unwrap(),
-            he.text_to_ipa("3").unwrap()
-        );
-        for expr in ["2+3", "2×3", "10÷2", "20°"] {
-            let got = he.text_to_ipa(expr).unwrap();
-            assert_ne!(
-                got.replace(' ', ""),
-                two_three.replace(' ', ""),
-                "he {expr} dropped the operator: {got:?}"
-            );
-            assert!(!got.trim().is_empty());
-        }
-        // A leading `-` before a number is an *operator*: it is read from the
-        // language's own rules or list, and Hebrew's data has neither, so the
-        // sign is dropped — as it is in C.
-        assert_eq!(
-            he.text_to_ipa("-5").unwrap(),
-            he.text_to_ipa("5").unwrap(),
-            "he -5"
-        );
-        // The sign written literally still reads by its dictionary name.
-        assert!(
-            he.text_to_ipa("−").unwrap().contains("sˈimnə"),
-            "he −: {}",
-            he.text_to_ipa("−").unwrap()
-        );
-        assert!(
-            he.text_to_ipa("20°").unwrap().contains("maʔˈalot"),
-            "he 20°: {}",
-            he.text_to_ipa("20°").unwrap()
-        );
-    }
-    if let Some(uk) = Translator::new("uk", None).ok() {
-        let deg = uk.text_to_ipa("20°").unwrap();
-        assert_ne!(
-            deg.replace(' ', ""),
-            uk.text_to_ipa("20").unwrap().replace(' ', ""),
-            "uk 20° dropped the degree sign: {deg:?}"
-        );
+    // Byte-identical to upstream (a C build of the same data) for each case;
+    // where C's data has no reading the symbol is silent.
+    let cases: &[(&str, &str, &str)] = &[
+        ("he", "2+3", "ʃtˈajim (en)plˈʌs(he) ʃalˈoʃ"),
+        ("he", "2×3", "ʃtˈajim ʃalˈoʃ"),
+        ("he", "10÷2", "ˈeser ʃtˈajim"),
+        ("he", "20°", "esrˈim"),
+        ("he", "-5", "χamˈeʃ"),
+        ("he", "−", "sˈimnə mˈinvs"),
+        ("uk", "20°", "dvˈatsjat"),
+    ];
+    for (lang, text, want) in cases {
+        let Some(t) = Translator::new(lang, None).ok() else {
+            eprintln!("[SKIP] no {lang} data");
+            continue;
+        };
+        assert_eq!(t.text_to_ipa(text).unwrap(), *want, "{lang} {text:?}");
     }
 }
 
 #[test]
 fn degree_sign_reads_across_languages() {
-    // ° was dropped in sv/da/nb/ru/bg; now read as "degrees" (a fixed plural,
-    // correct for the common temperature case).  "20°" must differ from "20".
-    for lang in ["sv", "da", "nb", "ru", "bg"] {
+    // Byte-identical to upstream (a C build of the same data) for each case;
+    // where C's data has no reading the symbol is silent.
+    let cases: &[(&str, &str, &str)] = &[
+        ("sv", "20°", "ɕˈʉːɡɔ ɡrˈadər"),
+        ("sv", "-40°", "mˈiːnɵs fˈœʈɪ ɡrˈadər"),
+        ("da", "20°", "tˈyːʔu"),
+        ("da", "-40°", "fˈʔœʌ"),
+        ("nb", "20°", "ʂˈʉːa"),
+        ("nb", "-40°", "mˈiːnʉːs fˈøːrtiː"),
+        ("ru", "20°", "dvˈɑtsʌtʲ"),
+        ("ru", "-40°", "sˈorʌk"),
+        ("bg", "20°", "dvˈadesˌet"),
+        ("bg", "-40°", "tʃˌetirˈidesˌet"),
+    ];
+    for (lang, text, want) in cases {
         let Some(t) = Translator::new(lang, None).ok() else {
             eprintln!("[SKIP] no {lang} data");
             continue;
         };
-        let deg = t.text_to_ipa("20°").unwrap();
-        let bare = t.text_to_ipa("20").unwrap();
-        assert_ne!(
-            deg.replace(' ', ""),
-            bare.replace(' ', ""),
-            "{lang} 20° dropped the degree sign: {deg:?}"
-        );
-        // A negative temperature composes the minus + degree reading, where
-        // the language's data gives a reading for the hyphen (`sv`, `nb` do;
-        // `da`, `ru`, `bg` don't, and C drops the sign there too).
-        if matches!(lang, "sv" | "nb") {
-            assert!(
-                t.text_to_ipa("-40°").unwrap().split_whitespace().count() >= 3,
-                "{lang} -40° should read minus … degrees: {}",
-                t.text_to_ipa("-40°").unwrap()
-            );
-        }
+        assert_eq!(t.text_to_ipa(text).unwrap(), *want, "{lang} {text:?}");
     }
+}
+
+/// Each case is C espeak-ng's own IPA for the text.
+fn oracle_check(lang: &str, cases: &[(&str, &str)]) {
+    let Some(t) = Translator::new(lang, None).ok() else {
+        eprintln!("[SKIP] no {lang} data");
+        return;
+    };
+    for &(text, want) in cases {
+        assert_eq!(t.text_to_ipa(text).unwrap(), want, "{lang} {text:?}");
+    }
+}
+
+/// Numbers with letters, units and abbreviations, read as C reads them: the
+/// letters by the rules (`D_) s (` after a digit is `z`), no expansion.
+#[test]
+fn numbers_with_letters_as_c() {
+    oracle_check(
+        "en",
+        &[
+            ("1980s", "nˈaɪntiːnhˈʌndɹɪdən ˈeɪti z"),
+            ("1990s", "nˈaɪntiːnhˈʌndɹɪdən nˈaɪnti z"),
+            ("80s", "ˈeɪti z"),
+            ("90s", "nˈaɪnti z"),
+            ("1985", "nˈaɪntiːnhˈʌndɹɪdən ˈeɪti fˈaɪv"),
+            ("5s", "fˈaɪv z"),
+            ("2000s", "tˈuː θˈaʊzənd z"),
+            ("vs", "vˌiːˈɛs"),
+            ("govt", "ɡˈɒvt"),
+            ("Blvd", "bˈʊləvˌɑːd"),
+            ("Sgt", "ˌɛsdʒˌiːtˈiː"),
+            ("Rd", "ˌɑːdˈiː"),
+            ("Prof", "pɹˈɒf"),
+            ("approx", "ɐpɹˈɒks"),
+            ("3rd", "θˈɜːd"),
+            ("8x10", "ˈeɪt ˈɛks tˈɛn"),
+            ("2x4", "tˈuː ˈɛks fˈɔː"),
+            ("5 x 7", "fˈaɪv ˈɛks sˈɛvən"),
+            ("2x=4", "tˈuː ˈɛks ˈiːkwəlz fˈɔː"),
+            ("3x faster", "θɹˈiː ˈɛks fˈastə"),
+            ("0x1F", "zˈiəɹəʊ ˈɛks wˈɒn ˈɛf"),
+            ("No. 5", "nˈəʊ\nfˈaɪv"),
+            ("issue No. 42", "ˈɪʃuː nˈəʊ\nfˈɔːti tˈuː"),
+            ("No way", "nˈəʊ wˈeɪ"),
+            ("No. I refuse", "nˈəʊ\naɪ ɹɪfjˈuːz"),
+            ("5²", "fˈaɪv tˈuː"),
+            ("x³", "ˈɛks θɹˈiː"),
+            ("E=mc²", "ˈiː ˈiːkwəlz ˌɛmsˈiː tˈuː"),
+            ("H₂O", "ˈeɪtʃ tˈuː ˈəʊ"),
+            ("5km", "fˈaɪv kˌeɪˈɛm"),
+            ("1km", "wˈɒn kˌeɪˈɛm"),
+            ("10 kg", "tˈɛn kˌeɪdʒˈiː"),
+            ("500ml", "fˈaɪvhˈʌndɹɪd ˌɛmˈɛl"),
+            ("20MB", "twˈɛnti ˌɛmbˈiː"),
+            ("100Hz", "wˈɒnhˈʌndɹɪd ˌeɪtʃzˈɛd"),
+            ("2.5km", "tˈuː pɔɪnt fˈaɪv kˌeɪˈɛm"),
+            ("5 cats", "fˈaɪv kˈats"),
+            ("km", "kˌeɪˈɛm"),
+        ],
+    );
+    oracle_check(
+        "de",
+        &[("5km", "fˈʏnf kˌɑːˈɛm"), ("10kg", "tsˈeːn kˌɑːɡˈeː")],
+    );
+    oracle_check(
+        "fr",
+        &[
+            ("5km", "sˈɛ\u{303}k kilomˈɛtʁ"),
+            ("1km", "ˈœ\u{303} kilomˈɛtʁ"),
+        ],
+    );
+    oracle_check("es", &[("5km", "θˈinko kˌaˈɛme")]);
+    oracle_check("it", &[("5km", "tʃˈinkwe kˌapːaˈɛmme")]);
+}
+
+/// Stylized letters and digits, read as C reads them (by their codes).
+#[test]
+fn stylized_letters_as_c() {
+    oracle_check(
+        "en",
+        &[
+            ("𝐇𝐞𝐥𝐥𝐨", "həlˈəʊ"),
+            ("𝓗𝓮𝓵𝓵𝓸", "həlˈəʊ"),
+            ("Ⓗⓔⓛⓛⓞ", "lˌɛtətˌuːfˌɔːdˈiːsˌɛvənlˌɛtətˌuːfˈɔːdˌiːfˌɔːlˌɛtətˈuːfˌɔːdˌiːbˈiːlˌɛtətˌuːfˌɔːdˈiːbˌiːlˌɛtətˌuːfˈɔːdˌiːˈiː"),
+            ("𝟏𝟐𝟑", "wˈɒnhˈʌndɹɪdən twˈɛnti θɹˈiː"),
+        ],
+    );
 }

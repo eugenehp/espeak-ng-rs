@@ -707,6 +707,7 @@ fn trace_output(cli: &Cli, text: &str) -> std::io::Result<()> {
     ));
     out.push('\n');
 
+    print_invalid_phoneme_codes();
     if let Some(ref path) = cli.phonout {
         std::fs::write(path, &out)?;
     } else {
@@ -848,6 +849,7 @@ fn phoneme_output(cli: &Cli, text: &str) -> std::io::Result<()> {
         )
     };
 
+    print_invalid_phoneme_codes();
     let line_with_nl = format!("{line}\n");
     if let Some(ref path) = cli.phonout {
         std::fs::write(path, &line_with_nl)?;
@@ -933,6 +935,16 @@ fn format_x(
                         .map(|_| d)
                 })
             };
+            continue;
+        }
+        // A tone of the clause's own table on a switched word's vowel.
+        if matches!(
+            pc.marker,
+            Some(espeak_ng::translate::CodeMarker::ClauseTone)
+        ) {
+            if let Some(ph) = phdata.get(pc.code) {
+                push_unit(ph.mnemonic_display(), &mut word_units, &mut pending_stress);
+            }
             continue;
         }
         let phdata: &PhonemeData = switched.as_ref().unwrap_or(phdata);
@@ -1111,7 +1123,10 @@ fn write_split_wavs(
             continue;
         }
         let at = at_sample(e.audio_position_ms).min(pcm.len());
-        if cuts.last().is_some_and(|&last| at > last && at - last > limit) {
+        if cuts
+            .last()
+            .is_some_and(|&last| at > last && at - last > limit)
+        {
             cuts.push(at);
         }
     }
@@ -1556,4 +1571,13 @@ Installation (cargo)
   cargo install espeak-ng --bin espeak-ng-rs     # install a single binary
 ",
     );
+}
+
+/// C prints "Invalid phoneme code N" on standard output for each phoneme it
+/// drops reading a word against a table that lacks it (see
+/// `take_invalid_phoneme_codes`).
+fn print_invalid_phoneme_codes() {
+    for code in espeak_ng::translate::take_invalid_phoneme_codes() {
+        println!("Invalid phoneme code {code}");
+    }
 }
